@@ -1,8 +1,6 @@
 # Flow — trace by feature
 
-**Path:** `docs/flow.md` · **Updated:** 2026-03-23
-
-Follow the code: step → where → what to look at.
+Follow the code: step → where → what to look at. Index: [docs.md](docs.md). Product detail: [project.md](project.md).
 
 ---
 
@@ -142,4 +140,4 @@ See [project.md](project.md) roadmap (Phase 8).
 
 ---
 
-**Related docs:** [docs.md](docs.md), [ia.example.md](ia.example.md) (implementation agreement), [project.md](project.md) (product and structure). This file contains flow traces only.
+**Related docs:** [docs.md](docs.md), [ia.md](ia.md), [project.md](project.md).

@@ -1,6 +1,6 @@
 # IA/backend/app/ai/engine.py
 """
-AI execution engine. Single entry point for all AI calls. Default provider: Groq (see docs/ia.example.md).
+AI execution engine. Single entry point for all AI calls. Default provider: Groq (see docs/ia.md).
 Supports conversation history: when history_messages are provided, sends chat format so the model remembers the thread.
 """
 

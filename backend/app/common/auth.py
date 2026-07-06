@@ -1,5 +1,5 @@
 # IA/backend/app/common/auth.py
-# Auth: Bearer JWT only (login token). user_id from JWT sub. No API secret (docs/ia.example.md: JWT).
+# Auth: Bearer JWT only (login token). user_id from JWT sub. No API secret (docs/ia.md: JWT).
 
 import logging
 import jwt
@@ -45,7 +45,7 @@ def require_auth():
     token = _bearer_token()
     user_id = _decode_token(token) if token else None
     if not user_id:
-        # Log without token value: debug missing header vs invalid/expired token (ia.example.md: no secrets in logs).
+        # Log without token value: debug missing header vs invalid/expired token (docs/ia.md: no secrets in logs).
         logger.warning("auth_fail path=%s method=%s header_present=%s", request.path, request.method, bool(token))
         return (None, (jsonify({"error": "Unauthorized"}), 401))
     return (user_id, None)

@@ -1,20 +1,14 @@
-# IA — Documentation index
+# Documentation index
 
-**Updated:** 2026-03-23 · **Maintenance:** Bump **Updated** when you add, remove, or rename docs; keep the table in sync with [README.md](../README.md).
+| Document | Path | Purpose |
+|----------|------|---------|
+| **README** | [README.md](../README.md) | Overview, quick start, API summary |
+| **Project** | [project.md](project.md) | Stack, features, roadmap, configuration |
+| **Implementation agreement** | [ia.md](ia.md) | Architecture, layers, API and engineering standards |
+| **Flow** | [flow.md](flow.md) | Step-by-step traces in the codebase |
+| **Testing** | [testing.md](testing.md) | Test scripts and per-endpoint reference |
+| **UI** | [ui.md](ui.md) | Frontend layout, theme, components |
 
-**Layout:** Detailed specs live in **`docs/`**. **`README.md`** stays at the **repository root** (runbook, feature/API table, quick start, first contact).
+**Stack:** Python 3.10+, Flask, Pydantic, Groq (default LLM), JWT auth, JSON per-user storage, FAISS memory, React (Vite).
 
-| Doc | Path (from repo root) | Use it for |
-| --- | --- | --- |
-| **README.md** | `README.md` | Run commands, demo steps, feature overview, quick start, seed script pointer. |
-| **docs.md** | `docs/docs.md` | This index. |
-| **project.md** | `docs/project.md` | Plan, roadmap, stack, folder tree, memory/FAISS rules, current state, tuning, run/seed/CORS. |
-| **ia.example.md** | `docs/ia.example.md` | Tracked implementation agreement — architecture, API conventions, workflow, agent rules. |
-| **ia.md** (optional) | `docs/ia.md` | Gitignored local copy; create from `ia.example.md` if you need private overrides. |
-| **ui.md** | `docs/ui.md` | Frontend UX source of truth — layout, theme, components, patterns. |
-| **flow.md** | `docs/flow.md` | Request/feature flows: step → where → what to read in code. |
-| **testing.md** | `docs/testing.md` | How to run test scripts; per-API expectations and curl examples. |
-
-**Stack:** Python 3.10+, Flask, Pydantic, Groq (default LLM), JWT auth, JSON per-user storage, FAISS memory · React 18 (Vite). See **`docs/project.md`** for detail and free-tier providers.
-
-**Rule:** If **`docs/project.md`** and **`docs/ia.example.md`** disagree on *how* to build, follow **`docs/ia.example.md`**. For *what the product does today* (endpoints, behavior), follow **`docs/project.md`**. If you maintain a local **`docs/ia.md`**, it is not shared via Git; collaborators use **`ia.example.md`** only.
+**How docs relate:** **project.md** describes what the product does today. **ia.md** describes how we build it. **flow.md** and **testing.md** help you navigate and verify behavior. **ui.md** covers the frontend.

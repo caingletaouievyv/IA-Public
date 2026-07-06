@@ -15,7 +15,7 @@ from app.config import (
 )
 
 logger = logging.getLogger(__name__)
-# provider -> model, endpoint, use_auth. Primary: groq (see docs/ia.example.md).
+# provider -> model, endpoint, use_auth. Primary: groq (see docs/ia.md).
 MODEL_MAP = {
     "groq": {"model": GROQ_MODEL, "endpoint": GROQ_ENDPOINT, "auth": True},
     "deepseek": {"model": DEEPSEEK_MODEL, "endpoint": DEEPSEEK_ENDPOINT, "auth": True},

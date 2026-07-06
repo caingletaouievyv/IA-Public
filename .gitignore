@@ -1,8 +1,8 @@
 # IA/.gitignore
-# Secrets — see docs/ia.example.md (never commit .env)
+# Secrets — see docs/ia.md (never commit .env)
 .env
 
-# Optional local implementation agreement (tracked template: docs/ia.example.md)
+# Local implementation agreement (optional; tracked docs reference ia.md)
 docs/ia.md
 IA.md
 .env.*

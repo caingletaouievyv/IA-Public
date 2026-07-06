@@ -1,6 +1,6 @@
-# UI/UX source of truth — IA frontend
+# UI reference — frontend
 
-**Updated:** 2026-03-23 · **Scope:** `frontend/` (React 18 + Vite 5). **Maintenance:** Update **Updated** when components, theme tokens, or data flow change. Doc index: `docs/docs.md`. Backend contract: `docs/project.md`. Engineering rules: `docs/ia.example.md`.
+React 18 + Vite 5 SPA. Index: [docs.md](docs.md). API contract: [project.md](project.md). Engineering rules: [ia.md](ia.md).
 
 ---
 
@@ -187,7 +187,7 @@ frontend/
 
 ## Notes for reuse
 
-- Cross-reference: `docs/ia.example.md` (engineering rules), `docs/project.md` (API shapes, auth).
+- Cross-reference: [ia.md](ia.md), [project.md](project.md).
 - When adding routes, either adopt unused `.nav-pills` or remove dead CSS to avoid drift.
 - If implementing real light mode, add `data-theme` (or class) on `document.documentElement` and mirror `:root` tokens; wire Settings `theme` to that toggle.
 - New panels should follow: `section.section--*` → `card app-panel` → optional `form--compact` → `out` for feedback.

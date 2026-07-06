@@ -1,5 +1,5 @@
 # IA/requirements.txt
-# Pin versions for reproducibility. Add only when needed (docs/ia.example.md).
+# Pin versions for reproducibility. Add only when needed (docs/ia.md).
 
 # Core
 Flask>=3.0

@@ -1,5 +1,5 @@
 # IA/backend/app/auth/routes.py
-# POST /auth/register, POST /auth/login. Returns JWT; no API secret (docs/ia.example.md: JWT auth).
+# POST /auth/register, POST /auth/login. Returns JWT; no API secret (docs/ia.md: JWT auth).
 
 import datetime
 import jwt
