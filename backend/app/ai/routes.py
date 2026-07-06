@@ -1,0 +1,89 @@
+# IA/backend/app/ai/routes.py
+# AI routes: /ask, /estimate_tokens, /debug/context. Auth required (Phase 8); user_id scopes notes.
+
+from flask import Blueprint, request, jsonify
+from app import limiter
+from app.common.auth import require_auth
+from app.ai.engine import ask, get_token_estimate
+from app.memory.manager import build_context
+
+bp = Blueprint("ai", __name__)
+
+
+def _parse_note_ids(data: dict) -> list | None:
+    """Extract and normalize note_ids from request data; None if missing or not a list."""
+    note_ids = data.get("note_ids")
+    if note_ids is None or not isinstance(note_ids, list):
+        return None
+    return [str(x) for x in note_ids]
+
+
+def _parse_history_messages(data: dict) -> list | None:
+    """Extract messages (list of {role, content}) for conversation history; None if missing or invalid."""
+    raw = data.get("messages")
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for m in raw:
+        if not isinstance(m, dict):
+            continue
+        role = (m.get("role") or "user").lower()
+        if role not in ("user", "assistant"):
+            role = "user"
+        content = m.get("content")
+        if content is None:
+            content = ""
+        out.append({"role": role, "content": str(content)})
+    return out if out else None
+
+
+@bp.route("/ask", methods=["POST"])
+@limiter.limit("30 per minute")
+def ask_ai():
+    user_id, auth_err = require_auth()
+    if auth_err: return auth_err
+    data = request.get_json(silent=True) or {}
+    question = data.get("question")
+    if not question:
+        return jsonify({"error": "Missing 'question' field"}), 400
+    try:
+        answer, tokens = ask(
+            question,
+            note_ids=_parse_note_ids(data),
+            user_id=user_id,
+            history_messages=_parse_history_messages(data),
+        )
+        return jsonify({"answer": answer, "tokens_estimated": tokens}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@bp.route("/estimate_tokens", methods=["POST"])
+def estimate_tokens_route():
+    user_id, auth_err = require_auth()
+    if auth_err: return auth_err
+    data = request.get_json(silent=True) or {}
+    question = data.get("question")
+    if not question:
+        return jsonify({"error": "Missing 'question' field"}), 400
+    try:
+        result = get_token_estimate(question, note_ids=_parse_note_ids(data), user_id=user_id)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@bp.route("/debug/context", methods=["POST"])
+def debug_context():
+    user_id, auth_err = require_auth()
+    if auth_err: return auth_err
+    data = request.get_json(silent=True) or {}
+    question = data.get("question")
+    if not question:
+        return jsonify({"error": "Missing 'question'"}), 400
+    result = build_context(question, note_ids=_parse_note_ids(data), user_id=user_id)
+    return jsonify({
+        "question": question,
+        "context": result["context"],
+        "context_tokens": result["tokens"],
+        "best_faiss_score": result["best_score"],
+        "dropped_notes": result["dropped_notes"]
+    }), 200

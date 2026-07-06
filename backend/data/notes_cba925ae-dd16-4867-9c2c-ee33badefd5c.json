@@ -1,0 +1,76 @@
+[
+  {
+    "title": "FAISS and semantic search",
+    "category": "DevNotes",
+    "content": "We use FAISS for vector similarity over note embeddings. Intent classifier decides lookup vs exploratory; different thresholds apply. Context is built from top-k matches, deduplicated and summarized to fit MAX_CONTEXT_TOKENS.",
+    "tags": [
+      "memory",
+      "faiss",
+      "ai"
+    ],
+    "id": "a472d451-c010-4c12-9501-2ec1513f4108",
+    "created_at": "2026-03-07T03:16:07.269723Z",
+    "updated_at": "2026-03-07T03:16:07.269723Z"
+  },
+  {
+    "title": "Groq free tier",
+    "category": "Setup",
+    "content": "Groq is the primary LLM: free, no card, deploy-friendly. Set AI_KEY in .env. Console at console.groq.com. Optional GROQ_ENDPOINT and GROQ_MODEL. May 429 under burst; reduce concurrency or add delay.",
+    "tags": [
+      "groq",
+      "llm",
+      "free-tier"
+    ],
+    "id": "87ed2c95-1e43-4a00-80b2-1fdc7eb606b0",
+    "created_at": "2026-03-07T03:16:07.276359Z",
+    "updated_at": "2026-03-07T03:16:07.276359Z"
+  },
+  {
+    "title": "Notes from images",
+    "category": "Features",
+    "content": "POST /notes/from-images: multipart with title, category, files. Backend runs OCR (Tesseract), then AI summarizes the text. Same title+category appends content to one note. Requires Tesseract on the server.",
+    "tags": [
+      "ocr",
+      "images",
+      "notes"
+    ],
+    "id": "1053e41b-2094-400e-9aeb-87c4dd5812dc",
+    "created_at": "2026-03-07T03:16:07.283690Z",
+    "updated_at": "2026-03-07T03:16:07.283690Z"
+  },
+  {
+    "title": "Login auth",
+    "category": "Auth",
+    "content": "No API secret in UI. POST /auth/register and /auth/login return a JWT. Bearer token for /notes, /ai, /settings. user_id from JWT sub; notes stored in notes_{user_id}.json.",
+    "tags": [
+      "auth",
+      "jwt",
+      "login"
+    ],
+    "id": "84575915-044e-4139-8b79-68a2de730e02",
+    "created_at": "2026-03-07T03:16:07.292163Z",
+    "updated_at": "2026-03-07T03:16:07.292163Z"
+  },
+  {
+    "title": "Ask with selected notes",
+    "category": "Features",
+    "content": "POST /ai/ask accepts optional note_ids. When set, context is built only from those notes (temp FAISS subset). Use case: make a reviewer from chosen notes. Frontend: Load notes, select checkboxes, then ask.",
+    "tags": [
+      "ask",
+      "context",
+      "notes"
+    ],
+    "id": "00cfe856-ef6d-4336-ab5f-6ce99553db80",
+    "created_at": "2026-03-07T03:16:07.309129Z",
+    "updated_at": "2026-03-07T03:16:07.309129Z"
+  },
+  {
+    "title": "New conversation",
+    "category": "_history",
+    "content": "[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"Hello, how can I assist you today?\"},{\"role\":\"user\",\"content\":\"im naming you fq\"},{\"role\":\"assistant\",\"content\":\"You're assigning a FQDN (Fully Qualified Domain Name) to me. What's the domain name?\"},{\"role\":\"user\",\"content\":\"do you know what i name you\"},{\"role\":\"assistant\",\"content\":\"I'm glad you're looking for information about my name. I'm not assigned a personal name; instead, I'm often referred to as a 'helpful assistant' or a 'language model.'\"},{\"role\":\"user\",\"content\":\"ok your name now is brian\"},{\"role\":\"assistant\",\"content\":\"Hi, I'm Brian.\"},{\"role\":\"user\",\"content\":\"whats your name\"},{\"role\":\"assistant\",\"content\":\"I'm an assistant at your service. My name isn't specifically mentioned, but my users often refer to me as a 'helper' or a 'chat assistant.' If you need help, feel free to ask me anything.\"}]",
+    "tags": [],
+    "id": "63e958cd-d5d4-4827-88db-cc3cf8bdecf8",
+    "created_at": "2026-03-07T08:41:52.378936Z",
+    "updated_at": "2026-03-07T08:44:35.359548Z"
+  }
+]

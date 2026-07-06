@@ -1,0 +1,55 @@
+---
+description: IA repo — docs/docs.md index; docs/ia.example.md + docs/project.md SSoT
+alwaysApply: true
+---
+
+# IA repo rules
+
+**Index:** [docs/docs.md](docs/docs.md). **Source of truth:** [docs/ia.example.md](docs/ia.example.md) (agreement, layers) and [docs/project.md](docs/project.md) (product, stack, roadmap). [docs/ui.md](docs/ui.md) for frontend UX. [flow.md](docs/flow.md) / [testing.md](docs/testing.md) for traces and APIs.
+
+---
+
+## Conventions
+
+- **Folders** — `backend/` (Flask, `app/<feature>/`) · `frontend/` (React Vite, `src/components`, `api.js`) · `docs/`
+- **File header** — First line: `# IA/path/to/file` (or `//` in JS); then short docstring
+- **Code** — Lazy, simple, concise; one short comment per logical block
+- **Architecture** — Feature folders: `routes.py` + `manager.py` / `engine.py`. **Clean architecture:** routes → manager/engine → adapters (JSON, FAISS, LLM client). Validation: Pydantic at boundary. No business logic in routes or in React beyond UI state.
+- **Docs** — When behavior changes: sync **project.md**, **ia.example.md**, **docs.md** (if doc set changes), **flow.md**, **testing.md**, **README.md**, **ui.md** as needed
+
+---
+
+## Clean architecture (short)
+
+| Layer | Backend | Frontend |
+|-------|---------|----------|
+| Presentation | `routes.py` | components + `api.js` |
+| Use cases | `engine.py`, `manager.py` | — |
+| Adapters | client, embeddings, file storage | `fetch` in `api.js` |
+
+---
+
+## Stack (pointer)
+
+Python 3.10+, Flask, Pydantic, Groq default LLM (`AI_KEY`), JWT auth (Bearer), JSON per-user data, FAISS memory, React Vite SPA. Detail and free-tier table: **project.md**.
+
+---
+
+## UX
+
+Dark theme; loading / error / empty feedback; no layout shift; floating windows (drag, resize, collapse, focus). See **ui.md**.
+
+---
+
+## Rules for AI
+
+| Principle | Rule |
+|-----------|------|
+| **Sync** | Read **ia.example.md** + **project.md** before acting |
+| **Layers** | No logic in routes/components that belongs in manager/engine |
+| **Secrets** | Never commit `.env`; never log keys, tokens, `JWT_SECRET`, passwords |
+| **APIs** | Document shape changes in **project.md** / **testing.md** |
+| **Tests** | Keep `backend/scripts/test/` runnable |
+| **Communication** | State → intent → action |
+
+When in doubt: **docs/ia.example.md** and **docs/project.md**.

@@ -1,0 +1,31 @@
+# IA/requirements.txt
+# Pin versions for reproducibility. Add only when needed (docs/ia.example.md).
+
+# Core
+Flask>=3.0
+requests>=2.31
+python-dotenv>=1.0
+pydantic>=1.10.7
+scikit-learn>=1.3
+
+# Memory (FAISS + embeddings)
+faiss-cpu>=1.7
+numpy>=1.24
+sentence-transformers>=2.2
+tiktoken>=0.5
+
+# Optional (OpenAI / future)
+openai>=1.0
+
+# Phase 6: rate limiting (pin when adding)
+flask-limiter>=3.5
+
+# CORS for dev (Vite origin); optional in production when same-origin
+flask-cors>=4.0
+
+# Auth: JWT for login (no API secret in UI)
+PyJWT>=2.8
+
+# Notes from images (OCR); requires Tesseract installed on system
+Pillow>=10.0
+pytesseract>=0.3.10

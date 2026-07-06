@@ -1,0 +1,38 @@
+# IA/.gitignore
+# Secrets — see docs/ia.example.md (never commit .env)
+.env
+
+# Optional local implementation agreement (tracked template: docs/ia.example.md)
+docs/ia.md
+IA.md
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend (React/Vite)
+frontend/node_modules/
+frontend/dist/
+
+# Optional: uncomment to ignore generated data (FAISS, analytics)
+# data/*.pkl
+# data/faiss_fingerprint.txt
+# data/memory_analytics.csv
+# data/faiss_scores.log

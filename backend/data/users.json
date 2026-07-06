@@ -1,0 +1,7 @@
+[
+  {
+    "user_id": "cba925ae-dd16-4867-9c2c-ee33badefd5c",
+    "username": "testuser",
+    "password_hash": "scrypt:32768:8:1$4NzmFXVsJFgXrU7B$328fb43118c888effd561a2b1d905e3b5bf99c9db88b1febbfab94f18a61ec4209a7a3c88c21a6c38b031e8aa9a57123e98915f818d7bbf39f9621b5ba440f99"
+  }
+]
