@@ -4,6 +4,7 @@
 |----------|------|---------|
 | **README** | [README.md](../README.md) | Overview, quick start, API summary |
 | **Project** | [project.md](project.md) | Stack, features, roadmap, configuration |
+| **Session state** | [state.md](state.md) | Current State → Intent → Next (multi-machine / new AI chat) |
 | **Implementation agreement** | [ia.md](ia.md) | Architecture, layers, API and engineering standards |
 | **Flow** | [flow.md](flow.md) | Step-by-step traces in the codebase |
 | **Testing** | [testing.md](testing.md) | Test scripts and per-endpoint reference |
