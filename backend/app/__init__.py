@@ -27,6 +27,10 @@ def create_app():
     if (dist / "index.html").exists():
         app.static_folder = str(dist)
         app.static_url_path = ""
+
+        @app.route("/assets/<path:filename>")
+        def vite_assets(filename):
+            return send_from_directory(dist / "assets", filename)
     else:
         app.static_folder = str(frontend_root)
         app.static_url_path = ""
