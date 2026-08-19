@@ -9,9 +9,9 @@ JWT_EXP_DAYS = int(os.getenv("JWT_EXP_DAYS", "7"))
 
 # AI provider
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "groq")
-# Groq: primary (free, no card). Get key at console.groq.com. Override in .env: GROQ_ENDPOINT, GROQ_MODEL.
+# Groq: primary (free, no card). Override in .env: GROQ_ENDPOINT, GROQ_MODEL.
 GROQ_ENDPOINT = os.getenv("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 # DeepSeek: alternative (project.md free-tier). Set MODEL_PROVIDER=deepseek + AI_KEY.
 DEEPSEEK_ENDPOINT = os.getenv("DEEPSEEK_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek/deepseek-chat")
