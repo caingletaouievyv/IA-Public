@@ -1283,3 +1283,72 @@ button.secondary:focus-visible {
 .login-card .link-button:hover {
   color: var(--accent);
 }
+
+/* Ask — conversation dropdown */
+.section--ask #conversation-select {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.55rem 0.7rem;
+  margin-top: 0.25rem;
+  background: var(--bg-subtle);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.section--ask #conversation-select:hover {
+  border-color: var(--text-muted);
+}
+
+.section--ask #conversation-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+
+.section--ask #conversation-select option {
+  background: var(--surface);
+  color: var(--text);
+} 
+
+.section--ask #conversation-select {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.55rem 0.7rem;
+  margin-top: 0.25rem;
+  background: var(--bg-subtle);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.section--ask #conversation-select:hover {
+  border-color: var(--text-muted);
+}
+
+.section--ask #conversation-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+
+.section--ask #conversation-select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Space between conversation buttons and selector */
+.section--ask #conversation-select {
+  margin-top: 0.25rem;
+}
+
+.section--ask label[for="conversation-select"] {
+  display: block;
+  margin-top: 0.75rem;
+}

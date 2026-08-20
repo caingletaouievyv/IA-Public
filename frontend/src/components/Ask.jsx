@@ -138,33 +138,25 @@ export default function Ask() {
         </div>
         {historiesLoaded && histories.length > 0 && (
           <>
-            <span className="card-title" style={{ display: "block", marginTop: "0.75rem" }}>Select conversation</span>
-            <ul className="check-list">
-              <li>
-                <label>
-                  <input
-                    type="radio"
-                    name="history"
-                    checked={currentHistoryId === null}
-                    onChange={() => { setCurrentHistoryId(null); setMessages([]); }}
-                  />
-                  <span>None (one-off)</span>
-                </label>
-              </li>
+            <label htmlFor="conversation-select">Select conversation</label>
+
+            <select
+              id="conversation-select"
+              value={currentHistoryId || ""}
+              onChange={(e) => {
+                const id = e.target.value || null;
+                setCurrentHistoryId(id);
+                if (!id) setMessages([]);
+              }}
+            >
+              <option value="">None (one-off)</option>
+
               {histories.map((h) => (
-                <li key={h.id}>
-                  <label>
-                    <input
-                      type="radio"
-                      name="history"
-                      checked={currentHistoryId === h.id}
-                      onChange={() => setCurrentHistoryId(h.id)}
-                    />
-                    <span>{h.title || "Untitled"}</span>
-                  </label>
-                </li>
+                <option key={h.id} value={h.id}>
+                  {h.title || "Untitled"}
+                </option>
               ))}
-            </ul>
+            </select>
           </>
         )}
       </div>
