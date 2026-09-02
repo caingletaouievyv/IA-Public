@@ -23,7 +23,7 @@ function loadHistoryList(setList, setLoading, setError) {
     .finally(() => setLoading(false));
 }
 
-export default function History() {
+export default function History({ isSelectionMode = false, onSelect = null, onCloseSelection = null }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -44,7 +44,7 @@ export default function History() {
   }, []);
 
   // Auto-refresh when list is visible (same pattern as Notes).
-  const showList = !viewingId;
+  const showList = isSelectionMode || !viewingId;
   useEffect(() => {
     if (!showList) return;
     const refresh = () => loadHistoryList(setList, setLoading, setError);
@@ -148,7 +148,7 @@ export default function History() {
 
   return (
     <section className="section section--history">
-      <h2 className="app-panel__title">History</h2>
+      <h2 className="app-panel__title">{isSelectionMode ? "Select conversation" : "History"}</h2>
       <div className="notes-list-header">
         {showList ? (
           <input
@@ -163,7 +163,7 @@ export default function History() {
           <span className="notes-list-title">{viewing ? (editTitle || "Conversation") : "Conversations"}</span>
         )}
         <div className="notes-list-toolbar">
-          {showList && filteredList.length > 0 && (
+          {!isSelectionMode && showList && filteredList.length > 0 && (
             <>
               {selectedIds.size === 0 && (
                 <button type="button" className="notes-toolbar-btn" onClick={selectAll}>
@@ -181,7 +181,7 @@ export default function History() {
               )}
             </>
           )}
-          <div className="notes-add-toggle" role="group">
+          {!isSelectionMode && <div className="notes-add-toggle" role="group">
             {showList && selectedIds.size > 0 ? (
               <button
                 type="button"
@@ -228,7 +228,7 @@ export default function History() {
                 </button>
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -243,26 +243,40 @@ export default function History() {
               {filteredList.map((h) => (
                 <li
                   key={h.id}
-                  className={`note-card ${selectedIds.has(h.id) ? "note-card--selected" : ""}`}
+                  className={`note-card ${!isSelectionMode && selectedIds.has(h.id) ? "note-card--selected" : ""}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setViewingId(h.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
+                  onClick={() => {
+                    if (isSelectionMode && onSelect) {
+                      onSelect(h.id);
+                      onCloseSelection?.();
+                    } else {
                       setViewingId(h.id);
                     }
                   }}
-                  aria-label={`View conversation: ${h.title || "Untitled"}`}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (isSelectionMode && onSelect) {
+                        onSelect(h.id);
+                        onCloseSelection?.();
+                      } else {
+                        setViewingId(h.id);
+                      }
+                    }
+                  }}
+                  aria-label={`${isSelectionMode ? "Select" : "View"} conversation: ${h.title || "Untitled"}`}
                 >
-                  <input
-                    type="checkbox"
-                    className="note-card__checkbox"
-                    checked={selectedIds.has(h.id)}
-                    onChange={(e) => toggleSelect(h.id, e)}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`Select ${h.title || "Untitled"}`}
-                  />
+                  {!isSelectionMode && (
+                    <input
+                      type="checkbox"
+                      className="note-card__checkbox"
+                      checked={selectedIds.has(h.id)}
+                      onChange={(e) => toggleSelect(h.id, e)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select ${h.title || "Untitled"}`}
+                    />
+                  )}
                     <div className="note-card__content">
                       <div className="note-card__row">
                         <span className="note-card__label" aria-hidden="true">Title</span>
@@ -289,7 +303,7 @@ export default function History() {
         </>
       )}
 
-      {viewing && !showList && (
+      {!isSelectionMode && viewing && !showList && (
         <div className="notes-add-panel">
           <form id="history-edit-form" onSubmit={handleSaveTitle} className={`form--compact ${editSaving ? "loading" : ""}`}>
             <label htmlFor="historyEditTitle">Title</label>
@@ -310,7 +324,7 @@ export default function History() {
         </div>
       )}
 
-      {deleteConfirmId && (
+      {!isSelectionMode && deleteConfirmId && (
         <div className="notes-delete-confirm" role="dialog" aria-modal="true">
           <div className="notes-delete-confirm__backdrop" onClick={() => setDeleteConfirmId(null)} aria-hidden />
           <div className="notes-delete-confirm__box">
@@ -333,7 +347,7 @@ export default function History() {
         </div>
       )}
 
-      {bulkDeleteConfirm && selectedIds.size > 0 && (
+      {!isSelectionMode && bulkDeleteConfirm && selectedIds.size > 0 && (
         <div className="notes-delete-confirm" role="dialog" aria-modal="true">
           <div className="notes-delete-confirm__backdrop" onClick={() => setBulkDeleteConfirm(false)} aria-hidden />
           <div className="notes-delete-confirm__box">

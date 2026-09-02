@@ -41,6 +41,8 @@ export default function App() {
   const [floatingWindows, setFloatingWindows] = useState([]);
   const [frontWindowId, setFrontWindowId] = useState(null);
   const [collapsedWindowIds, setCollapsedWindowIds] = useState(() => new Set());
+  const [historySelectionCallback, setHistorySelectionCallback] = useState(null);
+  const [historySelectionWindowId, setHistorySelectionWindowId] = useState(null);
   const nextOffsetRef = useRef(0);
 
   const setAuthToken = (t) => {
@@ -69,6 +71,10 @@ export default function App() {
   const closeFloating = (id) => {
     setFloatingWindows((wins) => wins.filter((w) => w.id !== id));
     setFrontWindowId((front) => (front === id ? null : front));
+    if (id === historySelectionWindowId) {
+      setHistorySelectionCallback(null);
+      setHistorySelectionWindowId(null);
+    }
     setCollapsedWindowIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -76,11 +82,32 @@ export default function App() {
     });
   };
 
+  const openHistoryForSelection = (callback) => {
+    const offset = nextOffsetRef.current;
+    nextOffsetRef.current += FLOAT_OFFSET;
+    const id = newFloatId();
+    setHistorySelectionCallback(() => callback);
+    setHistorySelectionWindowId(id);
+    setFloatingWindows((wins) => [...wins, { id, type: "history", initialPosition: { x: 40 + offset, y: 40 + offset } }]);
+    setFrontWindowId(id);
+  };
+
+  const closeHistorySelection = () => {
+    if (historySelectionWindowId) closeFloating(historySelectionWindowId);
+    setHistorySelectionCallback(null);
+    setHistorySelectionWindowId(null);
+  };
+
   const floatingTitle = (type) => ({ ask: "Ask", notes: "Notes", history: "History", debug: "Debug", settings: "Settings" }[type] || type);
   const floatingContent = (type) => {
-    if (type === "ask") return <Ask />;
+    if (type === "ask") return <Ask onHistoryPicker={openHistoryForSelection} />;
     if (type === "notes") return <Notes />;
-    if (type === "history") return <History />;
+    if (type === "history") {
+      if (historySelectionCallback !== null) {
+        return <History isSelectionMode={true} onSelect={historySelectionCallback} onCloseSelection={closeHistorySelection} />;
+      }
+      return <History />;
+    }
     if (type === "debug") return <DebugContext />;
     if (type === "settings") return <Settings />;
     return null;
@@ -129,7 +156,10 @@ export default function App() {
                 return next;
               });
             }}
-            onClose={() => closeFloating(id)}
+            onClose={() => {
+              if (id === historySelectionWindowId) closeHistorySelection();
+              else closeFloating(id);
+            }}
             onBringToFront={() => setFrontWindowId(id)}
             isFront={frontWindowId === id}
           >

@@ -3,7 +3,7 @@
 // No authenticated API calls without token; surface auth errors in UI.
 
 import { useState, useEffect } from "react";
-import { ask, listNotes, listHistories, getNote, createHistory, updateNote, getToken } from "../api";
+import { ask, listNotes, getNote, createHistory, updateNote, getToken } from "../api";
 
 function parseMessages(content) {
   if (!content || !content.trim()) return [];
@@ -15,7 +15,7 @@ function parseMessages(content) {
   }
 }
 
-export default function Ask() {
+export default function Ask({ onHistoryPicker = null }) {
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -23,8 +23,6 @@ export default function Ask() {
   const [notes, setNotes] = useState([]);
   const [notesLoaded, setNotesLoaded] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [histories, setHistories] = useState([]);
-  const [historiesLoaded, setHistoriesLoaded] = useState(false);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [messages, setMessages] = useState([]);
 
@@ -39,22 +37,6 @@ export default function Ask() {
       setError(e.message);
     }
   };
-
-  const loadHistories = async () => {
-    setHistoriesLoaded(false);
-    try {
-      const list = await listHistories();
-      setHistories(Array.isArray(list) ? list : []);
-      setHistoriesLoaded(true);
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
-  useEffect(() => {
-    if (!getToken()) return;
-    loadHistories();
-  }, []);
 
   useEffect(() => {
     if (!currentHistoryId) {
@@ -87,7 +69,6 @@ export default function Ask() {
     }
     try {
       const created = await createHistory("New conversation");
-      await loadHistories();
       setCurrentHistoryId(created.id);
       setMessages([]);
     } catch (e) {
@@ -132,33 +113,14 @@ export default function Ask() {
           <button type="button" onClick={handleNewConversation} disabled={loading}>
             New conversation
           </button>
-          <button type="button" onClick={loadHistories} disabled={loading}>
-            {historiesLoaded ? "Refresh list" : "Load histories"}
+          <button
+            type="button"
+            onClick={() => onHistoryPicker?.((id) => setCurrentHistoryId(id))}
+            disabled={loading}
+          >
+            Select conversation
           </button>
         </div>
-        {historiesLoaded && histories.length > 0 && (
-          <>
-            <label htmlFor="conversation-select">Select conversation</label>
-
-            <select
-              id="conversation-select"
-              value={currentHistoryId || ""}
-              onChange={(e) => {
-                const id = e.target.value || null;
-                setCurrentHistoryId(id);
-                if (!id) setMessages([]);
-              }}
-            >
-              <option value="">None (one-off)</option>
-
-              {histories.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.title || "Untitled"}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
       </div>
       {currentHistoryId && messages.length > 0 && (
         <div className="card app-panel">
