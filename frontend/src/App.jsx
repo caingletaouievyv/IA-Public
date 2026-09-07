@@ -13,9 +13,25 @@ import Settings from "./components/Settings";
 
 const FLOAT_OFFSET = 32;
 const UNAUTH_EVENT = "ia:unauthorized";
+const FLOAT_MIN_WIDTH = 280;
+const FLOAT_MIN_HEIGHT = 200;
 
 function newFloatId() {
   return crypto.randomUUID ? crypto.randomUUID() : `float-${Date.now()}`;
+}
+
+function centeredInitialPosition() {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const isDesktop = viewportWidth >= 768;
+  const width = isDesktop ? Math.min(640, Math.max(FLOAT_MIN_WIDTH, viewportWidth - 40)) : FLOAT_MIN_WIDTH;
+  const height = isDesktop
+    ? Math.min(520, Math.max(FLOAT_MIN_HEIGHT, viewportHeight - 48))
+    : Math.min(420, Math.max(FLOAT_MIN_HEIGHT, viewportHeight - 48));
+  return {
+    x: Math.max(0, (viewportWidth - width) / 2),
+    y: Math.max(0, (viewportHeight - height) / 2),
+  };
 }
 
 function Header({ onLogout }) {
@@ -41,8 +57,6 @@ export default function App() {
   const [floatingWindows, setFloatingWindows] = useState([]);
   const [frontWindowId, setFrontWindowId] = useState(null);
   const [collapsedWindowIds, setCollapsedWindowIds] = useState(() => new Set());
-  const [historySelectionCallback, setHistorySelectionCallback] = useState(null);
-  const [historySelectionWindowId, setHistorySelectionWindowId] = useState(null);
   const nextOffsetRef = useRef(0);
 
   const setAuthToken = (t) => {
@@ -71,10 +85,6 @@ export default function App() {
   const closeFloating = (id) => {
     setFloatingWindows((wins) => wins.filter((w) => w.id !== id));
     setFrontWindowId((front) => (front === id ? null : front));
-    if (id === historySelectionWindowId) {
-      setHistorySelectionCallback(null);
-      setHistorySelectionWindowId(null);
-    }
     setCollapsedWindowIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -82,29 +92,65 @@ export default function App() {
     });
   };
 
-  const openHistoryForSelection = (callback) => {
-    const offset = nextOffsetRef.current;
-    nextOffsetRef.current += FLOAT_OFFSET;
+  const openHistoryForSelection = (parentAskId, callback) => {
     const id = newFloatId();
-    setHistorySelectionCallback(() => callback);
-    setHistorySelectionWindowId(id);
-    setFloatingWindows((wins) => [...wins, { id, type: "history", initialPosition: { x: 40 + offset, y: 40 + offset } }]);
-    setFrontWindowId(id);
+    setFloatingWindows((wins) => {
+      const existing = wins.find((window) => window.type === "history" && window.selectionMode && window.parentAskId === parentAskId);
+      if (existing) {
+        setFrontWindowId(existing.id);
+        return wins;
+      }
+      setFrontWindowId(id);
+      return [...wins, {
+        id,
+        type: "history",
+        selectionMode: true,
+        parentAskId,
+        selectionCallback: callback,
+        initialPosition: centeredInitialPosition(),
+      }];
+    });
   };
 
-  const closeHistorySelection = () => {
-    if (historySelectionWindowId) closeFloating(historySelectionWindowId);
-    setHistorySelectionCallback(null);
-    setHistorySelectionWindowId(null);
+  const openNotesForSelection = (parentAskId, callback) => {
+    const id = newFloatId();
+    setFloatingWindows((wins) => {
+      const existing = wins.find((window) => window.type === "notes" && window.selectionMode && window.parentAskId === parentAskId);
+      if (existing) {
+        setFrontWindowId(existing.id);
+        return wins;
+      }
+      setFrontWindowId(id);
+      return [...wins, {
+        id,
+        type: "notes",
+        selectionMode: true,
+        parentAskId,
+        selectionCallback: callback,
+        initialPosition: centeredInitialPosition(),
+      }];
+    });
   };
 
   const floatingTitle = (type) => ({ ask: "Ask", notes: "Notes", history: "History", debug: "Debug", settings: "Settings" }[type] || type);
-  const floatingContent = (type) => {
-    if (type === "ask") return <Ask onHistoryPicker={openHistoryForSelection} />;
-    if (type === "notes") return <Notes />;
+  const floatingContent = ({ id, type, selectionMode = false, selectionCallback = null }) => {
+    if (type === "ask") {
+      return (
+        <Ask
+          onHistoryPicker={(callback) => openHistoryForSelection(id, callback)}
+          onNotesPicker={(callback) => openNotesForSelection(id, callback)}
+        />
+      );
+    }
+    if (type === "notes") {
+      if (selectionMode) {
+        return <Notes isSelectionMode={true} onSelect={selectionCallback} onCloseSelection={() => closeFloating(id)} />;
+      }
+      return <Notes />;
+    }
     if (type === "history") {
-      if (historySelectionCallback !== null) {
-        return <History isSelectionMode={true} onSelect={historySelectionCallback} onCloseSelection={closeHistorySelection} />;
+      if (selectionMode) {
+        return <History isSelectionMode={true} onSelect={selectionCallback} onCloseSelection={() => closeFloating(id)} />;
       }
       return <History />;
     }
@@ -137,7 +183,8 @@ export default function App() {
           Settings
         </button>
       </p>
-      {floatingWindows.map(({ id, type, initialPosition }, index) => {
+      {floatingWindows.map((window, index) => {
+        const { id, type, initialPosition } = window;
         const collapsedOrder = floatingWindows.filter((w) => collapsedWindowIds.has(w.id));
         const collapsedStackIndex = collapsedOrder.findIndex((w) => w.id === id);
         return (
@@ -156,14 +203,11 @@ export default function App() {
                 return next;
               });
             }}
-            onClose={() => {
-              if (id === historySelectionWindowId) closeHistorySelection();
-              else closeFloating(id);
-            }}
+            onClose={() => closeFloating(id)}
             onBringToFront={() => setFrontWindowId(id)}
             isFront={frontWindowId === id}
           >
-            {floatingContent(type)}
+            {floatingContent(window)}
           </FloatingWindow>
         );
       })}

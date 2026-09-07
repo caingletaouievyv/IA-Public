@@ -591,6 +591,11 @@ button.secondary:focus-visible {
   background: var(--surface-hover);
   box-shadow: 0 0 0 1px var(--accent);
 }
+.note-card--active {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px var(--accent);
+}
 .note-card:hover {
   border-color: var(--text-muted);
   background: var(--surface-hover);
@@ -797,6 +802,54 @@ button.secondary:focus-visible {
 }
 .app-panel .form--compact {
   margin-top: 0;
+}
+.ask-section {
+  border-bottom: 1px solid var(--border);
+  padding: 0.2rem 0 0.85rem;
+  margin-bottom: 0.85rem;
+}
+.ask-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+.ask-section-toggle:hover {
+  background: transparent;
+  color: var(--accent);
+}
+.ask-section-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.ask-section-content {
+  padding-top: 0.65rem;
+}
+.ask-section-summary {
+  margin: 0.45rem 0 0;
+}
+.ask-section-label {
+  display: block;
+  margin-top: 0.75rem;
+}
+.ask-section-badge {
+  display: block;
+  margin-top: 0.35rem;
+}
+.ask-previous-messages {
+  margin-bottom: 0.85rem;
+}
+.ask-question {
+  padding-top: 0.1rem;
 }
 
 /* Sections in floating window (Ask, Settings, Debug) */

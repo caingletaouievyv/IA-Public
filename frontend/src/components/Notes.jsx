@@ -22,7 +22,7 @@ function resolveTagToAdd(inputVal, suggestions) {
   return t;
 }
 
-export default function Notes() {
+export default function Notes({ isSelectionMode = false, onSelect = null, onCloseSelection = null }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -240,7 +240,7 @@ export default function Notes() {
     }
   };
 
-  const showList = !isFormOpen && !isViewingNote;
+  const showList = isSelectionMode || (!isFormOpen && !isViewingNote);
   const showBackToList = isFormOpen || isViewingNote;
 
   // Auto-refresh when list view is visible: on tab focus (visibility) and every 30s (best practice for list UIs).
@@ -356,7 +356,7 @@ export default function Notes() {
             <span className="notes-list-title">{headerTitle}</span>
           )}
           <div className="notes-list-toolbar">
-            {showList && filteredNotes.length > 0 && (
+            {!isSelectionMode && showList && filteredNotes.length > 0 && (
               <>
                 {selectedNoteIds.size === 0 && (
                   <button type="button" className="notes-toolbar-btn" onClick={handleSelectAll}>
@@ -380,7 +380,7 @@ export default function Notes() {
                 )}
               </>
             )}
-            <div className="notes-add-toggle" role="group" aria-label={showBackToList ? "Back to list" : selectedNoteIds.size > 0 ? "Delete selected" : "Add note"}>
+            {!isSelectionMode && <div className="notes-add-toggle" role="group" aria-label={showBackToList ? "Back to list" : selectedNoteIds.size > 0 ? "Delete selected" : "Add note"}>
               {showBackToList ? (
                 <div className="notes-toolbar-actions">
                   <button
@@ -477,7 +477,7 @@ export default function Notes() {
                   </div>
                 </>
               )}
-            </div>
+            </div>}
           </div>
         </div>
 
@@ -869,33 +869,45 @@ export default function Notes() {
               <p className="notes-list-empty">Loading…</p>
             )}
             {!loading && notesForDisplay.length === 0 && data !== null && (
-              <p className="notes-list-empty">No notes yet. Click “Add note” or ▼ to add one.</p>
+              <p className="notes-list-empty">{isSelectionMode ? "No notes yet." : "No notes yet. Click “Add note” or ▼ to add one."}</p>
             )}
             {notesForDisplay.length > 0 && (
               <ul className="notes-list">
                 {filteredNotes.slice(0, 100).map((n) => (
                   <li
                     key={n.id}
-                    className={`note-card ${selectedNoteIds.has(n.id) ? "note-card--selected" : ""}`}
+                    className={`note-card ${!isSelectionMode && selectedNoteIds.has(n.id) ? "note-card--selected" : ""}`}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setViewingNoteId(n.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
+                    onClick={() => {
+                      if (isSelectionMode && onSelect) {
+                        onSelect(n);
+                        onCloseSelection?.();
+                      } else {
                         setViewingNoteId(n.id);
                       }
                     }}
-                    aria-label={`View note: ${n.title || "Untitled"}`}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        if (isSelectionMode && onSelect) {
+                          onSelect(n);
+                          onCloseSelection?.();
+                        } else {
+                          setViewingNoteId(n.id);
+                        }
+                      }
+                    }}
+                    aria-label={`${isSelectionMode ? "Select" : "View"} note: ${n.title || "Untitled"}`}
                   >
-                    <input
+                    {!isSelectionMode && <input
                       type="checkbox"
                       className="note-card__checkbox"
                       checked={selectedNoteIds.has(n.id)}
                       onChange={(e) => toggleNoteSelection(n.id, e)}
                       onClick={(e) => e.stopPropagation()}
                       aria-label={`Select ${n.title || "Untitled"}`}
-                    />
+                    />}
                     <div className="note-card__content">
                       <div className="note-card__row">
                         <span className="note-card__label" aria-hidden="true">Title</span>

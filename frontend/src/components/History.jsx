@@ -17,7 +17,7 @@ function parseMessageCount(content) {
 function loadHistoryList(setList, setLoading, setError) {
   setError(null);
   setLoading(true);
-  listHistories()
+  return listHistories()
     .then((data) => setList(Array.isArray(data) ? data : []))
     .catch((err) => setError(err.message))
     .finally(() => setLoading(false));
@@ -76,7 +76,9 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
     setCreating(true);
     setError(null);
     try {
-      await createHistory("New conversation");
+      const created = await createHistory("New conversation");
+      setList((prev) => [...prev, created]);
+      setViewingId(created.id);
       await loadHistoryList(setList, setLoading, setError);
     } catch (e) {
       setError(e.message);
@@ -160,7 +162,7 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
             aria-label="Search conversations"
           />
         ) : (
-          <span className="notes-list-title">{viewing ? (editTitle || "Conversation") : "Conversations"}</span>
+          <span className="notes-list-title">{viewing ? `Conversation: ${editTitle || "Untitled"}` : "Conversations"}</span>
         )}
         <div className="notes-list-toolbar">
           {!isSelectionMode && showList && filteredList.length > 0 && (
@@ -243,7 +245,7 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
               {filteredList.map((h) => (
                 <li
                   key={h.id}
-                  className={`note-card ${!isSelectionMode && selectedIds.has(h.id) ? "note-card--selected" : ""}`}
+                  className={`note-card ${!isSelectionMode && selectedIds.has(h.id) ? "note-card--selected" : ""} ${!isSelectionMode && viewingId === h.id ? "note-card--active" : ""}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => {
