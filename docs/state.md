@@ -4,7 +4,7 @@
 
 **How to use:** Paste this file (or say “read `docs/state.md`”) at the start of a new chat. After a session, update **State / Intent / Next** only.
 
-**Updated:** 2026-08-16
+**Updated:** 2026-09-08
 
 ---
 
@@ -12,10 +12,15 @@
 
 - Phases 1–6 and 8 are done (notes, AI, memory, ensemble/judge, UI, security, JWT + per-user notes).
 - Phase 7 (mobile + monetization) is **not** started.
+- The frontend uses floating Ask, Notes, History, Debug, and Settings windows.
+- Ask can open History in selection mode for a conversation and Notes in selection mode for note context.
+- Selector windows are centered, scoped to their parent Ask window, and limited to one History selector plus one Notes selector per Ask window.
+- Selecting a conversation or note returns the selection to Ask and closes the selector.
+- History can create a new conversation, immediately view the created conversation, and visually indicate the active conversation.
 - Ask can use selected notes; if none selected, semantic search over all user notes.
+- FloatingWindow owns the top-level title; redundant Ask, History, Debug, and Settings panel titles have been removed.
 - Notes from images: OCR → summarize → one note; same title+category **appends**.
-- Built UI at `:5000` needs Flask `/assets/` route (fixed; do not drop it).
-- Public GitHub repo. **Not in git:** `.env`, `docs/ia.md`, `backend/data/users.json`, `backend/data/notes_*.json`. Copy those between machines.
+- Built UI at `:5000` uses Flask to serve the built frontend assets.
 
 ## Intent (what we want)
 
@@ -23,9 +28,9 @@ Keep work continuous across machines and AI chats: same rules, same next step, n
 
 ## Next action
 
-1. Copy private files to the other machine (`.env`, `docs/ia.md`, `users.json`, `notes_*.json`).
-2. Clone, `npm run build`, `python run.py`.
-3. When ready to code: **Phase 7** or polish you name in chat.
+1. Keep Phase 7 (mobile + monetization) as a future product decision.
+2. Continue frontend regression/manual testing and focused UX polish as needed.
+3. When ready to code: choose a Phase 7 decision or a specific polish task.
 
 ## Do not put here
 

@@ -48,7 +48,7 @@ IA/
 
 - **Auth** — `POST /auth/register`, `/auth/login` → JWT; Bearer on protected routes.
 - **Notes** — Per-user CRUD; `GET /notes/meta` for categories/tags; `POST /notes/from-images` (OCR + AI; append when same title+category).
-- **Ask** — `POST /ai/ask` with optional `note_ids` and `messages` (history); semantic search over user notes.
+- **Ask** — `POST /ai/ask` with optional `note_ids` and `messages` (history); semantic search over user notes. The floating Ask window can open History and Notes in selection mode; selected conversation and note context return to Ask through callbacks.
 - **Settings** — `GET/PUT /settings/` per user.
 - **AI modes** — `AI_MODE`: `single` | `ensemble` | `judge`; `AI_ENSEMBLE_PROVIDERS`.
 - **Monitoring** — `GET /health`, security headers, rate limits, request logging (no secrets).
@@ -102,4 +102,4 @@ cd backend && pip install -r requirements.txt && python run.py
 
 ## UX
 
-Dark theme, floating windows, clear loading and error states. Detail: [ui.md](ui.md).
+Dark theme, floating windows, clear loading and error states. Ask supports selecting a conversation or notes through scoped selector windows; normal History and Notes CRUD remains available outside selection mode. Detail: [ui.md](ui.md).

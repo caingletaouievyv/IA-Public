@@ -101,14 +101,18 @@ frontend/
 | **App** | Auth gate; opens/closes floating panels | — | `token` from `getToken()`; `Login` if absent; listens `ia:unauthorized`; `Header` + link-style triggers; stack of `FloatingWindow` |
 | **Header** | Brand + sign out | `onLogout?: fn` | Renders logout only if `onLogout` passed |
 | **Login** | Sign in / register | `onLogin(token)` | Local `username`, `password`, `isRegister`, `loading`, `error`; validates non-empty; toggles register via `link-button` |
-| **FloatingWindow** | Draggable, resizable, collapsible shell | `title`, `id`, `initialPosition`, `onClose`, `onBringToFront`, `isFront`, `stackIndex`, `collapsedStackIndex`, `onCollapsedChange`, `children` | Position/size per-id in `localStorage` (`ia-floating-window-{id}`); collapse docks bottom-left with horizontal stack; double-click titlebar or toggle button; resize handle; `zIndex` bump when front |
-| **Ask** | `/ai/ask` + optional `note_ids` + conversation | — | Loads histories (`listHistories`); optional `currentHistoryId` + `messages` JSON in note; checkbox note pick (`listNotes`, exclude `_history`); `ask(question, noteIds, messages)`; persists turns via `updateNote` |
-| **Notes** | CRUD, search, bulk delete, image import | — | List vs add (`note` \| `from-images`) vs detail edit; `getNotesMeta` for tag/category suggestions; client search; first **100** matches shown; visibility + 30s poll when list visible; `_history` hidden |
-| **History** | Conversations (`_history` notes) | — | Same list/card/toolbar patterns as Notes; title edit; single + bulk delete modals; visibility + 30s refresh when list visible |
+| **FloatingWindow** | Draggable, resizable, collapsible shell | `title`, `id`, `initialPosition`, `onClose`, `onBringToFront`, `isFront`, `stackIndex`, `collapsedStackIndex`, `onCollapsedChange`, `children` | Position/size per-id in `localStorage` (`ia-floating-window-{id}`); collapse docks bottom-left with horizontal stack; double-click titlebar or toggle button; resize handle; `zIndex` bump when front; owns the single top-level title for each window |
+| **Ask** | `/ai/ask` + optional `note_ids` + conversation | `onHistoryPicker`, `onNotesPicker` | Uses the FloatingWindow shell title; no redundant internal Ask title. Conversation is collapsed by default, followed by Chat Context and Question in the current JSX order. Ask opens History and Notes selection windows through the callbacks; selected values return to Ask and conversation turns persist via `updateNote`. |
+| **Notes** | CRUD, search, bulk delete, image import | `isSelectionMode`, `onSelect`, `onCloseSelection` | List vs add (`note` \| `from-images`) vs detail edit; `getNotesMeta` for tag/category suggestions; client search; first **100** matches shown; visibility + 30s poll when list visible; `_history` hidden. In selection mode, selecting a note calls `onSelect(note)` and closes through `onCloseSelection`; normal CRUD is unchanged. |
+| **History** | Conversations (`_history` notes) | `isSelectionMode`, `onSelect`, `onCloseSelection` | Same list/card/toolbar patterns as Notes; title edit; single + bulk delete modals; visibility + 30s refresh when list visible. In normal mode, the active conversation uses `note-card--active`; creating a conversation adds it to the list, sets it as the viewed conversation, and refreshes the list. In selection mode, clicking or keyboard-selecting a conversation calls `onSelect(id)` and then closes the selector. |
 | **DebugContext** | Inspect retrieval context | — | `debugContext(question, null)`; JSON in `<pre>` |
-| **Settings** | GET/PUT `/settings/` | — | Manual “Load settings”; form `theme`, `default_model`; optimistic local `prefs` merge |
+| **Settings** | GET/PUT `/settings/` | — | Manual “Load settings”; form `theme`, `default_model`; optimistic local `prefs` merge; FloatingWindow supplies the sole top-level Settings title |
 
 **Internal helpers (not exported UI):** `App` uses `newFloatId()`, `FLOAT_OFFSET`, `UNAUTH_EVENT`; `Notes` / `History` share confirm modal classes `.notes-delete-confirm*`.
+
+### Floating selector ownership
+
+`App` opens selector windows from an Ask window and passes the Ask window ID as `parentAskId`. Selector windows use `centeredInitialPosition()`. For each parent Ask, `App` permits at most one History selector and one Notes selector; a second request brings the existing selector to the front. Selection callbacks return the conversation ID or note object to Ask, then the selector is removed. Different Ask windows keep independent selector state. Outside selection mode, Notes and History retain their normal CRUD and viewing behavior.
 
 ---
 

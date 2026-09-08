@@ -59,3 +59,23 @@ python scripts/test/test_ask_note_ids_and_health.py
 | Ask | Login → POST `/ai/ask` with Bearer | 200 answer |
 | Selected notes | Ask with `note_ids` array | Context from those notes only |
 | Images | Notes UI or multipart `/notes/from-images` | 201; Tesseract required |
+
+## Frontend manual regression checklist
+
+Run the frontend build from the repository root:
+
+```bash
+npm --prefix .\frontend run build
+```
+
+- Login and register.
+- Open Ask.
+- Open the History selector from Ask; select a conversation; verify the selector closes and Ask uses the selected conversation.
+- Open the Notes selector from Ask; select notes; verify the selector closes and Ask shows the selected context.
+- Verify one History selector and one Notes selector maximum per Ask window.
+- Verify selectors from different Ask windows remain independent.
+- Create a new conversation from History; verify it appears and opens immediately.
+- Verify active conversation styling.
+- Verify normal Notes and History CRUD outside selection mode.
+- Verify Ask, History, Debug, and Settings do not duplicate the FloatingWindow title.
+- Verify loading, error, and empty states still render.

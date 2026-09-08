@@ -140,4 +140,40 @@ See [project.md](project.md) roadmap (Phase 8).
 
 ---
 
+## 13. Ask → select conversation
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `frontend/src/components/Ask.jsx` | Ask invokes `onHistoryPicker` when the user chooses Select conversation. |
+| 2 | `frontend/src/App.jsx` → `openHistoryForSelection()` | App creates a History floating window with `isSelectionMode`, the Ask window's `parentAskId`, the selection callback, and `centeredInitialPosition()`. It reuses the existing selector for that Ask when one is already open. |
+| 3 | `frontend/src/components/History.jsx` | Selection mode renders conversations as selectable cards. Click or Enter/Space calls `onSelect(h.id)`. |
+| 4 | `frontend/src/components/Ask.jsx` and `App.jsx` | The callback sets `currentHistoryId` in Ask; `onCloseSelection` removes the selector window. Ask then loads the conversation note and its messages. |
+
+## 14. Ask → select notes
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `frontend/src/components/Ask.jsx` | Ask invokes `onNotesPicker` when the user chooses Load notes. |
+| 2 | `frontend/src/App.jsx` → `openNotesForSelection()` | App creates a Notes floating window with `isSelectionMode`, the Ask window's `parentAskId`, the selection callback, and `centeredInitialPosition()`. It reuses the existing selector for that Ask when one is already open. |
+| 3 | `frontend/src/components/Notes.jsx` | Selection mode renders notes as selectable cards. Click or Enter/Space calls `onSelect(n)`. |
+| 4 | `frontend/src/components/Ask.jsx` and `App.jsx` | The callback stores the selected note in Ask, updates the selected note ID set, and `onCloseSelection` removes the selector window. The next Ask request sends the selected `note_ids`. |
+
+## 15. New conversation
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `frontend/src/components/History.jsx` → `handleNew()` | History calls `createHistory("New conversation")`. |
+| 2 | `frontend/src/components/History.jsx` | The created history note is appended to local state, `viewingId` is set to the created ID, and `loadHistoryList()` refreshes the list. |
+| 3 | `frontend/src/components/History.jsx` | The created conversation is immediately available for viewing and receives the active `note-card--active` styling while viewed. |
+
+## 16. Floating selector ownership
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `frontend/src/App.jsx` | Each selector stores `parentAskId`; selector windows are associated with the Ask window that opened them. |
+| 2 | `frontend/src/App.jsx` | The existing-selector checks enforce one History selector and one Notes selector per Ask window. Different Ask IDs can own independent selectors. |
+| 3 | `frontend/src/components/History.jsx` / `Notes.jsx` | Selection callbacks run before `onCloseSelection`, returning the selection and closing the selector. |
+
+---
+
 **Related docs:** [docs.md](docs.md), [ia.md](ia.md), [project.md](project.md).
