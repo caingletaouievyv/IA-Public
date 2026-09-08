@@ -42,7 +42,6 @@ export default function Settings() {
 
   return (
     <section className="section section--settings">
-      <h2 className="app-panel__title">Settings</h2>
       <p className="card-desc">Per-user preferences. Stored with your account.</p>
       <div className="card app-panel">
         <button type="button" onClick={load} disabled={loading}>

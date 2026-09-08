@@ -27,7 +27,6 @@ export default function DebugContext() {
 
   return (
     <section className="section section--debug">
-      <h2 className="app-panel__title">Debug context</h2>
       <p className="card-desc">Inspect which context (your notes) the AI would get for a question.</p>
       <form onSubmit={handleSubmit} className={`card app-panel form--compact ${loading ? "loading" : ""}`}>
         <label htmlFor="debugQuestion">Question</label>

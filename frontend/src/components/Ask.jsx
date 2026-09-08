@@ -110,7 +110,6 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
 
   return (
     <section className="section section--ask">
-      <h2 className="app-panel__title">Ask</h2>
       <form onSubmit={handleSubmit} className={`card app-panel form--compact ${loading ? "loading" : ""}`}>
         <section className="ask-section">
           <button

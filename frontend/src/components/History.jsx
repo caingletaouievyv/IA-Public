@@ -150,7 +150,6 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
 
   return (
     <section className="section section--history">
-      <h2 className="app-panel__title">{isSelectionMode ? "Select conversation" : "History"}</h2>
       <div className="notes-list-header">
         {showList ? (
           <input
