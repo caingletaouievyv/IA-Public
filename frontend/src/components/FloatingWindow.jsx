@@ -24,7 +24,21 @@ function getDefaultSize() {
     const maxW = getMaxWidthPx();
     return { width: Math.min(640, maxW), height: Math.min(520, maxH) };
   }
-  return { width: MIN_WIDTH, height: Math.min(420, getMaxHeightPx()) };
+  return { width: Math.min(MIN_WIDTH, getMaxWidthPx()), height: Math.min(420, getMaxHeightPx()) };
+}
+
+function clampPosition(x, y, width, height) {
+  if (isDesktopViewport()) return { x, y };
+  return {
+    x: Math.min(Math.max(0, x), Math.max(0, window.innerWidth - width)),
+    y: Math.min(Math.max(0, y), Math.max(0, window.innerHeight - height)),
+  };
+}
+
+function getCollapsedLeft(collapsedStackIndex) {
+  const left = COLLAPSED_MARGIN + collapsedStackIndex * COLLAPSED_STEP;
+  if (isDesktopViewport()) return left;
+  return Math.min(left, Math.max(COLLAPSED_MARGIN, window.innerWidth - COLLAPSED_BAR_ESTIMATE - COLLAPSED_MARGIN));
 }
 
 function loadState(id, initialPosition) {
@@ -38,28 +52,31 @@ function loadState(id, initialPosition) {
       const y = typeof parsed.y === "number" ? parsed.y : DEFAULT_Y;
       const width = typeof parsed.width === "number" ? Math.min(Math.max(parsed.width, MIN_WIDTH), getMaxWidthPx()) : defaultSize.width;
       const height = typeof parsed.height === "number" ? Math.min(Math.max(parsed.height, MIN_HEIGHT), getMaxHeightPx()) : defaultSize.height;
-      return { x, y, width, height };
+      return { ...clampPosition(x, y, width, height), width, height };
     }
   } catch (_) {}
   if (initialPosition && typeof initialPosition.x === "number" && typeof initialPosition.y === "number") {
     return {
-      x: initialPosition.x,
-      y: initialPosition.y,
+      ...clampPosition(initialPosition.x, initialPosition.y, defaultSize.width, defaultSize.height),
       width: defaultSize.width,
       height: defaultSize.height,
     };
   }
-  return { x: DEFAULT_X, y: DEFAULT_Y, width: defaultSize.width, height: defaultSize.height };
+  return {
+    ...clampPosition(DEFAULT_X, DEFAULT_Y, defaultSize.width, defaultSize.height),
+    width: defaultSize.width,
+    height: defaultSize.height,
+  };
 }
 
 function getMaxWidthPx() {
   if (typeof window === "undefined") return 900;
-  return Math.max(MIN_WIDTH, window.innerWidth - 40);
+  return isDesktopViewport() ? Math.max(MIN_WIDTH, window.innerWidth - 40) : Math.max(0, window.innerWidth - 32);
 }
 
 function getMaxHeightPx() {
   if (typeof window === "undefined") return 800;
-  return Math.max(MIN_HEIGHT, window.innerHeight - 48);
+  return isDesktopViewport() ? Math.max(MIN_HEIGHT, window.innerHeight - 48) : Math.max(0, window.innerHeight - 32);
 }
 
 function saveState(state, id) {
@@ -72,7 +89,20 @@ function saveState(state, id) {
 export default function FloatingWindow({ title = "IA", id, initialPosition, onClose, onBringToFront, isFront, stackIndex = 0, collapsedStackIndex = 0, onCollapsedChange, children }) {
   const [state, setState] = useState(() => loadState(id, initialPosition));
   const [collapsed, setCollapsed] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const [savedNormalState, setSavedNormalState] = useState(null);
   const { x, y, width, height } = state;
+
+  const getMaximizedGeometry = useCallback(() => {
+    const width = getMaxWidthPx();
+    const height = getMaxHeightPx();
+    return {
+      x: isDesktopViewport() ? 20 : 16,
+      y: isDesktopViewport() ? 24 : 16,
+      width,
+      height,
+    };
+  }, []);
 
   const setCollapsedAndNotify = useCallback(
     (valueOrUpdater) => {
@@ -89,21 +119,41 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
     onBringToFront?.();
   }, [onBringToFront]);
 
-  const handleTitleMouseDown = useCallback((e) => {
-    if (e.button !== 0 || e.target.closest("button")) return;
+  const handleMaximize = useCallback(() => {
+    if (!maximized) {
+      setSavedNormalState(state);
+      setState(getMaximizedGeometry());
+      setMaximized(true);
+    }
+  }, [maximized, state, getMaximizedGeometry]);
+
+  const handleRestore = useCallback(() => {
+    if (maximized && savedNormalState) {
+      setState(savedNormalState);
+      setMaximized(false);
+      setSavedNormalState(null);
+    }
+  }, [maximized, savedNormalState]);
+
+  const startDrag = useCallback((startClientX, startClientY) => {
+    if (maximized) return;
     bringToFront();
-    const startX = e.clientX - x;
-    const startY = e.clientY - y;
-    const onMove = (e2) => {
+    const startX = startClientX - x;
+    const startY = startClientY - y;
+    const onMove = (moveClientX, moveClientY) => {
+      const nextX = Math.max(0, moveClientX - startX);
+      const nextY = Math.max(0, moveClientY - startY);
       setState((s) => ({
         ...s,
-        x: Math.max(0, e2.clientX - startX),
-        y: Math.max(0, e2.clientY - startY),
+        x: isDesktopViewport() ? nextX : Math.min(nextX, Math.max(0, window.innerWidth - width)),
+        y: isDesktopViewport() ? nextY : Math.min(nextY, Math.max(0, window.innerHeight - height)),
       }));
     };
     const onUp = () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
       setState((s) => {
@@ -111,25 +161,46 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
         return s;
       });
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    const handleMouseMove = (e2) => onMove(e2.clientX, e2.clientY);
+    const handleMouseUp = onUp;
+    const handleTouchMove = (e2) => {
+      if (e2.touches.length > 0) {
+        onMove(e2.touches[0].clientX, e2.touches[0].clientY);
+      }
+    };
+    const handleTouchEnd = onUp;
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "grabbing";
-  }, [x, y, id, bringToFront]);
+  }, [x, y, width, height, id, maximized, bringToFront]);
 
-  const handleResizeMouseDown = useCallback((e) => {
-    e.stopPropagation();
-    if (e.button !== 0) return;
+  const handleTitleMouseDown = useCallback((e) => {
+    if (e.button !== 0 || e.target.closest("button")) return;
+    startDrag(e.clientX, e.clientY);
+  }, [startDrag]);
+
+  const handleTitleTouchStart = useCallback((e) => {
+    if (e.target.closest("button")) return;
+    if (e.touches.length > 0) {
+      startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, [startDrag]);
+
+  const startResize = useCallback((startClientX, startClientY) => {
+    if (maximized) return;
     bringToFront();
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startX = startClientX;
+    const startY = startClientY;
     const startW = width;
     const startH = height;
     const maxW = getMaxWidthPx();
     const maxH = getMaxHeightPx();
-    const onMove = (e2) => {
-      const dX = e2.clientX - startX;
-      const dY = e2.clientY - startY;
+    const onMove = (moveClientX, moveClientY) => {
+      const dX = moveClientX - startX;
+      const dY = moveClientY - startY;
       setState((s) => ({
         ...s,
         width: Math.min(maxW, Math.max(MIN_WIDTH, startW + dX)),
@@ -137,8 +208,10 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
       }));
     };
     const onUp = () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
       setState((s) => {
@@ -146,11 +219,34 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
         return s;
       });
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    const handleMouseMove = (e2) => onMove(e2.clientX, e2.clientY);
+    const handleMouseUp = onUp;
+    const handleTouchMove = (e2) => {
+      if (e2.touches.length > 0) {
+        onMove(e2.touches[0].clientX, e2.touches[0].clientY);
+      }
+    };
+    const handleTouchEnd = onUp;
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "nwse-resize";
-  }, [width, height, id, bringToFront]);
+  }, [width, height, id, maximized, bringToFront]);
+
+  const handleResizeMouseDown = useCallback((e) => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    startResize(e.clientX, e.clientY);
+  }, [startResize]);
+
+  const handleResizeTouchStart = useCallback((e) => {
+    e.stopPropagation();
+    if (e.touches.length > 0) {
+      startResize(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, [startResize]);
 
   const handleResizeHandleDoubleClick = useCallback(() => {
     const defaultSize = getDefaultSize();
@@ -163,10 +259,10 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
 
   return (
     <div
-      className={`floating-window${collapsed ? " floating-window--collapsed" : ""}`}
+      className={`floating-window${collapsed ? " floating-window--collapsed" : ""}${maximized ? " floating-window--maximized" : ""}`}
       style={{
         ...(collapsed
-          ? { left: COLLAPSED_MARGIN + collapsedStackIndex * COLLAPSED_STEP, bottom: COLLAPSED_MARGIN, top: "auto", width: "auto", minWidth: "min-content" }
+          ? { left: getCollapsedLeft(collapsedStackIndex), bottom: COLLAPSED_MARGIN, top: "auto", width: "auto", minWidth: "min-content" }
           : { left: x, top: y, bottom: "auto", width, height, maxWidth: "calc(100vw - 2rem)", maxHeight: "calc(100vh - 2rem)" }),
         zIndex: isFront ? 10000 : 9999,
       }}
@@ -175,6 +271,7 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
       <header
         className="floating-titlebar"
         onMouseDown={handleTitleMouseDown}
+        onTouchStart={handleTitleTouchStart}
         onDoubleClick={(e) => { if (!e.target.closest("button")) setCollapsedAndNotify((c) => !c); }}
         role="button"
         tabIndex={0}
@@ -198,6 +295,30 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
           >
             {collapsed ? "▶" : "−"}
           </button>
+          {!collapsed && (
+            <>
+              <button
+                type="button"
+                className="floating-maximize"
+                onClick={(e) => { e.stopPropagation(); handleMaximize(); }}
+                aria-label="Maximize window"
+                title="Maximize"
+                style={{ display: maximized ? "none" : "flex" }}
+              >
+                <span className="floating-window-icon floating-maximize-icon" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="floating-restore"
+                onClick={(e) => { e.stopPropagation(); handleRestore(); }}
+                aria-label="Restore window"
+                title="Restore"
+                style={{ display: maximized ? "flex" : "none" }}
+              >
+                ◧
+              </button>
+            </>
+          )}
           {onClose && (
             <button
               type="button"
@@ -214,13 +335,16 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
       {!collapsed && (
         <>
           <div className="floating-body">{children}</div>
-          <div
-            className="floating-resize-handle"
-            onMouseDown={handleResizeMouseDown}
-            onDoubleClick={handleResizeHandleDoubleClick}
-            aria-label="Resize window"
-            title="Resize (double-click for default size)"
-          />
+          {!maximized && (
+            <div
+              className="floating-resize-handle"
+              onMouseDown={handleResizeMouseDown}
+              onTouchStart={handleResizeTouchStart}
+              onDoubleClick={handleResizeHandleDoubleClick}
+              aria-label="Resize window"
+              title="Resize (double-click for default size)"
+            />
+          )}
         </>
       )}
     </div>
