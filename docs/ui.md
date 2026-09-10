@@ -85,7 +85,8 @@ frontend/
 | **Viewport** | `index.html` — `width=device-width`; content is fluid width (`max-width: none` on `#root`) |
 | **`FloatingWindow` `>= 768px`** | Default window size up to `640×520` (clamped to viewport) |
 | **`< 768px`** | Narrower default width (`MIN_WIDTH` 280); height capped |
-| **Floating windows** | `maxWidth: calc(100vw - 2rem)`, `maxHeight: calc(100vh - 2rem)` when expanded |
+| **Floating windows** | Responsive sizing with `maxWidth: calc(100vw - 2rem)` and `maxHeight: calc(100vh - 2rem)` when expanded; mobile positions are clamped to the viewport |
+| **Maximized windows** | Fills the usable viewport using desktop/mobile viewport margins; dragging and resizing are disabled |
 
 ### Dark / light mode
 
@@ -101,7 +102,7 @@ frontend/
 | **App** | Auth gate; opens/closes floating panels | — | `token` from `getToken()`; `Login` if absent; listens `ia:unauthorized`; `Header` + link-style triggers; stack of `FloatingWindow` |
 | **Header** | Brand + sign out | `onLogout?: fn` | Renders logout only if `onLogout` passed |
 | **Login** | Sign in / register | `onLogin(token)` | Local `username`, `password`, `isRegister`, `loading`, `error`; validates non-empty; toggles register via `link-button` |
-| **FloatingWindow** | Draggable, resizable, collapsible shell | `title`, `id`, `initialPosition`, `onClose`, `onBringToFront`, `isFront`, `stackIndex`, `collapsedStackIndex`, `onCollapsedChange`, `children` | Position/size per-id in `localStorage` (`ia-floating-window-{id}`); collapse docks bottom-left with horizontal stack; double-click titlebar or toggle button; resize handle; `zIndex` bump when front; owns the single top-level title for each window |
+| **FloatingWindow** | Draggable, resizable, collapsible shell | `title`, `id`, `initialPosition`, `onClose`, `onBringToFront`, `isFront`, `stackIndex`, `collapsedStackIndex`, `onCollapsedChange`, `children` | Desktop mouse and mobile touch drag/resize; responsive sizing and viewport clamping; scrollable body; minimize/collapse, maximize/restore, and close controls; position/size per-id in `localStorage` (`ia-floating-window-{id}`); collapse docks bottom-left with horizontal stack; double-click titlebar or toggle button; resize handle; `zIndex` bump when front; owns the single top-level title for each window |
 | **Ask** | `/ai/ask` + optional `note_ids` + conversation | `onHistoryPicker`, `onNotesPicker` | Uses the FloatingWindow shell title; no redundant internal Ask title. Conversation is collapsed by default, followed by Chat Context and Question in the current JSX order. Ask opens History and Notes selection windows through the callbacks; selected values return to Ask and conversation turns persist via `updateNote`. |
 | **Notes** | CRUD, search, bulk delete, image import | `isSelectionMode`, `onSelect`, `onCloseSelection` | List vs add (`note` \| `from-images`) vs detail edit; `getNotesMeta` for tag/category suggestions; client search; first **100** matches shown; visibility + 30s poll when list visible; `_history` hidden. In selection mode, selecting a note calls `onSelect(note)` and closes through `onCloseSelection`; normal CRUD is unchanged. |
 | **History** | Conversations (`_history` notes) | `isSelectionMode`, `onSelect`, `onCloseSelection` | Same list/card/toolbar patterns as Notes; title edit; single + bulk delete modals; visibility + 30s refresh when list visible. In normal mode, the active conversation uses `note-card--active`; creating a conversation adds it to the list, sets it as the viewed conversation, and refreshes the list. In selection mode, clicking or keyboard-selecting a conversation calls `onSelect(id)` and then closes the selector. |
@@ -109,6 +110,26 @@ frontend/
 | **Settings** | GET/PUT `/settings/` | — | Manual “Load settings”; form `theme`, `default_model`; optimistic local `prefs` merge; FloatingWindow supplies the sole top-level Settings title |
 
 **Internal helpers (not exported UI):** `App` uses `newFloatId()`, `FLOAT_OFFSET`, `UNAUTH_EVENT`; `Notes` / `History` share confirm modal classes `.notes-delete-confirm*`.
+
+### Floating window controls
+
+Expanded:
+
+`[ Minimize ] [ Maximize/Restore ] [ Close ]`
+
+Collapsed:
+
+`[ Expand ] [ Close ]`
+
+The maximize/restore control is hidden while the window is collapsed. Maximizing saves the current normal `{ x, y, width, height }`; restoring returns that exact geometry. Normal geometry continues to persist through the existing per-window `localStorage` entry, while maximized state is not persisted as normal geometry. The resize handle is hidden and disabled while maximized.
+
+### Floating window mobile interaction
+
+- The titlebar supports touch dragging.
+- The resize handle supports touch resizing.
+- The floating body remains scrollable on touch devices.
+- `touch-action: none` is limited to the interactive titlebar and resize-handle areas, so body scrolling remains available.
+- Existing selector behavior remains unchanged.
 
 ### Floating selector ownership
 

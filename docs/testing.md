@@ -79,3 +79,16 @@ npm --prefix .\frontend run build
 - Verify normal Notes and History CRUD outside selection mode.
 - Verify Ask, History, Debug, and Settings do not duplicate the FloatingWindow title.
 - Verify loading, error, and empty states still render.
+
+### Floating-window mobile and desktop regression
+
+- Test at approximately `375×667`, `390×844`, and `412×915`.
+- Touch-drag and touch-resize the Ask window.
+- Touch-drag and touch-resize selector windows.
+- Verify the floating body still scrolls on touch.
+- Verify Minimize → Maximize/Restore → Close ordering.
+- Verify maximize fills the usable viewport.
+- Verify Restore returns the previous position and size.
+- Verify maximize/restore is hidden while collapsed.
+- Verify collapse/expand still works after maximizing/restoring.
+- Verify desktop mouse drag and resize still work.

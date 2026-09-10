@@ -80,7 +80,7 @@ Pipeline: load notes → FAISS → threshold → dedupe → summarize long conte
 | 1–4 | Notes, AI, memory, ensemble/judge | Complete |
 | 5 | UI frontend | Complete |
 | 6 | Security and monitoring | Complete |
-| 7 | Mobile and monetization | Planned |
+| 7 | Mobile floating-window support; monetization | Mobile support implemented; monetization planned |
 | 8 | User-centric auth, per-user notes and settings | Complete |
 
 ---
