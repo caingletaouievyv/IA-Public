@@ -41,7 +41,7 @@ def call_single(prompt: str | None = None, messages: list | None = None, provide
         return result.get("choices", [{}])[0].get("message", {}).get("content", "")
     except requests.RequestException as e:
         logger.error(f"{provider} request failed: {e}")
-        return f"[{provider} failed: {e}]"
+        raise RuntimeError(f"{provider} request failed") from e
 
 def judge_answers(question: str, answers: list) -> str:
     """Pick best answer by relevance + length + clarity (fewer ?)."""

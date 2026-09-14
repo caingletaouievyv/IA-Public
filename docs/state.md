@@ -11,7 +11,8 @@
 ## State (where we are)
 
 - Phases 1–6 and 8 are done (notes, AI, memory, ensemble/judge, UI, security, JWT + per-user notes).
-- Phase 7 mobile floating-window support is **completed**; Phase 7 monetization is **still planned / not started**.
+- Phase 7 mobile floating-window support is **completed**.
+- The AI Credit foundation is **implemented**: per-user balances, auditable ledgers, configurable initial balance/cost, Ask reservation, and refunds on raised AI failures. Rewarded ads and credit purchasing are not implemented.
 - The frontend uses floating Ask, Notes, History, Debug, and Settings windows.
 - Ask can open History in selection mode for a conversation and Notes in selection mode for note context.
 - Selector windows are centered, scoped to their parent Ask window, and limited to one History selector plus one Notes selector per Ask window.
@@ -28,9 +29,9 @@ Keep work continuous across machines and AI chats: same rules, same next step, n
 
 ## Next action
 
-1. Run the desktop and mobile floating-window regression checklist in `docs/testing.md`.
-2. Fix any issues found in the mobile UX pass and continue focused frontend polish.
-3. Define the Phase 7 monetization requirements; monetization is not implemented.
+1. Add a read-only credit balance/ledger view if product UX requires it; no frontend credit UI exists yet.
+2. Add a verified rewarded-ad integration that calls the backend credit manager; do not trust frontend reward claims.
+3. Continue monitoring JSON persistence limits before considering a database migration.
 
 ## Do not put here
 

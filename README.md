@@ -12,6 +12,7 @@ Personal notes and AI assistant with semantic memory. Store notes (including fro
 - **Ask** — Semantic search over your notes; optionally select notes and conversations through the UI; conversation history.
 - **Auth** — Register and sign in; JWT for API access (no API secret in the UI).
 - **Memory** — FAISS-based retrieval with thresholds, chunking, summarization, and token limits.
+- **AI Credits** — Backend-owned internal credits; normal Ask costs the configured credit amount (default `1`). Initial credits and ledger entries are persisted per user; rewarded ads and purchasing are not implemented.
 - **UI** — React SPA, dark theme, floating panels (Ask, Notes, History, Debug, Settings).
 
 ---

@@ -176,7 +176,7 @@ The maximize/restore control is hidden while the window is collapsed. Maximizing
 | **Hooks** | Per-component `useState`, `useEffect`, `useRef`, `useCallback` (`FloatingWindow` only) |
 | **API layer** | `api.js`: relative `BASE ""` (same origin or Vite proxy); `Authorization: Bearer`; `handleResponse` for 401/Errors |
 | **Data flow** | Components call `api` directly; parent passes callbacks only where needed (`Login.onLogin`, `FloatingWindow` callbacks, `Header.onLogout`) |
-| **Persistence** | `localStorage`: `ia_token`, `ia-floating-window-{id}` window geometry |
+| **Persistence** | `localStorage`: `ia_token`, `ia-floating-window-{id}` window geometry. AI Credit balances and ledgers are backend-owned JSON; no credit UI is currently implemented. |
 
 ---
 

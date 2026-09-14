@@ -35,8 +35,8 @@ IA/
 ├── docs/
 ├── backend/
 │   ├── run.py
-│   ├── app/             # ai, auth, notes, memory, settings, …
-│   ├── data/
+│   ├── app/             # ai, auth, credits, notes, memory, settings, …
+│   ├── data/            # users, notes, settings, and per-user credit ledgers
 │   └── scripts/         # seed_user, analyze_memory_analytics, test/
 └── frontend/
     └── src/             # App, api.js, components/
@@ -49,6 +49,7 @@ IA/
 - **Auth** — `POST /auth/register`, `/auth/login` → JWT; Bearer on protected routes.
 - **Notes** — Per-user CRUD; `GET /notes/meta` for categories/tags; `POST /notes/from-images` (OCR + AI; append when same title+category).
 - **Ask** — `POST /ai/ask` with optional `note_ids` and `messages` (history); semantic search over user notes. The floating Ask window can open History and Notes in selection mode; selected conversation and note context return to Ask through callbacks.
+- **AI Credits** — Backend-owned per-user balance and JSON ledger. Normal `/ai/ask` costs the configured number of internal AI Credits (default `1`); insufficient balance returns `402` before the AI provider is called. Initial balance is configurable; rewarded ads and credit purchasing are not implemented. Persistence is protected by a process-local lock and is not a multi-worker transactional store.
 - **Settings** — `GET/PUT /settings/` per user.
 - **AI modes** — `AI_MODE`: `single` | `ensemble` | `judge`; `AI_ENSEMBLE_PROVIDERS`.
 - **Monitoring** — `GET /health`, security headers, rate limits, request logging (no secrets).
@@ -80,7 +81,7 @@ Pipeline: load notes → FAISS → threshold → dedupe → summarize long conte
 | 1–4 | Notes, AI, memory, ensemble/judge | Complete |
 | 5 | UI frontend | Complete |
 | 6 | Security and monitoring | Complete |
-| 7 | Mobile floating-window support; monetization | Mobile support implemented; monetization planned |
+| 7 | Mobile floating-window support; AI Credits | Mobile support and credit foundation implemented; rewarded ads planned |
 | 8 | User-centric auth, per-user notes and settings | Complete |
 
 ---

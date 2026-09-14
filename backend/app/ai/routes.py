@@ -1,10 +1,13 @@
 # IA/backend/app/ai/routes.py
 # AI routes: /ask, /estimate_tokens, /debug/context. Auth required (Phase 8); user_id scopes notes.
 
+import uuid
 from flask import Blueprint, request, jsonify
 from app import limiter
 from app.common.auth import require_auth
 from app.ai.engine import ask, get_token_estimate
+from app.config import AI_ASK_CREDIT_COST
+from app.credits.manager import InsufficientCreditsError, refund_credits, reserve_credits
 from app.memory.manager import build_context
 
 bp = Blueprint("ai", __name__)
@@ -37,6 +40,11 @@ def _parse_history_messages(data: dict) -> list | None:
     return out if out else None
 
 
+def _operation_id(data: dict) -> str:
+    """Use a client retry key when supplied; otherwise create one request identifier."""
+    return request.headers.get("Idempotency-Key") or str(data.get("request_id") or uuid.uuid4())
+
+
 @bp.route("/ask", methods=["POST"])
 @limiter.limit("30 per minute")
 def ask_ai():
@@ -46,6 +54,21 @@ def ask_ai():
     question = data.get("question")
     if not question:
         return jsonify({"error": "Missing 'question' field"}), 400
+    operation_id = _operation_id(data)
+    try:
+        reservation = reserve_credits(
+            user_id,
+            AI_ASK_CREDIT_COST,
+            "ai_ask",
+            operation_id,
+        )
+    except InsufficientCreditsError as e:
+        return jsonify({
+            "error": "insufficient_ai_credits",
+            "message": "Not enough AI Credits",
+            "credit_balance": e.balance,
+            "credits_required": e.required,
+        }), 402
     try:
         answer, tokens = ask(
             question,
@@ -55,6 +78,8 @@ def ask_ai():
         )
         return jsonify({"answer": answer, "tokens_estimated": tokens}), 200
     except Exception as e:
+        if reservation["charged"]:
+            refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_ask_refund", operation_id)
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/estimate_tokens", methods=["POST"])

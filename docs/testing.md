@@ -47,7 +47,10 @@ Run integration checks from the **backend** directory with the app running (`pyt
 ```bash
 cd backend
 python scripts/test/test_ask_note_ids_and_health.py
+python scripts/test/test_ai_credits.py
 ```
+
+`test_ai_credits.py` uses temporary credit storage and mocks the AI provider. It covers initial balances, per-user isolation, grants, Ask spending, insufficient-credit rejection, provider short-circuiting, refunds, retry-safe reservations, JWT authentication, and the existing IP rate limit.
 
 ---
 

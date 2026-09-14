@@ -24,6 +24,10 @@ AI_ENSEMBLE_PROVIDERS = [p.strip() for p in os.getenv("AI_ENSEMBLE_PROVIDERS", "
 
 AI_KEY = os.getenv("AI_KEY", "")
 
+# Internal product currency. These are AI Credits, not provider tokens.
+AI_CREDIT_INITIAL_BALANCE = int(os.getenv("AI_CREDIT_INITIAL_BALANCE", "10"))
+AI_ASK_CREDIT_COST = int(os.getenv("AI_ASK_CREDIT_COST", "1"))
+
 # context & FAISS
 MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", 500))
 FAISS_LOG_SCORES = os.getenv("FAISS_LOG_SCORES", "true").lower() == "true"
