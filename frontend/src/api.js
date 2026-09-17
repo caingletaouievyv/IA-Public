@@ -1,7 +1,7 @@
 // IA/frontend/src/api.js
 // API layer: auth, ask, listNotes, debugContext, settings. Token from localStorage (login); 401 → clear and notify.
 
-const BASE = "";
+const BASE = (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "");
 const TOKEN_KEY = "ia_token";
 const UNAUTH_EVENT = "ia:unauthorized";
 
