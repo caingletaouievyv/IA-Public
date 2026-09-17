@@ -14,6 +14,7 @@
 - Phase 7 mobile floating-window support is **completed**.
 - The AI Credit foundation is **implemented**: per-user balances, auditable ledgers, configurable initial balance/cost, Ask reservation, refunds on raised AI failures, an unlimited configured user role, and a JWT-protected development-only rewarded-ad callback at `POST /credits/rewarded-ad`. The callback must not be treated as a production reward mechanism until provider/server verification is added. Credit purchasing is not implemented.
 - The frontend uses floating Ask, Notes, History, Debug, and Settings windows.
+- The frontend has a public landing page at `/` with public Privacy, Terms, and Contact pages; `/app` enters authentication. The authenticated app still uses floating Ask, Notes, History, Debug, and Settings windows.
 - Ask can open History in selection mode for a conversation and Notes in selection mode for note context.
 - Selector windows are centered, scoped to their parent Ask window, and limited to one History selector plus one Notes selector per Ask window.
 - Selecting a conversation or note returns the selection to Ask and closes the selector.

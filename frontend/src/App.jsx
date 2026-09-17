@@ -10,11 +10,13 @@ import Notes from "./components/Notes";
 import History from "./components/History";
 import DebugContext from "./components/DebugContext";
 import Settings from "./components/Settings";
+import PublicSite from "./components/PublicSite";
 
 const FLOAT_OFFSET = 32;
 const UNAUTH_EVENT = "ia:unauthorized";
 const FLOAT_MIN_WIDTH = 280;
 const FLOAT_MIN_HEIGHT = 200;
+const PUBLIC_PATHS = new Set(["/", "/privacy", "/terms", "/contact"]);
 
 function newFloatId() {
   return crypto.randomUUID ? crypto.randomUUID() : `float-${Date.now()}`;
@@ -69,6 +71,11 @@ export default function App() {
     window.addEventListener(UNAUTH_EVENT, onUnauth);
     return () => window.removeEventListener(UNAUTH_EVENT, onUnauth);
   }, []);
+
+  const path = window.location.pathname.replace(/\/$/, "") || "/";
+  if (PUBLIC_PATHS.has(path) && (path !== "/" || !token)) {
+    return <PublicSite path={path} />;
+  }
 
   if (!token) {
     return <Login onLogin={setAuthToken} />;

@@ -1,3 +1,4 @@
+    ├── App.jsx             # Public path handling, auth gate, header, floating-window orchestration
 # UI reference — frontend
 
 React 18 + Vite 5 SPA. Index: [docs.md](docs.md). API contract: [project.md](project.md). Engineering rules: [ia.md](ia.md).
@@ -27,6 +28,8 @@ frontend/
     ├── api.js              # fetch wrappers, token storage, 401 handling
     ├── index.css             # Global theme, layout, component utility classes
     └── components/
+    └── components/
+        ├── PublicSite.jsx
         ├── Login.jsx
         ├── FloatingWindow.jsx
         ├── Ask.jsx
@@ -100,6 +103,8 @@ frontend/
 | Component | Purpose | Props | Behavior / notes |
 |-----------|---------|-------|------------------|
 | **App** | Auth gate; opens/closes floating panels | — | `token` from `getToken()`; `Login` if absent; listens `ia:unauthorized`; `Header` + link-style triggers; stack of `FloatingWindow` |
+| **App** | Public path handling, auth gate, floating panels | — | Public `/`, `/privacy`, `/terms`, `/contact`; `/app` enters the existing auth flow. Authenticated root behavior and floating windows remain unchanged. |
+| **PublicSite** | Landing, Privacy, Terms, Contact | `path` | Path-based public shell with shared header/footer; no router or API dependency |
 | **Header** | Brand + sign out | `onLogout?: fn` | Renders logout only if `onLogout` passed |
 | **Login** | Sign in / register | `onLogin(token)` | Local `username`, `password`, `isRegister`, `loading`, `error`; validates non-empty; toggles register via `link-button` |
 | **FloatingWindow** | Draggable, resizable, collapsible shell | `title`, `id`, `initialPosition`, `onClose`, `onBringToFront`, `isFront`, `stackIndex`, `collapsedStackIndex`, `onCollapsedChange`, `children` | Desktop mouse and mobile touch drag/resize; responsive sizing and viewport clamping; scrollable body; minimize/collapse, maximize/restore, and close controls; position/size per-id in `localStorage` (`ia-floating-window-{id}`); collapse docks bottom-left with horizontal stack; double-click titlebar or toggle button; resize handle; `zIndex` bump when front; owns the single top-level title for each window |

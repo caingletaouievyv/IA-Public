@@ -52,6 +52,216 @@ body {
   min-height: 100vh;
 }
 
+/* Public pages share the dark system but stay separate from the authenticated shell. */
+.public-site {
+  min-height: 100vh;
+  background: linear-gradient(135deg, rgba(91, 154, 255, 0.08), transparent 35%), var(--bg);
+  color: var(--text);
+}
+.public-header,
+.public-landing,
+.public-information,
+.public-footer {
+  width: min(1120px, calc(100% - 2.5rem));
+  margin: 0 auto;
+}
+.public-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.public-brand {
+  color: var(--text);
+  font-size: 1.4rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+.public-nav,
+.public-footer nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.public-nav a,
+.public-footer a {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.public-nav a:hover,
+.public-footer a:hover {
+  color: var(--text);
+}
+.public-nav__app {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent) !important;
+}
+.public-nav__app:hover {
+  background: rgba(91, 154, 255, 0.12);
+}
+.public-landing {
+  padding: 7rem 0 4rem;
+}
+.public-hero {
+  max-width: 760px;
+  min-height: 430px;
+}
+.public-kicker,
+.public-index {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.public-hero h1,
+.public-information h1 {
+  max-width: 760px;
+  margin: 0.75rem 0 1.25rem;
+  font-size: clamp(3rem, 8vw, 6.8rem);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+.public-hero__copy {
+  max-width: 580px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  line-height: 1.65;
+}
+.public-hero__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+.public-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.7rem;
+  padding: 0.7rem 1.1rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+}
+.public-cta:hover {
+  background: var(--accent-hover);
+  color: var(--bg);
+}
+.public-text-link {
+  color: var(--text);
+  font-weight: 600;
+}
+.public-text-link:hover {
+  color: var(--accent-hover);
+}
+.public-section {
+  border-top: 1px solid var(--border);
+}
+.public-section--grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  padding: 2.5rem 0 4rem;
+}
+.public-section article {
+  min-height: 170px;
+}
+.public-section h2,
+.public-callout h2,
+.public-information__sections h2 {
+  margin: 0.8rem 0 0.55rem;
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+.public-section p,
+.public-information__sections p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+.public-callout {
+  max-width: 700px;
+  padding: 2.5rem 0 5rem;
+}
+.public-callout h2 {
+  margin: 0.5rem 0 1rem;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  letter-spacing: -0.03em;
+}
+.public-information {
+  padding: 6rem 0 7rem;
+}
+.public-information h1 {
+  font-size: clamp(2.8rem, 7vw, 5.8rem);
+}
+.public-information__intro {
+  max-width: 650px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1.65;
+}
+.public-information__sections {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+.public-information__sections section {
+  min-height: 150px;
+}
+.public-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 0 1.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 700px) {
+  .public-header,
+  .public-landing,
+  .public-information,
+  .public-footer {
+    width: min(100% - 2rem, 1120px);
+  }
+  .public-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .public-landing {
+    padding-top: 4.5rem;
+  }
+  .public-hero {
+    min-height: 0;
+    padding-bottom: 5rem;
+  }
+  .public-section--grid,
+  .public-information__sections {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .public-section article,
+  .public-information__sections section {
+    min-height: 0;
+  }
+  .public-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 /* Header — consistent spacing, accessible focus (docs/ui.md) */
 .app-header {
   margin-bottom: 1.5rem;
