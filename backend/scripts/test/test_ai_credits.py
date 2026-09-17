@@ -58,6 +58,13 @@ class AICreditTests(unittest.TestCase):
             headers={**self.headers(user_id), "Idempotency-Key": operation_id},
         )
 
+    def rewarded_ad(self, user_id, reward_id, **payload):
+        return self.client.post(
+            "/credits/rewarded-ad",
+            json={"reward_id": reward_id, **payload},
+            headers=self.headers(user_id),
+        )
+
     def test_new_user_gets_configured_initial_balance(self):
         account = credit_manager.get_credit_account(self.user_id())
         self.assertEqual(account["credit_balance"], max(0, config.AI_CREDIT_INITIAL_BALANCE))
@@ -104,6 +111,59 @@ class AICreditTests(unittest.TestCase):
         self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE + 30)
         self.assertEqual(len(account["ledger"]), 3)
 
+    def test_authenticated_reward_grants_configured_amount(self):
+        user_id = self.user_id()
+        response = self.rewarded_ad(user_id, "ad-reward-1")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["credits_granted"], config.REWARDED_AD_CREDIT_AMOUNT)
+        self.assertEqual(
+            response.get_json()["credit_balance"],
+            config.AI_CREDIT_INITIAL_BALANCE + config.REWARDED_AD_CREDIT_AMOUNT,
+        )
+
+    def test_reward_requires_non_empty_reward_id(self):
+        for reward_id in (None, "", "   "):
+            with self.subTest(reward_id=reward_id):
+                response = self.rewarded_ad(self.user_id(), reward_id)
+                self.assertEqual(response.status_code, 400)
+
+    def test_duplicate_reward_id_is_idempotent(self):
+        user_id = self.user_id()
+        first = self.rewarded_ad(user_id, "ad-reward-duplicate")
+        second = self.rewarded_ad(user_id, "ad-reward-duplicate")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertFalse(first.get_json()["idempotent"])
+        self.assertTrue(second.get_json()["idempotent"])
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE + config.REWARDED_AD_CREDIT_AMOUNT)
+        self.assertEqual(len([entry for entry in account["ledger"] if entry.get("reason") == "rewarded_ad"]), 1)
+
+    def test_different_reward_ids_grant_independently(self):
+        user_id = self.user_id()
+        self.assertEqual(self.rewarded_ad(user_id, "ad-reward-a").status_code, 200)
+        self.assertEqual(self.rewarded_ad(user_id, "ad-reward-b").status_code, 200)
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE + (2 * config.REWARDED_AD_CREDIT_AMOUNT))
+
+    def test_reward_requires_authentication(self):
+        response = self.client.post("/credits/rewarded-ad", json={"reward_id": "unauthenticated"})
+        self.assertEqual(response.status_code, 401)
+
+    def test_reward_amount_cannot_be_overridden_by_client(self):
+        user_id = self.user_id()
+        response = self.rewarded_ad(user_id, "ad-reward-fixed", amount=999999)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["credits_granted"], config.REWARDED_AD_CREDIT_AMOUNT)
+
+    def test_reward_ledger_records_reason_and_reward_id(self):
+        user_id = self.user_id()
+        self.assertEqual(self.rewarded_ad(user_id, "ad-reward-ledger").status_code, 200)
+        account = credit_manager.get_credit_account(user_id)
+        reward_entries = [entry for entry in account["ledger"] if entry.get("reason") == "rewarded_ad"]
+        self.assertEqual(len(reward_entries), 1)
+        self.assertEqual(reward_entries[0]["operation_id"], "ad-reward-ledger")
+
     def test_successful_ask_consumes_one_credit_and_is_retry_safe(self):
         user_id = self.user_id()
         operation_id = "ask-success"
@@ -117,6 +177,43 @@ class AICreditTests(unittest.TestCase):
         self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - config.AI_ASK_CREDIT_COST)
         self.assertEqual(account["ledger"][-1]["reason"], "ai_ask")
         self.assertEqual(account["ledger"][-1]["amount"], -config.AI_ASK_CREDIT_COST)
+
+    def test_normal_user_still_pays_credits(self):
+        user_id = self.user_id()
+        with patch.object(ai_routes, "ask", return_value=("answer", 3)):
+            response = self.ask(user_id, "normal-user-pays")
+        self.assertEqual(response.status_code, 200)
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - config.AI_ASK_CREDIT_COST)
+        self.assertEqual(account["ledger"][-1]["amount"], -config.AI_ASK_CREDIT_COST)
+
+    def test_unlimited_role_can_ask_with_zero_credits_without_debit(self):
+        user_id = self.user_id()
+        for index in range(config.AI_CREDIT_INITIAL_BALANCE):
+            credit_manager.reserve_credits(user_id, config.AI_ASK_CREDIT_COST, "ai_ask", f"zero-{index}")
+        with patch.object(ai_routes, "get_user_role", return_value=config.AI_UNLIMITED_ROLE):
+            with patch.object(ai_routes, "ask", return_value=("answer", 3)):
+                response = self.ask(user_id, "unlimited-ask")
+        self.assertEqual(response.status_code, 200)
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["credit_balance"], 0)
+        self.assertFalse(any(entry.get("operation_id") == "unlimited-ask" for entry in account["ledger"]))
+
+    def test_request_payload_cannot_activate_unlimited_mode(self):
+        user_id = self.user_id()
+        with patch.object(ai_routes, "ask", return_value=("answer", 3)):
+            response = self.client.post(
+                "/ai/ask",
+                json={"question": "hello", "unlimited": True, "role": config.AI_UNLIMITED_ROLE},
+                headers={**self.headers(user_id), "Idempotency-Key": "payload-role"},
+            )
+        self.assertEqual(response.status_code, 200)
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["ledger"][-1]["amount"], -config.AI_ASK_CREDIT_COST)
+
+    def test_unauthenticated_ai_request_remains_rejected(self):
+        response = self.client.post("/ai/ask", json={"question": "hello"})
+        self.assertEqual(response.status_code, 401)
 
     def test_insufficient_credits_rejects_before_provider_call(self):
         user_id = self.user_id()

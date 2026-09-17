@@ -49,7 +49,7 @@ IA/
 - **Auth** — `POST /auth/register`, `/auth/login` → JWT; Bearer on protected routes.
 - **Notes** — Per-user CRUD; `GET /notes/meta` for categories/tags; `POST /notes/from-images` (OCR + AI; append when same title+category).
 - **Ask** — `POST /ai/ask` with optional `note_ids` and `messages` (history); semantic search over user notes. The floating Ask window can open History and Notes in selection mode; selected conversation and note context return to Ask through callbacks.
-- **AI Credits** — Backend-owned per-user balance and JSON ledger. Normal `/ai/ask` costs the configured number of internal AI Credits (default `1`); insufficient balance returns `402` before the AI provider is called. Initial balance is configurable; rewarded ads and credit purchasing are not implemented. Persistence is protected by a process-local lock and is not a multi-worker transactional store.
+- **AI Credits** — Backend-owned per-user balance and JSON ledger. Normal `/ai/ask` costs the configured number of internal AI Credits (default `1`); insufficient balance returns `402` before the AI provider is called. Users with the persisted role matching `AI_UNLIMITED_ROLE` (default `admin`) bypass AI credit reservation and deduction, while retaining authentication and rate limits. Initial balance and development rewarded-ad grants (`REWARDED_AD_CREDIT_AMOUNT`, default `10`) are configurable. `POST /credits/rewarded-ad` is JWT-protected and idempotent by `reward_id`, but is only a development foundation and must not be exposed as a production reward mechanism until an ad provider/server verification step is integrated. Credit purchasing is not implemented. Persistence is protected by a process-local lock and is not a multi-worker transactional store.
 - **Settings** — `GET/PUT /settings/` per user.
 - **AI modes** — `AI_MODE`: `single` | `ensemble` | `judge`; `AI_ENSEMBLE_PROVIDERS`.
 - **Monitoring** — `GET /health`, security headers, rate limits, request logging (no secrets).
@@ -81,7 +81,7 @@ Pipeline: load notes → FAISS → threshold → dedupe → summarize long conte
 | 1–4 | Notes, AI, memory, ensemble/judge | Complete |
 | 5 | UI frontend | Complete |
 | 6 | Security and monitoring | Complete |
-| 7 | Mobile floating-window support; AI Credits | Mobile support and credit foundation implemented; rewarded ads planned |
+| 7 | Mobile floating-window support; AI Credits | Mobile support and credit foundation implemented; development rewarded-ad callback foundation added |
 | 8 | User-centric auth, per-user notes and settings | Complete |
 
 ---

@@ -5,8 +5,9 @@ import uuid
 from flask import Blueprint, request, jsonify
 from app import limiter
 from app.common.auth import require_auth
+from app.auth.manager import get_user_role
 from app.ai.engine import ask, get_token_estimate
-from app.config import AI_ASK_CREDIT_COST
+from app.config import AI_ASK_CREDIT_COST, AI_UNLIMITED_ROLE
 from app.credits.manager import InsufficientCreditsError, refund_credits, reserve_credits
 from app.memory.manager import build_context
 
@@ -55,20 +56,22 @@ def ask_ai():
     if not question:
         return jsonify({"error": "Missing 'question' field"}), 400
     operation_id = _operation_id(data)
-    try:
-        reservation = reserve_credits(
-            user_id,
-            AI_ASK_CREDIT_COST,
-            "ai_ask",
-            operation_id,
-        )
-    except InsufficientCreditsError as e:
-        return jsonify({
-            "error": "insufficient_ai_credits",
-            "message": "Not enough AI Credits",
-            "credit_balance": e.balance,
-            "credits_required": e.required,
-        }), 402
+    reservation = None
+    if get_user_role(user_id) != AI_UNLIMITED_ROLE:
+        try:
+            reservation = reserve_credits(
+                user_id,
+                AI_ASK_CREDIT_COST,
+                "ai_ask",
+                operation_id,
+            )
+        except InsufficientCreditsError as e:
+            return jsonify({
+                "error": "insufficient_ai_credits",
+                "message": "Not enough AI Credits",
+                "credit_balance": e.balance,
+                "credits_required": e.required,
+            }), 402
     try:
         answer, tokens = ask(
             question,
@@ -78,7 +81,7 @@ def ask_ai():
         )
         return jsonify({"answer": answer, "tokens_estimated": tokens}), 200
     except Exception as e:
-        if reservation["charged"]:
+        if reservation and reservation["charged"]:
             refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_ask_refund", operation_id)
         return jsonify({"error": str(e)}), 500
 

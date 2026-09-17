@@ -62,11 +62,13 @@ def create_app():
     from app.files.routes import bp as files_bp
     from app.settings.routes import bp as settings_bp
     from app.auth.routes import bp as auth_bp
+    from app.credits.routes import bp as credits_bp
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(notes_bp, url_prefix="/notes")
     app.register_blueprint(ai_bp, url_prefix="/ai")
     app.register_blueprint(files_bp, url_prefix="/files")
     app.register_blueprint(settings_bp, url_prefix="/settings")
+    app.register_blueprint(credits_bp, url_prefix="/credits")
     return app
 
 # single root logger for app (avoid duplicate basicConfig per import)

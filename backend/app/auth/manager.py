@@ -35,6 +35,20 @@ def find_user_by_username(username: str) -> dict | None:
     return None
 
 
+def find_user_by_id(user_id: str) -> dict | None:
+    """First user with matching user_id, or None."""
+    for user in _load_users():
+        if user.get("user_id") == user_id:
+            return user
+    return None
+
+
+def get_user_role(user_id: str) -> str:
+    """Return the persisted role; users without one remain normal users."""
+    user = find_user_by_id(user_id)
+    return (user.get("role") or "user") if user else "user"
+
+
 def verify_password(user: dict, password: str) -> bool:
     """True if password matches user's stored hash."""
     return bool(user and check_password_hash(user.get("password_hash") or "", password or ""))
@@ -53,6 +67,7 @@ def create_user(username: str, password: str) -> dict | None:
         "user_id": user_id,
         "username": username,
         "password_hash": generate_password_hash(password),
+        "role": "user",
     }
     users = _load_users()
     users.append(user)
