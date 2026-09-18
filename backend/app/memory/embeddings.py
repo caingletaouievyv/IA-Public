@@ -13,13 +13,19 @@ from datetime import datetime
 from app.memory.chunker import chunk_text
 
 logger = logging.getLogger(__name__)
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+model = None
 DIM = 384
 STOPWORDS = {"the", "a", "an", "of", "to", "is", "about", "me", "tell", "find", "show", "number"}
 
+def _get_model():
+    global model
+    if model is None:
+        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return model
+
 def encode_texts(texts: list):
     """Encode to vectors; L2-normalize for cosine similarity."""
-    emb = np.array(model.encode(texts), dtype="float32")
+    emb = np.array(_get_model().encode(texts), dtype="float32")
     return emb / np.linalg.norm(emb, axis=1, keepdims=True)
 
 def store_note_embeddings(notes: list):
