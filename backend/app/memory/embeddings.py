@@ -6,7 +6,6 @@ import numpy as np
 import hashlib
 import re
 import logging
-from sentence_transformers import SentenceTransformer
 from app.memory.cache import vector_cache
 from app.config import FAISS_LOG_SCORES, FAISS_SCORE_LOG_PATH
 from datetime import datetime
@@ -20,6 +19,7 @@ STOPWORDS = {"the", "a", "an", "of", "to", "is", "about", "me", "tell", "find", 
 def _get_model():
     global model
     if model is None:
+        from sentence_transformers import SentenceTransformer
         model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     return model
 

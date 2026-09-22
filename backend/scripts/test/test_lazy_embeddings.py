@@ -19,7 +19,7 @@ class LazyEmbeddingTests(unittest.TestCase):
             self.assertIsNone(embeddings.model)
             self.assertEqual(run.app.test_client().get("/health").status_code, 200)
 
-            with patch.object(embeddings, "SentenceTransformer", return_value=object()) as lazy_constructor:
+            with patch("sentence_transformers.SentenceTransformer", return_value=object()) as lazy_constructor:
                 first_model = embeddings._get_model()
                 second_model = embeddings._get_model()
 
