@@ -97,7 +97,7 @@ cd backend && pip install -r requirements.txt && python run.py
 ```
 
 - **Dev:** `npm run dev` in `frontend/` (port 5174, proxy to 5000).
-- **Seed:** `python -m scripts.seed_user` → `testuser` / `password123`.
+- **Seed:** `python -m scripts.seed_user` → `ayi` / `Ayi!23`. The command preserves an existing `ayi` account and notes and only adds missing demo notes.
 - **CORS:** `CORS_ORIGINS` in `.env` when frontend and API are on different origins.
 - **Notes from images:** Tesseract OCR must be installed on the server.
 

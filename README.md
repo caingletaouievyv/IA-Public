@@ -44,8 +44,10 @@ Open **http://127.0.0.1:5000** — sign in or register.
 
 ```bash
 python -m scripts.seed_user
-# testuser / password123
+# ayi / Ayi!23
 ```
+
+The seed is safe to rerun: it keeps an existing `ayi` account and notes, and only adds missing demo notes.
 
 **Development:** `cd frontend && npm run dev` → http://127.0.0.1:5174 (proxies API to port 5000).
 

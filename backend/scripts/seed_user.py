@@ -1,5 +1,4 @@
-# IA/backend/scripts/seed_user.py
-# Seed user testuser/password123 and add sample notes (all fields filled). Run from backend: python -m scripts.seed_user
+# Seed the first-time demo user and notes. Run from backend: python -m scripts.seed_user
 
 import os
 import sys
@@ -15,63 +14,88 @@ if dotenv.exists():
 from app.auth.manager import find_user_by_username, create_user
 from app.notes.manager import load_notes, add_note
 
-SEED_USERNAME = "testuser"
-SEED_PASSWORD = "password123"
+SEED_USERNAME = "ayi"
+SEED_PASSWORD = "Ayi!23"
 
 SEED_NOTES = [
     {
-        "title": "FAISS and semantic search",
-        "category": "DevNotes",
-        "content": "We use FAISS for vector similarity over note embeddings. Intent classifier decides lookup vs exploratory; different thresholds apply. Context is built from top-k matches, deduplicated and summarized to fit MAX_CONTEXT_TOKENS.",
-        "tags": ["memory", "faiss", "ai"],
+        "title": "My goals for this month",
+        "category": "Personal",
+        "content": "I want to build a steadier weekly routine, finish one book, and make time for two short walks each week. I am trying to make progress without packing every day too tightly.",
+        "tags": ["goals", "routine", "wellbeing"],
     },
     {
-        "title": "Groq free tier",
-        "category": "Setup",
-        "content": "Groq is the primary LLM: free, no card, deploy-friendly. Set AI_KEY in .env. Console at console.groq.com. Optional GROQ_ENDPOINT and GROQ_MODEL. May 429 under burst; reduce concurrency or add delay.",
-        "tags": ["groq", "llm", "free-tier"],
+        "title": "Grocery list",
+        "category": "Shopping",
+        "content": "I need oats, bananas, eggs, spinach, rice, yogurt, coffee, and dish soap. I already have pasta and tomatoes, so I do not need to buy those this time.",
+        "tags": ["groceries", "shopping"],
     },
     {
-        "title": "Notes from images",
-        "category": "Features",
-        "content": "POST /notes/from-images: multipart with title, category, files. Backend runs OCR (Tesseract), then AI summarizes the text. Same title+category appends content to one note. Requires Tesseract on the server.",
-        "tags": ["ocr", "images", "notes"],
+        "title": "Things to remember this week",
+        "category": "Reminders",
+        "content": "I need to reply to Mum, water the plants on Wednesday, return the library book by Friday, and bring my reusable bottle when I leave home.",
+        "tags": ["reminders", "this-week"],
     },
     {
-        "title": "Login auth",
-        "category": "Auth",
-        "content": "No API secret in UI. POST /auth/register and /auth/login return a JWT. Bearer token for /notes, /ai, /settings. user_id from JWT sub; notes stored in notes_{user_id}.json.",
-        "tags": ["auth", "jwt", "login"],
+        "title": "Work task for Friday",
+        "category": "Work",
+        "content": "I need to finish the first draft of the community project update by Friday afternoon. My order is: check the latest figures, write the short summary, add the next steps, then ask a teammate to review it.",
+        "tags": ["work", "priority", "friday"],
     },
     {
-        "title": "Ask with selected notes",
-        "category": "Features",
-        "content": "POST /ai/ask accepts optional note_ids. When set, context is built only from those notes (temp FAISS subset). Use case: make a reviewer from chosen notes. Frontend: Load notes, select checkboxes, then ask.",
-        "tags": ["ask", "context", "notes"],
+        "title": "Saturday museum plan",
+        "category": "Plans",
+        "content": "I am meeting Lea at the city museum on Saturday at 11:00. I want to leave home around 10:15, check the train before I go, and have lunch nearby afterward. I should bring my student card.",
+        "tags": ["appointment", "saturday", "museum"],
+    },
+    {
+        "title": "What works for me",
+        "category": "Preferences",
+        "content": "I prefer simple, budget-friendly meals and plans with a little breathing room. I focus best in the morning, like explanations in plain language, and appreciate a short checklist when a task has several steps.",
+        "tags": ["preferences", "planning"],
+    },
+    {
+        "title": "How I want to use my notes",
+        "category": "Getting Started",
+        "content": "I can save plans, lists, reminders, and preferences here, then ask questions using my notes as context. I can ask what I need to buy, what matters this week, or for help turning my notes into a plan.",
+        "tags": ["getting-started", "ai", "questions"],
     },
 ]
 
 
-def main():
+def seed_user():
     user = find_user_by_username(SEED_USERNAME)
+    created = False
     if not user:
         created = create_user(SEED_USERNAME, SEED_PASSWORD)
         if not created:
             print("Failed to create user", SEED_USERNAME, file=sys.stderr)
             sys.exit(1)
-        user_id = created["user_id"]
-        print(f"Created user {SEED_USERNAME} (user_id={user_id})")
+        user = created
+        print(f"Created user {SEED_USERNAME} (user_id={user['user_id']})")
     else:
-        user_id = user["user_id"]
-        print(f"User {SEED_USERNAME} already exists (user_id={user_id})")
+        print(f"User {SEED_USERNAME} already exists (user_id={user['user_id']})")
 
+    user_id = user["user_id"]
     existing = load_notes(user_id)
-    count_before = len(existing)
+    existing_keys = {
+        ((note.get("title") or "").strip(), (note.get("category") or "").strip())
+        for note in existing
+    }
+    added = 0
     for note in SEED_NOTES:
+        key = (note["title"], note["category"])
+        if key in existing_keys:
+            continue
         add_note(note.copy(), user_id)
-    count_after = len(load_notes(user_id))
-    added = count_after - count_before
-    print(f"Notes: {count_before} -> {count_after} (+{added} seed notes)")
+        existing_keys.add(key)
+        added += 1
+    print(f"Notes: {len(existing)} -> {len(existing) + added} (+{added} seed notes)")
+    return {"user_id": user_id, "created": bool(created), "added_notes": added}
+
+
+def main():
+    seed_user()
     print("Done. Sign in with", SEED_USERNAME, "/", SEED_PASSWORD)
 
 

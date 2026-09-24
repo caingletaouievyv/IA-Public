@@ -2,7 +2,7 @@
 
 Run integration checks from the **backend** directory with the app running (`python run.py`). Index: [docs.md](docs.md). API shapes: [project.md](project.md).
 
-**Auth:** `POST /auth/login` with `{"username","password"}` → JWT. Use `Authorization: Bearer <token>` on protected routes. Scripts use `TEST_USER` / `TEST_PASSWORD` from `.env` (default `testuser` / `testpass`). After `python -m scripts.seed_user`, use `TEST_PASSWORD=password123`.
+**Auth:** `POST /auth/login` with `{"username","password"}` → JWT. Use `Authorization: Bearer <token>` on protected routes. Scripts use `TEST_USER` / `TEST_PASSWORD` from `.env` (default `testuser` / `testpass`). After `python -m scripts.seed_user`, sign in as `ayi` with `Ayi!23` or set `TEST_USER=ayi` and `TEST_PASSWORD=Ayi!23` for the test scripts.
 
 ---
 
