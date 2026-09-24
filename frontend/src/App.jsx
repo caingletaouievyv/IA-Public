@@ -119,7 +119,7 @@ export default function App() {
     });
   };
 
-  const openNotesForSelection = (parentAskId, callback) => {
+  const openNotesForSelection = (parentAskId, callback, selectedIds = new Set()) => {
     const id = newFloatId();
     setFloatingWindows((wins) => {
       const existing = wins.find((window) => window.type === "notes" && window.selectionMode && window.parentAskId === parentAskId);
@@ -134,24 +134,32 @@ export default function App() {
         selectionMode: true,
         parentAskId,
         selectionCallback: callback,
+        selectionIds: Array.from(selectedIds),
         initialPosition: centeredInitialPosition(),
       }];
     });
   };
 
   const floatingTitle = (type) => ({ ask: "Ask", notes: "Notes", history: "History", debug: "Debug", settings: "Settings" }[type] || type);
-  const floatingContent = ({ id, type, selectionMode = false, selectionCallback = null }) => {
+  const floatingContent = ({ id, type, selectionMode = false, selectionCallback = null, selectionIds = [] }) => {
     if (type === "ask") {
       return (
         <Ask
           onHistoryPicker={(callback) => openHistoryForSelection(id, callback)}
-          onNotesPicker={(callback) => openNotesForSelection(id, callback)}
+          onNotesPicker={(callback, selectedIds) => openNotesForSelection(id, callback, selectedIds)}
         />
       );
     }
     if (type === "notes") {
       if (selectionMode) {
-        return <Notes isSelectionMode={true} onSelect={selectionCallback} onCloseSelection={() => closeFloating(id)} />;
+        return (
+          <Notes
+            isSelectionMode={true}
+            selectedIds={selectionIds}
+            onSelect={selectionCallback}
+            onCloseSelection={() => closeFloating(id)}
+          />
+        );
       }
       return <Notes />;
     }

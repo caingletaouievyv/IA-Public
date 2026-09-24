@@ -22,7 +22,7 @@ function resolveTagToAdd(inputVal, suggestions) {
   return t;
 }
 
-export default function Notes({ isSelectionMode = false, onSelect = null, onCloseSelection = null }) {
+export default function Notes({ isSelectionMode = false, selectedIds = [], onSelect = null, onCloseSelection = null }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -49,7 +49,7 @@ export default function Notes({ isSelectionMode = false, onSelect = null, onClos
   const [editSaving, setEditSaving] = useState(false);
   const [editResult, setEditResult] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedNoteIds, setSelectedNoteIds] = useState(() => new Set());
+  const [selectedNoteIds, setSelectedNoteIds] = useState(() => new Set(selectedIds));
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [meta, setMeta] = useState({ categories: [], tags: [] });
@@ -289,7 +289,7 @@ export default function Notes({ isSelectionMode = false, onSelect = null, onClos
     setSelectedNoteIds(new Set());
   };
   const toggleNoteSelection = (id, e) => {
-    e.stopPropagation();
+    e?.stopPropagation();
     setSelectedNoteIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -356,6 +356,24 @@ export default function Notes({ isSelectionMode = false, onSelect = null, onClos
             <span className="notes-list-title">{headerTitle}</span>
           )}
           <div className="notes-list-toolbar">
+            {isSelectionMode && showList && (
+              <div className="notes-toolbar-actions" role="group" aria-label="Select notes for chat context">
+                <button type="button" className="notes-toolbar-btn" onClick={onCloseSelection}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="notes-toolbar-btn"
+                  onClick={() => {
+                    onSelect?.(notesForDisplay.filter((note) => selectedNoteIds.has(note.id)));
+                    onCloseSelection?.();
+                  }}
+                  disabled={loading}
+                >
+                  Add selected ({selectedNoteIds.size})
+                </button>
+              </div>
+            )}
             {!isSelectionMode && showList && filteredNotes.length > 0 && (
               <>
                 {selectedNoteIds.size === 0 && (
@@ -876,13 +894,12 @@ export default function Notes({ isSelectionMode = false, onSelect = null, onClos
                 {filteredNotes.slice(0, 100).map((n) => (
                   <li
                     key={n.id}
-                    className={`note-card ${!isSelectionMode && selectedNoteIds.has(n.id) ? "note-card--selected" : ""}`}
+                    className={`note-card ${selectedNoteIds.has(n.id) ? "note-card--selected" : ""}`}
                     role="button"
                     tabIndex={0}
                     onClick={() => {
-                      if (isSelectionMode && onSelect) {
-                        onSelect(n);
-                        onCloseSelection?.();
+                      if (isSelectionMode) {
+                        toggleNoteSelection(n.id);
                       } else {
                         setViewingNoteId(n.id);
                       }
@@ -890,24 +907,24 @@ export default function Notes({ isSelectionMode = false, onSelect = null, onClos
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        if (isSelectionMode && onSelect) {
-                          onSelect(n);
-                          onCloseSelection?.();
+                        if (isSelectionMode) {
+                          toggleNoteSelection(n.id);
                         } else {
                           setViewingNoteId(n.id);
                         }
                       }
                     }}
                     aria-label={`${isSelectionMode ? "Select" : "View"} note: ${n.title || "Untitled"}`}
+                    aria-pressed={isSelectionMode ? selectedNoteIds.has(n.id) : undefined}
                   >
-                    {!isSelectionMode && <input
+                    <input
                       type="checkbox"
                       className="note-card__checkbox"
                       checked={selectedNoteIds.has(n.id)}
                       onChange={(e) => toggleNoteSelection(n.id, e)}
                       onClick={(e) => e.stopPropagation()}
                       aria-label={`Select ${n.title || "Untitled"}`}
-                    />}
+                    />
                     <div className="note-card__content">
                       <div className="note-card__row">
                         <span className="note-card__label" aria-hidden="true">Title</span>

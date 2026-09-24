@@ -1018,6 +1018,73 @@ button.secondary:focus-visible {
   padding: 0.2rem 0 0.85rem;
   margin-bottom: 0.85rem;
 }
+.section--ask .form--compact {
+  display: flex;
+  flex-direction: column;
+}
+.ask-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+.ask-header .ask-question__eyebrow {
+  margin: 0;
+}
+.ask-options-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+.ask-options-button:hover,
+.ask-options-button[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.ask-options-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.ask-question {
+  order: 2;
+}
+.ask-previous-messages {
+  order: 1;
+  margin-bottom: 0.9rem;
+}
+.ask-options {
+  order: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.8rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+.ask-options .ask-section--context {
+  order: 1;
+}
+.ask-options .ask-section--conversation {
+  order: 2;
+}
+.ask-options-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.ask-current-conversation {
+  margin-top: 0.65rem !important;
+}
 .ask-section-toggle {
   width: 100%;
   display: flex;
@@ -1047,9 +1114,66 @@ button.secondary:focus-visible {
 .ask-section-summary {
   margin: 0.45rem 0 0;
 }
-.ask-section-label {
-  display: block;
+.ask-context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.ask-context-count {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.ask-context-notes {
+  max-height: 7rem;
+  margin-top: 0.35rem;
+}
+.ask-question {
+  padding: 0.35rem 0 1rem;
+}
+.ask-question__eyebrow {
+  margin: 0 0 0.45rem;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ask-question__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ask-question__input {
+  min-height: 9rem;
+  padding: 1rem;
+  border-color: var(--accent);
+  background: var(--bg-subtle);
+  font-size: 1rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+.ask-question__input:focus {
+  border-color: var(--accent-hover);
+  box-shadow: var(--shadow-focus);
+}
+.ask-submit {
+  width: 100%;
+  min-height: 2.8rem;
   margin-top: 0.75rem;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+}
+.ask-submit:hover {
+  background: var(--accent-hover);
 }
 .ask-section-badge {
   display: block;
@@ -1068,10 +1192,19 @@ button.secondary:focus-visible {
 .section--debug .app-panel__title {
   margin-bottom: 0.5rem;
 }
-.section--ask .card-desc,
-.section--settings .card-desc,
-.section--debug .card-desc {
+.ask-history-scroll {
+  max-height: 12rem;
+  overflow-y: auto;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.ask-history-message {
   margin-bottom: 0.5rem;
+}
+.ask-history-message:last-child {
+  margin-bottom: 0;
 }
 
 /* Bulk delete confirmation (dark theme, matches UI) */
