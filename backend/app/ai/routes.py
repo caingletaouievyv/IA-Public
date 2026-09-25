@@ -1,6 +1,7 @@
 # IA/backend/app/ai/routes.py
 # AI routes: /ask, /estimate_tokens, /debug/context. Auth required (Phase 8); user_id scopes notes.
 
+import time
 import uuid
 from flask import Blueprint, request, jsonify
 from app import limiter, logger
@@ -82,12 +83,15 @@ def ask_ai():
                 "credits_required": e.required,
             }), 402
     try:
+        ask_started_at = time.perf_counter()
+        logger.info("ai_ask ask_start")
         answer, tokens = ask(
             question,
             note_ids=_parse_note_ids(data),
             user_id=user_id,
             history_messages=_parse_history_messages(data),
         )
+        logger.info("ai_ask ask_complete elapsed_seconds=%.3f", time.perf_counter() - ask_started_at)
         return jsonify({"answer": answer, "tokens_estimated": tokens}), 200
     except Exception as e:
         if reservation and reservation["charged"]:
