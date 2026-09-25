@@ -1,8 +1,8 @@
 # IA/backend/app/memory/manager.py
-"""Build optimized AI context: semantic filter (top-k), summarization, token cap."""
+"""Build AI context: retrieval filter (top-k), summarization, and token cap."""
 
 from app.notes.manager import load_notes
-from app.memory.embeddings import get_relevant_notes_subset, normalize_query
+from app.memory.text_retrieval import get_relevant_notes_subset, normalize_query
 from app.memory.summarizer import summarize_text
 from app.memory.utils import estimate_tokens
 from app.memory.intent_cache import IntentLRUCache
@@ -12,6 +12,9 @@ from app.config import (
     INTENT_CACHE_TTL,
     FAISS_THRESHOLD_LOOKUP,
     FAISS_THRESHOLD_EXPLORATORY,
+    MEMORY_RETRIEVAL,
+    TEXT_RETRIEVAL_THRESHOLD_LOOKUP,
+    TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY,
     MAX_FAISS_RESULTS,
     LOG_DROPPED_NOTES,
 )
@@ -21,6 +24,14 @@ import logging
 logger = logging.getLogger(__name__)
 SUMMARY_WORD_LIMIT = 150
 intent_cache = IntentLRUCache(max_size=INTENT_CACHE_MAX_SIZE, ttl=INTENT_CACHE_TTL)
+
+
+def _get_relevant_notes_subset(query: str, notes: list, top_n: int, preserve_numbers: bool):
+    """Use lightweight retrieval by default; load semantic retrieval only when selected."""
+    if MEMORY_RETRIEVAL == "semantic":
+        from app.memory.embeddings import get_relevant_notes_subset as semantic_retrieval
+        return semantic_retrieval(query, notes, top_n=top_n, preserve_numbers=preserve_numbers)
+    return get_relevant_notes_subset(query, notes, top_n=top_n, preserve_numbers=preserve_numbers)
 
 def build_context(query: str, max_tokens: int = 2000, note_ids: list | None = None, user_id: str = None):
     """Build AI context from user's notes (user_id required). Semantic search via temp FAISS subset (no global cache per user)."""
@@ -33,7 +44,7 @@ def build_context(query: str, max_tokens: int = 2000, note_ids: list | None = No
         if not notes:
             return {"context": "", "tokens": 0, "best_score": None, "dropped_notes": [], "note_titles": []}
         preserve_numbers = any(k in query.lower() for k in ["stress", "find"])
-        matches = get_relevant_notes_subset(query, notes, top_n=MAX_FAISS_RESULTS, preserve_numbers=preserve_numbers)
+        matches = _get_relevant_notes_subset(query, notes, top_n=MAX_FAISS_RESULTS, preserve_numbers=preserve_numbers)
         cache_key = None
     else:
         preserve_numbers = any(k in query.lower() for k in ["stress", "find"])
@@ -42,14 +53,17 @@ def build_context(query: str, max_tokens: int = 2000, note_ids: list | None = No
         cached = intent_cache.get(cache_key)
         if cached:
             return cached
-        matches = get_relevant_notes_subset(query, notes, top_n=MAX_FAISS_RESULTS, preserve_numbers=preserve_numbers)
+        matches = _get_relevant_notes_subset(query, notes, top_n=MAX_FAISS_RESULTS, preserve_numbers=preserve_numbers)
     if not matches:
         result = {"context": "", "tokens": 0, "best_score": None, "dropped_notes": [], "note_titles": []}
         if cache_key is not None:
             intent_cache.set(cache_key, result)
         return result
     intent = classify_intent(query) if not note_ids else "lookup"
-    threshold = FAISS_THRESHOLD_LOOKUP if intent == "lookup" else FAISS_THRESHOLD_EXPLORATORY
+    if MEMORY_RETRIEVAL == "semantic":
+        threshold = FAISS_THRESHOLD_LOOKUP if intent == "lookup" else FAISS_THRESHOLD_EXPLORATORY
+    else:
+        threshold = TEXT_RETRIEVAL_THRESHOLD_LOOKUP if intent == "lookup" else TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY
     best_score = float(matches[0][0])
     if best_score < threshold:
         result = {"context": "", "tokens": 0, "best_score": best_score, "dropped_notes": [], "note_titles": []}

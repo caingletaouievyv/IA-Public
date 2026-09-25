@@ -30,8 +30,12 @@ AI_ASK_CREDIT_COST = int(os.getenv("AI_ASK_CREDIT_COST", "1"))
 REWARDED_AD_CREDIT_AMOUNT = int(os.getenv("REWARDED_AD_CREDIT_AMOUNT", "10"))
 AI_UNLIMITED_ROLE = os.getenv("AI_UNLIMITED_ROLE", "admin").strip()
 
-# context & FAISS
+# context & retrieval
 MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", 500))
+MEMORY_RETRIEVAL = os.getenv("MEMORY_RETRIEVAL", "text").strip().lower()
+# Lexical scores are normalized to 0..1 and use thresholds separate from FAISS scores.
+TEXT_RETRIEVAL_THRESHOLD_LOOKUP = float(os.getenv("TEXT_RETRIEVAL_THRESHOLD_LOOKUP", 0.20))
+TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY = float(os.getenv("TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY", 0.20))
 FAISS_LOG_SCORES = os.getenv("FAISS_LOG_SCORES", "true").lower() == "true"
 FAISS_SCORE_LOG_PATH = os.getenv("FAISS_SCORE_LOG_PATH", "data/faiss_scores.log")
 # Thresholds from scripts/analyze_memory_analytics; override in .env (docs/project.md FAISS tuning).
