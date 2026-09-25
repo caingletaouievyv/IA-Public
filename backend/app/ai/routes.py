@@ -3,7 +3,7 @@
 
 import uuid
 from flask import Blueprint, request, jsonify
-from app import limiter
+from app import limiter, logger
 from app.common.auth import require_auth
 from app.auth.manager import get_user_role
 from app.ai.engine import ask, get_token_estimate
@@ -51,6 +51,15 @@ def _operation_id(data: dict) -> str:
 def ask_ai():
     user_id, auth_err = require_auth()
     if auth_err: return auth_err
+    raw_data = request.get_data(cache=True)
+    parsed_data = request.get_json(silent=True)
+    logger.info(
+        "ai_ask request metadata content_type=%s content_length=%s has_data=%s json_parse_success=%s",
+        request.content_type,
+        request.content_length,
+        bool(raw_data),
+        parsed_data is not None,
+    )
     data = request.get_json(silent=True) or {}
     question = data.get("question")
     if not question:
