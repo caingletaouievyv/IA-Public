@@ -1,7 +1,7 @@
 // IA/frontend/src/components/FloatingWindow.jsx
 // Draggable, resizable window; position and size persisted (see docs/ui.md).
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 const STORAGE_KEY = "ia-floating-window";
 const DEFAULT_X = 40;
@@ -86,11 +86,13 @@ function saveState(state, id) {
   } catch (_) {}
 }
 
-export default function FloatingWindow({ title = "IA", id, initialPosition, onClose, onBringToFront, isFront, stackIndex = 0, collapsedStackIndex = 0, onCollapsedChange, children }) {
+export default function FloatingWindow({ title = "IA", id, initialPosition, onClose, onBringToFront, isFront, stackIndex = 0, collapsedStackIndex = 0, onCollapsedChange, contentSized = false, children }) {
   const [state, setState] = useState(() => loadState(id, initialPosition));
   const [collapsed, setCollapsed] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [savedNormalState, setSavedNormalState] = useState(null);
+  const [contentSizeEnabled, setContentSizeEnabled] = useState(contentSized);
+  const windowRef = useRef(null);
   const { x, y, width, height } = state;
 
   const getMaximizedGeometry = useCallback(() => {
@@ -122,6 +124,7 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
   const handleMaximize = useCallback(() => {
     if (!maximized) {
       setSavedNormalState(state);
+      setContentSizeEnabled(false);
       setState(getMaximizedGeometry());
       setMaximized(true);
     }
@@ -130,10 +133,11 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
   const handleRestore = useCallback(() => {
     if (maximized && savedNormalState) {
       setState(savedNormalState);
+      setContentSizeEnabled(contentSized);
       setMaximized(false);
       setSavedNormalState(null);
     }
-  }, [maximized, savedNormalState]);
+  }, [contentSized, maximized, savedNormalState]);
 
   const startDrag = useCallback((startClientX, startClientY) => {
     if (maximized) return;
@@ -192,10 +196,12 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
   const startResize = useCallback((startClientX, startClientY) => {
     if (maximized) return;
     bringToFront();
+    setContentSizeEnabled(false);
     const startX = startClientX;
     const startY = startClientY;
-    const startW = width;
-    const startH = height;
+    const measuredSize = windowRef.current?.getBoundingClientRect();
+    const startW = measuredSize?.width || width;
+    const startH = measuredSize?.height || height;
     const maxW = getMaxWidthPx();
     const maxH = getMaxHeightPx();
     const onMove = (moveClientX, moveClientY) => {
@@ -250,20 +256,22 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
 
   const handleResizeHandleDoubleClick = useCallback(() => {
     const defaultSize = getDefaultSize();
+    setContentSizeEnabled(contentSized);
     setState((s) => {
       const next = { ...s, width: defaultSize.width, height: defaultSize.height };
       saveState(next, id);
       return next;
     });
-  }, [id]);
+  }, [contentSized, id]);
 
   return (
     <div
-      className={`floating-window${collapsed ? " floating-window--collapsed" : ""}${maximized ? " floating-window--maximized" : ""}`}
+      className={`floating-window${collapsed ? " floating-window--collapsed" : ""}${maximized ? " floating-window--maximized" : ""}${contentSizeEnabled && !maximized ? " floating-window--content-sized" : ""}`}
+      ref={windowRef}
       style={{
         ...(collapsed
           ? { left: getCollapsedLeft(collapsedStackIndex), bottom: COLLAPSED_MARGIN, top: "auto", width: "auto", minWidth: "min-content" }
-          : { left: x, top: y, bottom: "auto", width, height, maxWidth: "calc(100vw - 2rem)", maxHeight: "calc(100vh - 2rem)" }),
+          : { left: x, top: y, bottom: "auto", width, ...(contentSizeEnabled && !maximized ? { height: "auto" } : { height }), maxWidth: "calc(100vw - 2rem)", maxHeight: "calc(100vh - 2rem)" }),
         zIndex: isFront ? 10000 : 9999,
       }}
       onMouseDown={bringToFront}

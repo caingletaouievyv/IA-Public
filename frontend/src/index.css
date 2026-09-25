@@ -1018,6 +1018,9 @@ button.secondary:focus-visible {
   padding: 0.2rem 0 0.85rem;
   margin-bottom: 0.85rem;
 }
+.section--ask {
+  display: block;
+}
 .section--ask .form--compact {
   display: flex;
   flex-direction: column;
@@ -1193,7 +1196,7 @@ button.secondary:focus-visible {
   margin-bottom: 0.5rem;
 }
 .ask-history-scroll {
-  max-height: 12rem;
+  max-height: min(12rem, 50vh);
   overflow-y: auto;
   padding: 0.7rem 0.8rem;
   border: 1px solid var(--border);
@@ -1609,6 +1612,10 @@ button.secondary:focus-visible {
   scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: var(--border) var(--bg-subtle);
+}
+.floating-window--content-sized .floating-body {
+  flex: 0 1 auto;
+  max-height: calc(100vh - 4rem);
 }
 .floating-body::-webkit-scrollbar {
   width: 8px;

@@ -221,6 +221,7 @@ export default function App() {
             onClose={() => closeFloating(id)}
             onBringToFront={() => setFrontWindowId(id)}
             isFront={frontWindowId === id}
+            contentSized={type === "ask"}
           >
             {floatingContent(window)}
           </FloatingWindow>

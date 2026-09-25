@@ -17,7 +17,6 @@ function parseMessages(content) {
 
 export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
   const [question, setQuestion] = useState("");
-  const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [notes, setNotes] = useState([]);
@@ -29,6 +28,8 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
   const [chatContextExpanded, setChatContextExpanded] = useState(false);
   const [optionsExpanded, setOptionsExpanded] = useState(false);
   const historyRef = useRef(null);
+  const submissionInFlightRef = useRef(false);
+  const skipNextHistoryLoadRef = useRef(null);
 
   const handleNoteSelection = (selectedNotes) => {
     const nextNotes = Array.isArray(selectedNotes) ? selectedNotes.filter((note) => note?.id) : [];
@@ -40,6 +41,10 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
     if (!currentHistoryId) {
       setCurrentHistoryTitle("");
       setMessages([]);
+      return;
+    }
+    if (skipNextHistoryLoadRef.current === currentHistoryId) {
+      skipNextHistoryLoadRef.current = null;
       return;
     }
     let cancelled = false;
@@ -70,17 +75,26 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
     setOptionsExpanded(false);
   };
 
+  const createNewConversation = async () => {
+    if (!getToken()) {
+      throw new Error("Session expired. Please sign in again.");
+    }
+    const created = await createHistory("New conversation");
+    if (!created?.id) {
+      throw new Error("Failed to create conversation");
+    }
+    skipNextHistoryLoadRef.current = created.id;
+    setCurrentHistoryId(created.id);
+    setCurrentHistoryTitle(created.title || "New conversation");
+    setMessages([]);
+    setOptionsExpanded(false);
+    return created;
+  };
+
   const handleNewConversation = async () => {
     setError(null);
-    if (!getToken()) {
-      setError("Session expired. Please sign in again.");
-      return;
-    }
     try {
-      const created = await createHistory("New conversation");
-      setCurrentHistoryId(created.id);
-      setMessages([]);
-      setOptionsExpanded(false);
+      await createNewConversation();
     } catch (e) {
       setError(e.message || "Failed to create conversation");
     }
@@ -88,26 +102,29 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading || submissionInFlightRef.current) return;
+    submissionInFlightRef.current = true;
     setError(null);
-    setResult(null);
     setLoading(true);
     try {
+      const historyId = currentHistoryId || (await createNewConversation()).id;
+      const activeMessages = currentHistoryId ? messages : [];
       const noteIds = selectedIds.size ? Array.from(selectedIds) : null;
-      const historyMessages = currentHistoryId && messages.length > 0 ? messages : null;
+      const historyMessages = activeMessages.length > 0 ? activeMessages : null;
       const data = await ask(question, noteIds, historyMessages);
-      setResult({ answer: data.answer, tokens: data.tokens_estimated });
       const userContent = (question || "").trim();
       const assistantContent = (data.answer || "").trim();
-      if (currentHistoryId && (userContent || assistantContent)) {
-        const nextMessages = [...messages, { role: "user", content: userContent }, { role: "assistant", content: assistantContent }];
+      if (historyId && (userContent || assistantContent)) {
+        const nextMessages = [...activeMessages, { role: "user", content: userContent }, { role: "assistant", content: assistantContent }];
         setMessages(nextMessages);
-        await updateNote(currentHistoryId, { content: JSON.stringify(nextMessages) });
+        await updateNote(historyId, { content: JSON.stringify(nextMessages) });
       }
       setQuestion("");
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      submissionInFlightRef.current = false;
     }
   };
 
@@ -150,6 +167,12 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
           placeholder="Ask a question or describe what you need…"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
           disabled={loading}
         />
         <button type="submit" className="ask-submit" disabled={loading}>
@@ -241,14 +264,6 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
         )}
       </form>
       {error && <div className="out err">{error}</div>}
-      {result && (
-        <div className="out">
-          {result.answer}
-          {result.tokens != null && (
-            <div className="meta">tokens: {result.tokens}</div>
-          )}
-        </div>
-      )}
     </section>
   );
 }
