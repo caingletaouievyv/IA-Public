@@ -5,6 +5,7 @@ Supports conversation history: when history_messages are provided, sends chat fo
 """
 
 import logging
+import time
 from app.ai.client import call_ai
 from app.memory.manager import build_context
 from app.memory.utils import estimate_tokens
@@ -30,7 +31,10 @@ def _build_system_content(context: str, note_titles: list) -> str:
 
 def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, user_id: str = None, history_messages: list | None = None):
     """Answer question with optional note context and conversation history. When history_messages is provided, sends chat format so the model remembers the thread."""
+    context_started_at = time.perf_counter()
+    logger.info("ai_ask context_start")
     result = build_context(question, max_tokens, note_ids=note_ids, user_id=user_id)
+    logger.info("ai_ask context_complete elapsed_seconds=%.3f", time.perf_counter() - context_started_at)
     context = result.get("context", "") if result else ""
     note_titles = result.get("note_titles") or []
     system_content = _build_system_content(context, note_titles)
@@ -51,7 +55,10 @@ def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, use
                 continue
             messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": question})
+        provider_started_at = time.perf_counter()
+        logger.info("ai_ask provider_start")
         answer = call_ai(prompt="", question=question, messages=messages)
+        logger.info("ai_ask provider_complete elapsed_seconds=%.3f", time.perf_counter() - provider_started_at)
         full_text = system_content + "\n\n" + "\n\n".join(f"{m['role']}: {m['content']}" for m in messages[1:])
         return answer, estimate_tokens(full_text)
     else:
@@ -59,7 +66,10 @@ def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, use
             f"{system_content}\n\n"
             f"Question:\n{question}"
         )
+        provider_started_at = time.perf_counter()
+        logger.info("ai_ask provider_start")
         answer = call_ai(prompt, question=question)
+        logger.info("ai_ask provider_complete elapsed_seconds=%.3f", time.perf_counter() - provider_started_at)
         return answer, estimate_tokens(prompt)
 
 
