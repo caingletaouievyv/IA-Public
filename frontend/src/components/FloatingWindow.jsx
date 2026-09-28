@@ -86,12 +86,39 @@ function saveState(state, id) {
   } catch (_) {}
 }
 
+function getInitialWindowState(id, initialPosition) {
+  const normalState = loadState(id, initialPosition);
+  const isMobile = !isDesktopViewport();
+
+  if (!isMobile) {
+    return {
+      state: normalState,
+      maximized: false,
+      savedNormalState: null,
+      contentSizeEnabled: false,
+    };
+  }
+
+  return {
+    state: {
+      x: 16,
+      y: 16,
+      width: getMaxWidthPx(),
+      height: getMaxHeightPx(),
+    },
+    maximized: true,
+    savedNormalState: normalState,
+    contentSizeEnabled: false,
+  };
+}
+
 export default function FloatingWindow({ title = "IA", id, initialPosition, onClose, onBringToFront, isFront, stackIndex = 0, collapsedStackIndex = 0, onCollapsedChange, contentSized = false, children }) {
-  const [state, setState] = useState(() => loadState(id, initialPosition));
+  const initialWindowStateRef = useRef(getInitialWindowState(id, initialPosition));
+  const [state, setState] = useState(() => initialWindowStateRef.current.state);
   const [collapsed, setCollapsed] = useState(false);
-  const [maximized, setMaximized] = useState(false);
-  const [savedNormalState, setSavedNormalState] = useState(null);
-  const [contentSizeEnabled, setContentSizeEnabled] = useState(contentSized);
+  const [maximized, setMaximized] = useState(() => initialWindowStateRef.current.maximized);
+  const [savedNormalState, setSavedNormalState] = useState(() => initialWindowStateRef.current.savedNormalState);
+  const [contentSizeEnabled, setContentSizeEnabled] = useState(() => initialWindowStateRef.current.contentSizeEnabled);
   const windowRef = useRef(null);
   const { x, y, width, height } = state;
 

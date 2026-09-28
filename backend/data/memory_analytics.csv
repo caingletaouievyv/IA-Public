@@ -81,3 +81,7 @@ timestamp,query,intent,best_score,context_tokens,included_notes,dropped_notes
 2026-02-28T01:40:14.541819,find note about FAISS,lookup,0.5415390729904175,476,"['FAISS Special Note 500', 'FAISS Special Note 100', 'FAISS Special Note 140', 'FAISS Special Note 300']","['FAISS Special Note 330', 'FAISS Special Note 280']"
 2026-02-28T01:40:49.405026,find note about FAISS,lookup,0.5415390729904175,119,['FAISS Special Note 500'],[]
 2026-02-28T02:58:28.564849,test you see stress note in this context?? how about faiss vector indexing or Persisten Memory Cache?,lookup,0.7142198085784912,40,['Persistent Memory Cache'],[]
+2026-09-25T02:32:56.381659,test,exploratory,0.25,81,['New conversation'],[]
+2026-09-25T02:42:25.167440,test,exploratory,0.25,156,"['New conversation', 'New conversation']",[]
+2026-09-28T01:49:57.441591,test,exploratory,0.25,236,"['New conversation', 'New conversation', 'New conversation']",[]
+2026-09-28T01:50:30.231833,where are you reading it like i didnt include notes,lookup,0.2,54,['How I want to use my notes'],[]

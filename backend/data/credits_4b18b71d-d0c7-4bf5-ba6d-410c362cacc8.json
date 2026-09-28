@@ -1,0 +1,77 @@
+{
+  "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+  "credit_balance": 2,
+  "ledger": [
+    {
+      "entry_id": "1f74139d-f1ea-4061-b9d2-ab1bf7df2cb3",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": 10,
+      "reason": "initial_balance",
+      "created_at": "2026-09-25T02:23:32.500883Z"
+    },
+    {
+      "entry_id": "62b42f6a-1406-4fed-9b80-0737c5575fb2",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-25T02:23:32.506408Z",
+      "operation_id": "4a9e631c-f3b1-498f-ab1d-9374f7ec96a2"
+    },
+    {
+      "entry_id": "e1d323f7-85b3-41fe-9e91-b0d0dcd2cf20",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-25T02:25:37.750535Z",
+      "operation_id": "f4c3845c-9f18-475b-bd49-4bca6c3ac3a7"
+    },
+    {
+      "entry_id": "4195b889-fd13-4403-b361-e4b934294d61",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-25T02:32:56.376914Z",
+      "operation_id": "220d995d-40ee-42ca-9029-b531bc63dc53"
+    },
+    {
+      "entry_id": "6a74ec4c-4517-4053-a5fd-f77e23fa0eb4",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-25T02:35:24.167591Z",
+      "operation_id": "f0928905-d9e2-4488-9a2d-1386e9f092dc"
+    },
+    {
+      "entry_id": "ac4762e0-42e7-4a01-b7ac-dd3ab6a12b2f",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-25T02:42:25.122145Z",
+      "operation_id": "770a8cff-e0eb-4820-af9c-e0feb54ba8cc"
+    },
+    {
+      "entry_id": "d258fe1d-7af5-4f16-875f-04788bb30089",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-25T02:43:22.897679Z",
+      "operation_id": "799f3c65-012c-43ca-829a-39104ae59e1a"
+    },
+    {
+      "entry_id": "1ef6b95b-28a2-4d0e-a06e-e8849d9ca81f",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-28T01:49:54.539533Z",
+      "operation_id": "b7735fc5-4832-41ba-9ad7-e802205de218"
+    },
+    {
+      "entry_id": "a000c817-89be-472c-9940-5e331fb36821",
+      "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
+      "amount": -1,
+      "reason": "ai_ask",
+      "created_at": "2026-09-28T01:50:30.221720Z",
+      "operation_id": "cf5496ab-e85a-4d64-9356-4e51b57334e0"
+    }
+  ]
+}

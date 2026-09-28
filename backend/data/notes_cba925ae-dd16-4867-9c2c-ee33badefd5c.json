@@ -67,10 +67,28 @@
   {
     "title": "New conversation",
     "category": "_history",
-    "content": "[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"Hello, how can I assist you today?\"},{\"role\":\"user\",\"content\":\"im naming you fq\"},{\"role\":\"assistant\",\"content\":\"You're assigning a FQDN (Fully Qualified Domain Name) to me. What's the domain name?\"},{\"role\":\"user\",\"content\":\"do you know what i name you\"},{\"role\":\"assistant\",\"content\":\"I'm glad you're looking for information about my name. I'm not assigned a personal name; instead, I'm often referred to as a 'helpful assistant' or a 'language model.'\"},{\"role\":\"user\",\"content\":\"ok your name now is brian\"},{\"role\":\"assistant\",\"content\":\"Hi, I'm Brian.\"},{\"role\":\"user\",\"content\":\"whats your name\"},{\"role\":\"assistant\",\"content\":\"I'm an assistant at your service. My name isn't specifically mentioned, but my users often refer to me as a 'helper' or a 'chat assistant.' If you need help, feel free to ask me anything.\"}]",
+    "content": "[{\"role\":\"user\",\"content\":\"hello\"},{\"role\":\"assistant\",\"content\":\"Hello, how can I assist you today?\"},{\"role\":\"user\",\"content\":\"im naming you fq\"},{\"role\":\"assistant\",\"content\":\"You're assigning a FQDN (Fully Qualified Domain Name) to me. What's the domain name?\"},{\"role\":\"user\",\"content\":\"do you know what i name you\"},{\"role\":\"assistant\",\"content\":\"I'm glad you're looking for information about my name. I'm not assigned a personal name; instead, I'm often referred to as a 'helpful assistant' or a 'language model.'\"},{\"role\":\"user\",\"content\":\"ok your name now is brian\"},{\"role\":\"assistant\",\"content\":\"Hi, I'm Brian.\"},{\"role\":\"user\",\"content\":\"whats your name\"},{\"role\":\"assistant\",\"content\":\"I'm an assistant at your service. My name isn't specifically mentioned, but my users often refer to me as a 'helper' or a 'chat assistant.' If you need help, feel free to ask me anything.\"},{\"role\":\"user\",\"content\":\"based on conversation history whats your name\"},{\"role\":\"assistant\",\"content\":\"Based on our conversation, you\u2019ve said my name is **Brian**. So you can call me Brian. How can I help you today?\"},{\"role\":\"user\",\"content\":\"tell me youre name again please\"},{\"role\":\"assistant\",\"content\":\"My name is **Brian**. How can I help you today?\"},{\"role\":\"user\",\"content\":\"describe my notes in lazy simple concise\"},{\"role\":\"assistant\",\"content\":\"Sure thing\u2014just paste the notes you\u2019d like summarized, and I\u2019ll give you a lazy, simple, concise description.\"},{\"role\":\"user\",\"content\":\"who are you?\"},{\"role\":\"assistant\",\"content\":\"I\u2019m **Brian**\u2014your AI\u2011powered assistant here to answer questions, provide information, and help with whatever you need.\"}]",
     "tags": [],
     "id": "63e958cd-d5d4-4827-88db-cc3cf8bdecf8",
     "created_at": "2026-03-07T08:41:52.378936Z",
-    "updated_at": "2026-03-07T08:44:35.359548Z"
+    "updated_at": "2026-09-24T08:04:27.418228Z"
+  },
+  {
+    "title": "New conversation",
+    "category": "_history",
+    "content": "[]",
+    "tags": [],
+    "id": "754c8912-baa7-4a35-aa5c-c96635f78e2c",
+    "created_at": "2026-09-24T07:49:29.737008Z",
+    "updated_at": "2026-09-24T07:49:29.737008Z"
+  },
+  {
+    "title": "New conversation",
+    "category": "_history",
+    "content": "[]",
+    "tags": [],
+    "id": "d3b3ef10-654f-49cb-80ff-b427c47e1d6d",
+    "created_at": "2026-09-24T07:49:30.817039Z",
+    "updated_at": "2026-09-24T07:49:30.817039Z"
   }
 ]

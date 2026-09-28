@@ -23,7 +23,7 @@ function loadHistoryList(setList, setLoading, setError) {
     .finally(() => setLoading(false));
 }
 
-export default function History({ isSelectionMode = false, onSelect = null, onCloseSelection = null }) {
+export default function History({ isSelectionMode = false, activeId = null, onSelect = null, onCloseSelection = null }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -77,6 +77,11 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
     setError(null);
     try {
       const created = await createHistory("New conversation");
+      if (isSelectionMode && onSelect) {
+        onSelect(created.id);
+        onCloseSelection?.();
+        return;
+      }
       setList((prev) => [...prev, created]);
       setViewingId(created.id);
       await loadHistoryList(setList, setLoading, setError);
@@ -182,54 +187,62 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
               )}
             </>
           )}
-          {!isSelectionMode && <div className="notes-add-toggle" role="group">
-            {showList && selectedIds.size > 0 ? (
-              <button
-                type="button"
-                className="notes-back-btn notes-toolbar-btn--danger"
-                onClick={() => setBulkDeleteConfirm(true)}
-                disabled={bulkDeleteLoading}
-              >
-                {bulkDeleteLoading ? "Deleting…" : `Delete (${selectedIds.size})`}
-              </button>
-            ) : showList ? (
-              <button
-                type="button"
-                className="notes-list-add-btn"
-                onClick={handleNew}
-                disabled={creating}
-              >
+          {isSelectionMode ? (
+            <div className="notes-add-toggle" role="group" aria-label="Create a new conversation">
+              <button type="button" className="notes-list-add-btn" onClick={handleNew} disabled={creating}>
                 {creating ? "…" : "New conversation"}
               </button>
-            ) : (
-              <div className="notes-toolbar-actions">
+            </div>
+          ) : (
+            <div className="notes-add-toggle" role="group">
+              {showList && selectedIds.size > 0 ? (
                 <button
                   type="button"
-                  className="notes-back-btn"
-                  onClick={() => { setViewingId(null); setEditResult(null); }}
-                  aria-label="Back to list"
+                  className="notes-back-btn notes-toolbar-btn--danger"
+                  onClick={() => setBulkDeleteConfirm(true)}
+                  disabled={bulkDeleteLoading}
                 >
-                  Back to list
+                  {bulkDeleteLoading ? "Deleting…" : `Delete (${selectedIds.size})`}
                 </button>
-                <button
-                  type="submit"
-                  form="history-edit-form"
-                  className="notes-toolbar-btn"
-                  disabled={editSaving || !editTitle.trim()}
-                >
-                  {editSaving ? "Saving…" : "Save"}
-                </button>
+              ) : showList ? (
                 <button
                   type="button"
-                  className="notes-toolbar-btn notes-toolbar-btn--danger"
-                  onClick={() => setDeleteConfirmId(viewingId)}
-                  aria-label="Delete conversation"
+                  className="notes-list-add-btn"
+                  onClick={handleNew}
+                  disabled={creating}
                 >
-                  Delete
+                  {creating ? "…" : "New conversation"}
                 </button>
-              </div>
-            )}
-          </div>}
+              ) : (
+                <div className="notes-toolbar-actions">
+                  <button
+                    type="button"
+                    className="notes-back-btn"
+                    onClick={() => { setViewingId(null); setEditResult(null); }}
+                    aria-label="Back to list"
+                  >
+                    Back to list
+                  </button>
+                  <button
+                    type="submit"
+                    form="history-edit-form"
+                    className="notes-toolbar-btn"
+                    disabled={editSaving || !editTitle.trim()}
+                  >
+                    {editSaving ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    className="notes-toolbar-btn notes-toolbar-btn--danger"
+                    onClick={() => setDeleteConfirmId(viewingId)}
+                    aria-label="Delete conversation"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -241,10 +254,13 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
           )}
           {list.length > 0 && (
             <ul className="notes-list">
-              {filteredList.map((h) => (
+              {filteredList.map((h) => {
+                const isSelectedConversation = isSelectionMode ? h.id === activeId : false;
+                const isActiveConversation = !isSelectionMode && viewingId === h.id;
+                return (
                 <li
                   key={h.id}
-                  className={`note-card ${!isSelectionMode && selectedIds.has(h.id) ? "note-card--selected" : ""} ${!isSelectionMode && viewingId === h.id ? "note-card--active" : ""}`}
+                  className={`note-card ${!isSelectionMode && selectedIds.has(h.id) ? "note-card--selected" : ""} ${isSelectedConversation ? "note-card--selected" : ""} ${isActiveConversation ? "note-card--active" : ""}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => {
@@ -295,7 +311,8 @@ export default function History({ isSelectionMode = false, onSelect = null, onCl
                       </div>
                     </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
           {filteredList.length === 0 && list.length > 0 && (
