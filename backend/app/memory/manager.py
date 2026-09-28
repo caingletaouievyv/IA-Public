@@ -45,6 +45,8 @@ def build_context(query: str, max_tokens: int = 2000, note_ids: list | None = No
             return {"context": "", "tokens": 0, "best_score": None, "dropped_notes": [], "note_titles": []}
         preserve_numbers = any(k in query.lower() for k in ["stress", "find"])
         matches = _get_relevant_notes_subset(query, notes, top_n=MAX_FAISS_RESULTS, preserve_numbers=preserve_numbers)
+        if not matches or matches[0][0] <= 0:
+            matches = [(1.0, note) for note in notes]
         cache_key = None
     else:
         preserve_numbers = any(k in query.lower() for k in ["stress", "find"])
