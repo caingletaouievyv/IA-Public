@@ -22,11 +22,18 @@ def _build_system_content(context: str, note_titles: list) -> str:
         else:
             topic_line += f" (topics: {', '.join(note_titles)})."
         topic_line += (
-            " Base your answer on this material when relevant. You may add alternatives from general knowledge; "
-            "label what is from their notes vs. general knowledge. Keep explanations lazy, simple, and concise."
+            " Use this material as the primary source. Prefer short, natural, readable answers. "
+            "When the user asks about notes, answer directly from the notes and keep it conversational. "
+            "Use simple bullets when listing relevant notes. Mention the note title and a brief description of what it contains. "
+            "Do not use tables unless the user explicitly asks for one. Do not add headings like 'Bottom line', 'Summary', or 'General knowledge' "
+            "when the answer is based on the user's notes. Do not repeat the user's question. Do not force markdown formatting when plain prose is better. "
+            "Keep explanations brief, clear, and grounded in the provided note content."
         )
         return f"You are a helpful assistant.\n{topic_line}\n\nContext:\n{context}"
-    return f"You are a helpful assistant. Use context only if relevant.\n\nContext:\n{context}"
+    return (
+        "You are a helpful assistant. Use context only if relevant. Keep answers short, natural, and conversational. "
+        "Prefer simple prose or bullets over tables or heavy markdown. Do not add forced summary sections unless the user asks for one.\n\nContext:\n{context}"
+    ).format(context=context)
 
 
 def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, user_id: str = None, history_messages: list | None = None):
