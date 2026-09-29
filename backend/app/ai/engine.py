@@ -15,12 +15,14 @@ logger = logging.getLogger(__name__)
 
 def _build_system_content(context: str, note_titles: list) -> str:
     """Single system block: instructions plus optional note context."""
-    if note_titles:
-        topic_line = "The following context is from the user's selected notes"
-        if len(note_titles) == 1:
+    if context.strip():
+        topic_line = "The following context is from the user's notes"
+        if note_titles and len(note_titles) == 1:
             topic_line += f" (topic: {note_titles[0]})."
-        else:
+        elif note_titles:
             topic_line += f" (topics: {', '.join(note_titles)})."
+        else:
+            topic_line += "."
         topic_line += (
             " Use this material as the primary source. Prefer short, natural, readable answers. "
             "When the user asks about notes, answer directly from the notes and keep it conversational. "
@@ -32,7 +34,9 @@ def _build_system_content(context: str, note_titles: list) -> str:
         return f"You are a helpful assistant.\n{topic_line}\n\nContext:\n{context}"
     return (
         "You are a helpful assistant. Use context only if relevant. Keep answers short, natural, and conversational. "
-        "Prefer simple prose or bullets over tables or heavy markdown. Do not add forced summary sections unless the user asks for one.\n\nContext:\n{context}"
+        "Prefer simple prose or bullets over tables or heavy markdown. Do not add forced summary sections unless the user asks for one. "
+        "No note context is available. Do not mention or imply that your response came from the user's notes, and do not add labels such as '[From your notes]'. "
+        "Respond normally and conversationally, including to short messages.\n\nContext:\n{context}"
     ).format(context=context)
 
 
