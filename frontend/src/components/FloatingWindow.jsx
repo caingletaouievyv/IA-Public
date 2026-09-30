@@ -1,7 +1,7 @@
 // IA/frontend/src/components/FloatingWindow.jsx
 // Draggable, resizable window; position and size persisted (see docs/ui.md).
 
-import { useState, useCallback, useRef } from "react";
+import { forwardRef, useState, useCallback, useImperativeHandle, useRef } from "react";
 
 const STORAGE_KEY = "ia-floating-window";
 const DEFAULT_X = 40;
@@ -41,31 +41,32 @@ function getCollapsedLeft(collapsedStackIndex) {
   return Math.min(left, Math.max(COLLAPSED_MARGIN, window.innerWidth - COLLAPSED_BAR_ESTIMATE - COLLAPSED_MARGIN));
 }
 
-function loadState(id, initialPosition) {
+function loadState(id, initialPosition, initialSize) {
   const key = id ? `${STORAGE_KEY}-${id}` : STORAGE_KEY;
   const defaultSize = getDefaultSize();
+  const startingSize = initialSize || defaultSize;
   try {
     const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       const x = typeof parsed.x === "number" ? parsed.x : DEFAULT_X;
       const y = typeof parsed.y === "number" ? parsed.y : DEFAULT_Y;
-      const width = typeof parsed.width === "number" ? Math.min(Math.max(parsed.width, MIN_WIDTH), getMaxWidthPx()) : defaultSize.width;
-      const height = typeof parsed.height === "number" ? Math.min(Math.max(parsed.height, MIN_HEIGHT), getMaxHeightPx()) : defaultSize.height;
+      const width = typeof parsed.width === "number" ? Math.min(Math.max(parsed.width, MIN_WIDTH), getMaxWidthPx()) : startingSize.width;
+      const height = typeof parsed.height === "number" ? Math.min(Math.max(parsed.height, MIN_HEIGHT), getMaxHeightPx()) : startingSize.height;
       return { ...clampPosition(x, y, width, height), width, height };
     }
   } catch (_) {}
   if (initialPosition && typeof initialPosition.x === "number" && typeof initialPosition.y === "number") {
     return {
       ...clampPosition(initialPosition.x, initialPosition.y, defaultSize.width, defaultSize.height),
-      width: defaultSize.width,
-      height: defaultSize.height,
+      width: startingSize.width,
+      height: startingSize.height,
     };
   }
   return {
     ...clampPosition(DEFAULT_X, DEFAULT_Y, defaultSize.width, defaultSize.height),
-    width: defaultSize.width,
-    height: defaultSize.height,
+    width: startingSize.width,
+    height: startingSize.height,
   };
 }
 
@@ -86,8 +87,8 @@ function saveState(state, id) {
   } catch (_) {}
 }
 
-function getInitialWindowState(id, initialPosition) {
-  const normalState = loadState(id, initialPosition);
+function getInitialWindowState(id, initialPosition, initialSize) {
+  const normalState = loadState(id, initialPosition, initialSize);
   const isMobile = !isDesktopViewport();
 
   if (!isMobile) {
@@ -112,8 +113,8 @@ function getInitialWindowState(id, initialPosition) {
   };
 }
 
-export default function FloatingWindow({ title = "IA", id, initialPosition, onClose, onBringToFront, isFront, stackIndex = 0, collapsedStackIndex = 0, onCollapsedChange, contentSized = false, children }) {
-  const initialWindowStateRef = useRef(getInitialWindowState(id, initialPosition));
+const FloatingWindow = forwardRef(function FloatingWindow({ title = "IA", id, initialPosition, initialSize, onClose, onBringToFront, isFront, stackIndex = 0, collapsedStackIndex = 0, onCollapsedChange, contentSized = false, children }, ref) {
+  const initialWindowStateRef = useRef(getInitialWindowState(id, initialPosition, initialSize));
   const [state, setState] = useState(() => initialWindowStateRef.current.state);
   const [collapsed, setCollapsed] = useState(false);
   const [maximized, setMaximized] = useState(() => initialWindowStateRef.current.maximized);
@@ -121,6 +122,21 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
   const [contentSizeEnabled, setContentSizeEnabled] = useState(() => initialWindowStateRef.current.contentSizeEnabled);
   const windowRef = useRef(null);
   const { x, y, width, height } = state;
+
+  useImperativeHandle(ref, () => ({
+    getLayoutState: () => ({
+      state: { ...state },
+      maximized,
+      savedNormalState: savedNormalState ? { ...savedNormalState } : null,
+      contentSizeEnabled,
+    }),
+    setLayoutState: (layoutState) => {
+      setState({ ...layoutState.state });
+      setMaximized(layoutState.maximized);
+      setSavedNormalState(layoutState.savedNormalState ? { ...layoutState.savedNormalState } : null);
+      setContentSizeEnabled(layoutState.contentSizeEnabled);
+    },
+  }), [state, maximized, savedNormalState, contentSizeEnabled]);
 
   const getMaximizedGeometry = useCallback(() => {
     const width = getMaxWidthPx();
@@ -323,7 +339,7 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
         <div className="floating-titlebar-actions">
           <button
             type="button"
-            className="floating-toggle"
+            className="button-icon floating-toggle"
             onClick={(e) => { e.stopPropagation(); setCollapsedAndNotify((c) => !c); }}
             aria-label={collapsed ? "Expand window" : "Collapse window"}
             title={collapsed ? "Expand" : "Collapse"}
@@ -334,7 +350,7 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
             <>
               <button
                 type="button"
-                className="floating-maximize"
+                className="button-icon floating-maximize"
                 onClick={(e) => { e.stopPropagation(); handleMaximize(); }}
                 aria-label="Maximize window"
                 title="Maximize"
@@ -344,7 +360,7 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
               </button>
               <button
                 type="button"
-                className="floating-restore"
+                className="button-icon floating-restore"
                 onClick={(e) => { e.stopPropagation(); handleRestore(); }}
                 aria-label="Restore window"
                 title="Restore"
@@ -357,7 +373,7 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
           {onClose && (
             <button
               type="button"
-              className="floating-close"
+              className="button-icon floating-close"
               onClick={(e) => { e.stopPropagation(); onClose(); }}
               aria-label="Close window"
               title="Close"
@@ -384,4 +400,6 @@ export default function FloatingWindow({ title = "IA", id, initialPosition, onCl
       )}
     </div>
   );
-}
+});
+
+export default FloatingWindow;

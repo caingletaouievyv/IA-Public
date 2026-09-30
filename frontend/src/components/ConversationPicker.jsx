@@ -67,14 +67,17 @@ export default function ConversationPicker({ value, onChange, disabled = false }
         <div className="ask-conversation__actions">
           <button
             type="button"
+            className="button-primary"
             onClick={handleNew}
+            aria-label={loading ? "Creating conversation" : "New conversation"}
             disabled={disabled || loading}
           >
-            {loading ? "…" : "New"}
+            {loading ? "…" : "New conversation"}
           </button>
 
           <button
             type="button"
+            className="button-icon button-subtle"
             onClick={loadHistories}
             disabled={disabled || loading}
             title="Refresh conversations"

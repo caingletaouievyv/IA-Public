@@ -40,11 +40,11 @@ def _build_system_content(context: str, note_titles: list) -> str:
     ).format(context=context)
 
 
-def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, user_id: str = None, history_messages: list | None = None):
+def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, user_id: str = None, history_messages: list | None = None, note_context_mode: str = "automatic"):
     """Answer question with optional note context and conversation history. When history_messages is provided, sends chat format so the model remembers the thread."""
     context_started_at = time.perf_counter()
     logger.info("ai_ask context_start")
-    result = build_context(question, max_tokens, note_ids=note_ids, user_id=user_id)
+    result = build_context(question, max_tokens, note_ids=note_ids, user_id=user_id, note_context_mode=note_context_mode)
     logger.info("ai_ask context_complete elapsed_seconds=%.3f", time.perf_counter() - context_started_at)
     context = result.get("context", "") if result else ""
     note_titles = result.get("note_titles") or []

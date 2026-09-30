@@ -172,24 +172,24 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
           {!isSelectionMode && showList && filteredList.length > 0 && (
             <>
               {selectedIds.size === 0 && (
-                <button type="button" className="notes-toolbar-btn" onClick={selectAll}>
+                <button type="button" className="button-subtle ask-shortcut" onClick={selectAll}>
                   Select All
                 </button>
               )}
               {selectedIds.size > 0 && selectedIds.size < filteredList.length && (
                 <>
-                  <button type="button" className="notes-toolbar-btn" onClick={selectAll}>Select All</button>
-                  <button type="button" className="notes-toolbar-btn" onClick={unselectAll}>Unselect All</button>
+                  <button type="button" className="button-subtle ask-shortcut" onClick={selectAll}>Select All</button>
+                  <button type="button" className="button-subtle ask-shortcut" onClick={unselectAll}>Unselect All</button>
                 </>
               )}
               {selectedIds.size === filteredList.length && filteredList.length > 0 && (
-                <button type="button" className="notes-toolbar-btn" onClick={unselectAll}>Unselect All</button>
+                <button type="button" className="button-subtle ask-shortcut" onClick={unselectAll}>Unselect All</button>
               )}
             </>
           )}
           {isSelectionMode ? (
             <div className="notes-add-toggle" role="group" aria-label="Create a new conversation">
-              <button type="button" className="notes-list-add-btn" onClick={handleNew} disabled={creating}>
+              <button type="button" className="button-subtle ask-shortcut notes-list-add-btn" onClick={handleNew} aria-label={creating ? "Creating conversation" : "New conversation"} disabled={creating}>
                 {creating ? "…" : "New conversation"}
               </button>
             </div>
@@ -198,7 +198,7 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
               {showList && selectedIds.size > 0 ? (
                 <button
                   type="button"
-                  className="notes-back-btn notes-toolbar-btn--danger"
+                  className="button-danger notes-back-btn"
                   onClick={() => setBulkDeleteConfirm(true)}
                   disabled={bulkDeleteLoading}
                 >
@@ -207,8 +207,9 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
               ) : showList ? (
                 <button
                   type="button"
-                  className="notes-list-add-btn"
+                  className="button-subtle ask-shortcut notes-list-add-btn"
                   onClick={handleNew}
+                  aria-label={creating ? "Creating conversation" : "New conversation"}
                   disabled={creating}
                 >
                   {creating ? "…" : "New conversation"}
@@ -217,7 +218,7 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
                 <div className="notes-toolbar-actions">
                   <button
                     type="button"
-                    className="notes-back-btn"
+                    className="button-subtle notes-back-btn"
                     onClick={() => { setViewingId(null); setEditResult(null); }}
                     aria-label="Back to list"
                   >
@@ -226,14 +227,14 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
                   <button
                     type="submit"
                     form="history-edit-form"
-                    className="notes-toolbar-btn"
+                    className="button-primary"
                     disabled={editSaving || !editTitle.trim()}
                   >
                     {editSaving ? "Saving…" : "Save"}
                   </button>
                   <button
                     type="button"
-                    className="notes-toolbar-btn notes-toolbar-btn--danger"
+                    className="button-danger"
                     onClick={() => setDeleteConfirmId(viewingId)}
                     aria-label="Delete conversation"
                   >
@@ -349,12 +350,12 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
             <p className="notes-delete-confirm__title">Delete this conversation?</p>
             <p className="notes-delete-confirm__desc">Messages cannot be recovered.</p>
             <div className="notes-delete-confirm__actions">
-              <button type="button" className="notes-toolbar-btn" onClick={() => setDeleteConfirmId(null)} disabled={deleteLoading}>
+              <button type="button" className="button-subtle" onClick={() => setDeleteConfirmId(null)} disabled={deleteLoading}>
                 Cancel
               </button>
               <button
                 type="button"
-                className="notes-toolbar-btn notes-toolbar-btn--danger"
+                className="button-danger"
                 onClick={() => handleDeleteOne(deleteConfirmId)}
                 disabled={deleteLoading}
               >
@@ -372,8 +373,8 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
             <p className="notes-delete-confirm__title">Delete {selectedIds.size} conversation{selectedIds.size !== 1 ? "s" : ""}?</p>
             <p className="notes-delete-confirm__desc">This cannot be undone.</p>
             <div className="notes-delete-confirm__actions">
-              <button type="button" className="notes-toolbar-btn" onClick={() => setBulkDeleteConfirm(false)} disabled={bulkDeleteLoading}>Cancel</button>
-              <button type="button" className="notes-toolbar-btn notes-toolbar-btn--danger" onClick={handleBulkDelete} disabled={bulkDeleteLoading}>
+              <button type="button" className="button-subtle" onClick={() => setBulkDeleteConfirm(false)} disabled={bulkDeleteLoading}>Cancel</button>
+              <button type="button" className="button-danger" onClick={handleBulkDelete} disabled={bulkDeleteLoading}>
                 {bulkDeleteLoading ? "Deleting…" : "Delete"}
               </button>
             </div>

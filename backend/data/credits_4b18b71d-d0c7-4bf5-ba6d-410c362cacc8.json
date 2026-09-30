@@ -1,77 +1,77 @@
 {
   "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
-  "credit_balance": 2,
+  "credit_balance": 992,
   "ledger": [
     {
       "entry_id": "1f74139d-f1ea-4061-b9d2-ab1bf7df2cb3",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
-      "amount": 10,
+      "amount": 1000,
       "reason": "initial_balance",
       "created_at": "2026-09-25T02:23:32.500883Z"
     },
     {
-      "entry_id": "62b42f6a-1406-4fed-9b80-0737c5575fb2",
+      "entry_id": "5fe25af1-aef4-4e87-9f82-19583a356043",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-25T02:23:32.506408Z",
-      "operation_id": "4a9e631c-f3b1-498f-ab1d-9374f7ec96a2"
+      "created_at": "2026-09-29T07:21:36.092137Z",
+      "operation_id": "a7f55227-5337-420e-aee0-89aede7b6e3d"
     },
     {
-      "entry_id": "e1d323f7-85b3-41fe-9e91-b0d0dcd2cf20",
+      "entry_id": "3c6d9841-97c4-4ab1-b88f-a2920f8a82db",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-25T02:25:37.750535Z",
-      "operation_id": "f4c3845c-9f18-475b-bd49-4bca6c3ac3a7"
+      "created_at": "2026-09-29T07:21:50.623982Z",
+      "operation_id": "4dd9eafc-ac57-4474-8993-87b1abf42aa8"
     },
     {
-      "entry_id": "4195b889-fd13-4403-b361-e4b934294d61",
+      "entry_id": "ec1ba9d1-45f7-47b5-a7d6-e4dcb5ce6342",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-25T02:32:56.376914Z",
-      "operation_id": "220d995d-40ee-42ca-9029-b531bc63dc53"
+      "created_at": "2026-09-29T07:22:01.257347Z",
+      "operation_id": "df0ab809-a4d5-46d1-8192-49ae01de231e"
     },
     {
-      "entry_id": "6a74ec4c-4517-4053-a5fd-f77e23fa0eb4",
+      "entry_id": "fd050f73-1d20-4438-9b55-acd5d7f7eefc",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-25T02:35:24.167591Z",
-      "operation_id": "f0928905-d9e2-4488-9a2d-1386e9f092dc"
+      "created_at": "2026-09-30T05:32:20.782834Z",
+      "operation_id": "992455a7-b1a3-4cde-996d-29a98a65afc0"
     },
     {
-      "entry_id": "ac4762e0-42e7-4a01-b7ac-dd3ab6a12b2f",
+      "entry_id": "a5fe695b-2741-40bd-8a34-e9ec1072f70f",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-25T02:42:25.122145Z",
-      "operation_id": "770a8cff-e0eb-4820-af9c-e0feb54ba8cc"
+      "created_at": "2026-09-30T05:32:31.020503Z",
+      "operation_id": "8cf79f59-bc1b-4b96-ac37-bbdf28c2984d"
     },
     {
-      "entry_id": "d258fe1d-7af5-4f16-875f-04788bb30089",
+      "entry_id": "76c15b10-6d23-460f-8350-1023de8c08b4",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-25T02:43:22.897679Z",
-      "operation_id": "799f3c65-012c-43ca-829a-39104ae59e1a"
+      "created_at": "2026-09-30T05:32:36.934199Z",
+      "operation_id": "94b22839-5b55-447b-8866-f743bcb13d01"
     },
     {
-      "entry_id": "1ef6b95b-28a2-4d0e-a06e-e8849d9ca81f",
+      "entry_id": "a6aaaa07-ce7b-4f20-af2f-e760677cf036",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-28T01:49:54.539533Z",
-      "operation_id": "b7735fc5-4832-41ba-9ad7-e802205de218"
+      "created_at": "2026-09-30T05:45:01.722144Z",
+      "operation_id": "2df45be8-3381-4bcf-bc47-8a09f57494ce"
     },
     {
-      "entry_id": "a000c817-89be-472c-9940-5e331fb36821",
+      "entry_id": "bf70155c-59a6-4127-b342-1fa76dcc0a23",
       "user_id": "4b18b71d-d0c7-4bf5-ba6d-410c362cacc8",
       "amount": -1,
       "reason": "ai_ask",
-      "created_at": "2026-09-28T01:50:30.221720Z",
-      "operation_id": "cf5496ab-e85a-4d64-9356-4e51b57334e0"
+      "created_at": "2026-09-30T08:20:41.067205Z",
+      "operation_id": "954303d7-082d-4f17-9589-bf72a2f83ecc"
     }
   ]
 }

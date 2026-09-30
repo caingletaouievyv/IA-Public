@@ -50,7 +50,7 @@ IA/
 - **Auth** — `POST /auth/register`, `/auth/login` → JWT; Bearer on protected routes.
 - **Public site** — Unauthenticated landing page at `/`, plus public Privacy, Terms, and Contact pages. `/app` enters the existing authenticated app.
 - **Notes** — Per-user CRUD; `GET /notes/meta` for categories/tags; `POST /notes/from-images` (OCR + AI; append when same title+category).
-- **Ask** — `POST /ai/ask` with optional `note_ids` and `messages` (history); semantic search over user notes. The floating Ask window can open History and Notes in selection mode; selected conversation and note context return to Ask through callbacks.
+- **Ask** — `POST /ai/ask` with optional `note_ids`, `note_context_mode`, and `messages` (history); note context mode is per Ask window and defaults to `off`. The floating Ask window can open History and Notes in selection mode; selected conversation and note context return to Ask through callbacks.
 - **AI Credits** — Backend-owned per-user balance and JSON ledger. Normal `/ai/ask` costs the configured number of internal AI Credits (default `1`); insufficient balance returns `402` before the AI provider is called. Users with the persisted role matching `AI_UNLIMITED_ROLE` (default `admin`) bypass AI credit reservation and deduction, while retaining authentication and rate limits. Initial balance and development rewarded-ad grants (`REWARDED_AD_CREDIT_AMOUNT`, default `10`) are configurable. `POST /credits/rewarded-ad` is JWT-protected and idempotent by `reward_id`, but is only a development foundation and must not be exposed as a production reward mechanism until an ad provider/server verification step is integrated. Credit purchasing is not implemented. Persistence is protected by a process-local lock and is not a multi-worker transactional store.
 - **Settings** — `GET/PUT /settings/` per user.
 - **AI modes** — `AI_MODE`: `single` | `ensemble` | `judge`; `AI_ENSEMBLE_PROVIDERS`.
@@ -60,12 +60,15 @@ IA/
 
 ## Memory
 
-Semantic search on every ask; results gated by similarity threshold and token cap.
+Note retrieval follows the per-ask context mode; retrieved results are gated by the configured relevance threshold and token cap.
 
-- **No `note_ids`** — search all of the user's notes.
-- **With `note_ids`** — search only within selected notes.
+- **Off** — no note context, even when `note_ids` are supplied.
+- **Automatic, no `note_ids`** — search all of the user's notes when relevant.
+- **Automatic or Focused, with `note_ids`** — search only within selected notes.
+- **Focused, no `note_ids`** — include no note context and do not search the user's notes.
+- **Missing `note_context_mode`** — defaults to `automatic` for older clients.
 
-Pipeline: load notes → FAISS → threshold → dedupe → summarize long content → enforce `MAX_CONTEXT_TOKENS`. See [flow.md](flow.md).
+When note retrieval is enabled: load notes → configured retriever → threshold → dedupe → summarize long content → enforce `MAX_CONTEXT_TOKENS`. See [flow.md](flow.md).
 
 ### FAISS threshold tuning
 

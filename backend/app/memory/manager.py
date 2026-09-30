@@ -33,10 +33,14 @@ def _get_relevant_notes_subset(query: str, notes: list, top_n: int, preserve_num
         return semantic_retrieval(query, notes, top_n=top_n, preserve_numbers=preserve_numbers)
     return get_relevant_notes_subset(query, notes, top_n=top_n, preserve_numbers=preserve_numbers)
 
-def build_context(query: str, max_tokens: int = 2000, note_ids: list | None = None, user_id: str = None):
+def build_context(query: str, max_tokens: int = 2000, note_ids: list | None = None, user_id: str = None, note_context_mode: str = "automatic"):
     """Build AI context from user's notes (user_id required). Semantic search via temp FAISS subset (no global cache per user)."""
     if not user_id:
         raise ValueError("user_id required for build_context (Phase 8)")
+    if note_context_mode not in ("off", "automatic", "focused"):
+        raise ValueError("note_context_mode must be 'off', 'automatic', or 'focused'")
+    if note_context_mode == "off" or (note_context_mode == "focused" and not note_ids):
+        return {"context": "", "tokens": 0, "best_score": None, "dropped_notes": [], "note_titles": []}
     notes = load_notes(user_id)
     if note_ids:
         note_ids_set = set(note_ids)

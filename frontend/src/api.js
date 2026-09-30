@@ -63,8 +63,8 @@ export async function register(username, password) {
   return data;
 }
 
-export async function ask(question, noteIds = null, messages = null) {
-  const body = { question: (question || "hello").trim() };
+export async function ask(question, noteIds = null, messages = null, noteContextMode = "off") {
+  const body = { question: (question || "hello").trim(), note_context_mode: noteContextMode };
   if (Array.isArray(noteIds) && noteIds.length) body.note_ids = noteIds;
   if (Array.isArray(messages) && messages.length) body.messages = messages;
   const res = await fetch(`${BASE}/ai/ask`, {

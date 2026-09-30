@@ -38,7 +38,7 @@ export default function DebugContext() {
           onChange={(e) => setQuestion(e.target.value)}
           disabled={loading}
         />
-        <button type="submit" disabled={loading}>
+        <button type="submit" className="button-primary" aria-label={loading ? "Getting context" : "Get context"} disabled={loading}>
           {loading ? "…" : "Get context"}
         </button>
       </form>

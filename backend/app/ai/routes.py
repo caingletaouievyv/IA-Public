@@ -23,6 +23,14 @@ def _parse_note_ids(data: dict) -> list | None:
     return [str(x) for x in note_ids]
 
 
+def _parse_note_context_mode(data: dict) -> str:
+    """Return the requested note context mode, defaulting legacy requests to automatic."""
+    mode = data.get("note_context_mode", "automatic")
+    if mode not in ("off", "automatic", "focused"):
+        raise ValueError("Invalid 'note_context_mode'; expected 'off', 'automatic', or 'focused'")
+    return mode
+
+
 def _parse_history_messages(data: dict) -> list | None:
     """Extract messages (list of {role, content}) for conversation history; None if missing or invalid."""
     raw = data.get("messages")
@@ -65,6 +73,10 @@ def ask_ai():
     question = data.get("question")
     if not question:
         return jsonify({"error": "Missing 'question' field"}), 400
+    try:
+        note_context_mode = _parse_note_context_mode(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     operation_id = _operation_id(data)
     reservation = None
     if get_user_role(user_id) != AI_UNLIMITED_ROLE:
@@ -88,6 +100,7 @@ def ask_ai():
         answer, tokens = ask(
             question,
             note_ids=_parse_note_ids(data),
+            note_context_mode=note_context_mode,
             user_id=user_id,
             history_messages=_parse_history_messages(data),
         )

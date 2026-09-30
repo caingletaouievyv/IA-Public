@@ -81,6 +81,13 @@ frontend/
 - **Transitions:** `--transition: 0.2s ease` (buttons/links); floating window uses same token
 - **App shell:** `.app-fullpage` — `padding: 1.5rem 1.25rem`; `min-height: 100vh`
 
+### Buttons and actions
+
+- Native buttons share a 40px minimum height, theme border/radius, aligned content, medium-weight text, and token-based hover, pressed, disabled, and `:focus-visible` states. At widths below 768px, controls and icon buttons use a 44px minimum touch target.
+- Use `.button-primary` for the main action, `.button-secondary` for supporting controls, `.button-subtle` for quiet toolbar/shortcut actions, `.button-danger` for destructive actions, and `.button-icon` for square icon controls. Subtle actions have a visible resting surface and border; destructive actions retain a quiet danger border at rest. `.button-toggle[aria-pressed="true"]` styles stateful toggles; keep `aria-expanded` for disclosure controls.
+- Pair `.link-button` with `.button-subtle` for app navigation and account actions so text actions remain visibly interactive. Floating window controls keep their dark window-chrome treatment while using shared icon sizing; every icon-only control needs an accessible name and a `title` tooltip.
+- Ask shortcuts retain their compact visual language through `.ask-shortcut` and use the shared subtle/focus/pressed behavior. Keep button groups aligned with `align-items: center` and consistent gaps; use visible labels for non-universal actions.
+
 ### Responsive behavior
 
 | Breakpoint / rule | Behavior |
@@ -108,8 +115,8 @@ frontend/
 | **Header** | Brand + sign out | `onLogout?: fn` | Renders logout only if `onLogout` passed |
 | **Login** | Sign in / register | `onLogin(token)` | Local `username`, `password`, `isRegister`, `loading`, `error`; validates non-empty; toggles register via `link-button` |
 | **FloatingWindow** | Draggable, resizable, collapsible shell | `title`, `id`, `initialPosition`, `onClose`, `onBringToFront`, `isFront`, `stackIndex`, `collapsedStackIndex`, `onCollapsedChange`, `children` | Desktop mouse and mobile touch drag/resize; responsive sizing and viewport clamping; scrollable body; minimize/collapse, maximize/restore, and close controls; position/size per-id in `localStorage` (`ia-floating-window-{id}`); collapse docks bottom-left with horizontal stack; double-click titlebar or toggle button; resize handle; `zIndex` bump when front; owns the single top-level title for each window |
-| **Ask** | `/ai/ask` + optional `note_ids` + conversation | `onHistoryPicker`, `onNotesPicker` | Uses the FloatingWindow shell title; no redundant internal Ask title. Conversation is collapsed by default, followed by Chat Context and Question in the current JSX order. Ask opens History and Notes selection windows through the callbacks; selected values return to Ask and conversation turns persist via `updateNote`. |
-| **Notes** | CRUD, search, bulk delete, image import | `isSelectionMode`, `onSelect`, `onCloseSelection` | List vs add (`note` \| `from-images`) vs detail edit; `getNotesMeta` for tag/category suggestions; client search; first **100** matches shown; visibility + 30s poll when list visible; `_history` hidden. In selection mode, selecting a note calls `onSelect(note)` and closes through `onCloseSelection`; normal CRUD is unchanged. |
+| **Ask** | `/ai/ask` + optional `note_ids` + per-window `note_context_mode` + conversation | `onHistoryPicker`, `onNotesPicker`, controlled `noteContextMode` | Uses the FloatingWindow shell title; no redundant internal Ask title. Conversation is collapsed by default, followed by Chat Context and Question in the current JSX order. User turns are right-aligned bounded bubbles; AI turns retain the existing left-aligned rendering. Edit appears on hover/focus (always visible on mobile); Save resends the edited turn with only earlier turns, then persists the replacement turn and answer, dropping later turns. Escape cancels. Each Ask window defaults to Off; the third shortcut cycles Off → Automatic → Focused → Off. Selected values return through the existing callbacks and conversation turns persist via `updateNote`. |
+| **Notes** | CRUD, search, bulk delete, image import | `isSelectionMode`, `onSelect`, `onCloseSelection` | List vs add (`note` \| `from-images`) vs detail edit; `getNotesMeta` for tag/category suggestions; client search; first **100** matches shown; visibility + 30s poll when list visible; `_history` hidden. Ask opens the existing note picker in selection mode; note selection and normal CRUD are unchanged. |
 | **History** | Conversations (`_history` notes) | `isSelectionMode`, `onSelect`, `onCloseSelection` | Same list/card/toolbar patterns as Notes; title edit; single + bulk delete modals; visibility + 30s refresh when list visible. In normal mode, the active conversation uses `note-card--active`; creating a conversation adds it to the list, sets it as the viewed conversation, and refreshes the list. In selection mode, clicking or keyboard-selecting a conversation calls `onSelect(id)` and then closes the selector. |
 | **DebugContext** | Inspect retrieval context | — | `debugContext(question, null)`; JSON in `<pre>` |
 | **Settings** | GET/PUT `/settings/` | — | Manual “Load settings”; form `theme`, `default_model`; optimistic local `prefs` merge; FloatingWindow supplies the sole top-level Settings title |
@@ -168,7 +175,7 @@ The maximize/restore control is hidden while the window is collapsed. Maximizing
 | **Forms** | HTML5 `label` + `htmlFor`; required fields validated in handlers before API |
 | **Destructive** | Modal `.notes-delete-confirm` (backdrop click dismiss); `.notes-toolbar-btn--danger` |
 | **Focus / keyboard** | `:focus-visible` + `box-shadow: var(--shadow-focus)` on buttons/inputs; note cards `role="button"` + Enter/Space; floating titlebar keyboard toggles collapse |
-| **Interaction** | `button:active { transform: scale(0.98) }`; link-style actions via `.link-button` |
+| **Interaction** | Shared button variants distinguish primary, secondary, subtle, destructive, icon, and pressed-toggle actions; `button:active` gives pressed feedback; link-style actions use `.link-button` |
 
 ---
 

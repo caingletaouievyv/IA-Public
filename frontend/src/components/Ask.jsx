@@ -2,8 +2,26 @@
 // Ask: question → POST /ai/ask; optional note context; optional conversation history (same notes table).
 // No authenticated API calls without token; surface auth errors in UI.
 
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useId } from "react";
 import { ask, getNote, createHistory, updateNote, getToken } from "../api";
+
+const NOTE_CONTEXT_MODE_DETAILS = {
+  off: {
+    label: "Off",
+    ariaLabel: "Note context mode: Off. Notes are not used.",
+    title: "Off: Notes are not used.",
+  },
+  automatic: {
+    label: "Automatic",
+    ariaLabel: "Note context mode: Automatic. AI can search your notes when relevant.",
+    title: "Automatic: AI can search your notes when relevant.",
+  },
+  focused: {
+    label: "Focused",
+    ariaLabel: "Note context mode: Focused. AI uses selected notes only.",
+    title: "Focused: AI uses selected notes only.",
+  },
+};
 
 function parseMessages(content) {
   if (!content || !content.trim()) return [];
@@ -91,7 +109,8 @@ function AskBadgeInfo({ text, children, ariaLabel }) {
   );
 }
 
-export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
+export default function Ask({ onHistoryPicker = null, onNotesPicker = null, noteContextMode = "off", onNoteContextModeChange = null }) {
+  const editMessageInputId = useId();
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -101,11 +120,14 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
   const [currentHistoryTitle, setCurrentHistoryTitle] = useState("");
   const [currentHistoryUpdatedAt, setCurrentHistoryUpdatedAt] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [editingMessageIndex, setEditingMessageIndex] = useState(null);
+  const [editedMessage, setEditedMessage] = useState("");
   const [optionsMode, setOptionsMode] = useState(null);
   const [historyExpanded, setHistoryExpanded] = useState(true);
   const historyRef = useRef(null);
   const submissionInFlightRef = useRef(false);
   const skipNextHistoryLoadRef = useRef(null);
+  const modeDetails = NOTE_CONTEXT_MODE_DETAILS[noteContextMode] || NOTE_CONTEXT_MODE_DETAILS.off;
 
   const handleNoteSelection = (selectedNotes) => {
     const nextNotes = Array.isArray(selectedNotes) ? selectedNotes.filter((note) => note?.id) : [];
@@ -247,6 +269,40 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
     }
   };
 
+  const sendQuestion = async (prompt, previousMessages) => {
+    const historyId = currentHistoryId || (await createNewConversation()).id;
+    const activeMessages = currentHistoryId ? previousMessages : [];
+    const noteIds = selectedIds.size ? Array.from(selectedIds) : null;
+    const historyMessages = activeMessages.length > 0 ? activeMessages : null;
+    const data = await ask(prompt, noteIds, historyMessages, noteContextMode);
+    const userContent = (prompt || "").trim();
+    const assistantContent = (data.answer || "").trim();
+    if (historyId && (userContent || assistantContent)) {
+      const nextMessages = [...activeMessages, { role: "user", content: userContent }, { role: "assistant", content: assistantContent }];
+      setMessages(nextMessages);
+      await updateNote(historyId, { content: JSON.stringify(nextMessages) });
+    }
+  };
+
+  const handleEditSave = async () => {
+    const targetMessage = messages[editingMessageIndex];
+    const editedContent = editedMessage.trim();
+    if (!targetMessage || targetMessage.role !== "user" || !editedContent || loading || submissionInFlightRef.current) return;
+    submissionInFlightRef.current = true;
+    setError(null);
+    setLoading(true);
+    try {
+      await sendQuestion(editedContent, messages.slice(0, editingMessageIndex));
+      setEditingMessageIndex(null);
+      setEditedMessage("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      submissionInFlightRef.current = false;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (loading || submissionInFlightRef.current) return;
@@ -254,18 +310,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
     setError(null);
     setLoading(true);
     try {
-      const historyId = currentHistoryId || (await createNewConversation()).id;
-      const activeMessages = currentHistoryId ? messages : [];
-      const noteIds = selectedIds.size ? Array.from(selectedIds) : null;
-      const historyMessages = activeMessages.length > 0 ? activeMessages : null;
-      const data = await ask(question, noteIds, historyMessages);
-      const userContent = (question || "").trim();
-      const assistantContent = (data.answer || "").trim();
-      if (historyId && (userContent || assistantContent)) {
-        const nextMessages = [...activeMessages, { role: "user", content: userContent }, { role: "assistant", content: assistantContent }];
-        setMessages(nextMessages);
-        await updateNote(historyId, { content: JSON.stringify(nextMessages) });
-      }
+      await sendQuestion(question, currentHistoryId ? messages : []);
       setQuestion("");
     } catch (err) {
       setError(err.message);
@@ -282,7 +327,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
           <div className="ask-shortcuts" aria-label="Ask shortcuts">
             <button
               type="button"
-              className="ask-shortcut"
+              className="button-subtle ask-shortcut"
               onClick={openHistoryPicker}
               aria-label="Open conversation history to continue a saved conversation or start fresh."
               title="Continue a saved conversation or start fresh."
@@ -300,7 +345,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
             </button>
             <button
               type="button"
-              className={`ask-shortcut${optionsMode === "context" ? " ask-shortcut--active" : ""}`}
+              className={`button-subtle ask-shortcut${optionsMode === "context" ? " ask-shortcut--active" : ""}`}
               onClick={openNotesPicker}
               aria-label="Open note picker to choose notes for this answer."
               title="Optional notes to help shape the answer."
@@ -316,6 +361,23 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
                 </AskBadgeInfo>
               )}
             </button>
+            <button
+              type="button"
+              className={`button-subtle button-toggle ask-shortcut${noteContextMode !== "off" ? " ask-shortcut--active" : ""}`}
+              onClick={() => onNoteContextModeChange?.(
+                noteContextMode === "off" ? "focused" : noteContextMode === "focused" ? "automatic" : "off"
+              )}
+              aria-label={modeDetails.ariaLabel}
+              aria-pressed={noteContextMode !== "off"}
+              title={modeDetails.title}
+            >
+              <span className="ask-shortcut-icon" aria-hidden="true"><NotesIcon /></span>
+              <span>{modeDetails.label}</span>
+              <span
+                className={`ask-context-mode-indicator${noteContextMode === "automatic" ? " ask-context-mode-indicator--automatic" : noteContextMode === "focused" ? " ask-context-mode-indicator--focused" : ""}`}
+                aria-hidden="true"
+              />
+            </button>
           </div>
         </header>
 
@@ -324,7 +386,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
             <h3 className="ask-section-heading ask-history-heading">
               <button
                 type="button"
-                className="ask-history-toggle"
+                className="button-subtle ask-history-toggle"
                 onClick={() => setHistoryExpanded((expanded) => !expanded)}
                 aria-expanded={historyExpanded}
                 aria-controls="ask-history-content"
@@ -335,11 +397,73 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
             </h3>
             {historyExpanded && (
               <div id="ask-history-content" ref={historyRef} className="ask-history-scroll">
-                {messages.map((m, i) => (
-                  <div key={i} className="ask-history-message">
-                    <strong>{m.role === "user" ? "You" : "AI"}:</strong> {m.content}
-                  </div>
-                ))}
+                {messages.map((message, index) => {
+                  if (message.role === "user") {
+                    const isEditing = editingMessageIndex === index;
+                    return (
+                      <div key={index} className="ask-history-message ask-history-message--user">
+                        <div className={`ask-user-message-wrap${isEditing ? " ask-user-message-wrap--editing" : ""}`}>
+                          {isEditing ? (
+                            <div className="ask-user-message-editor">
+                              <label htmlFor={editMessageInputId}>Edit your message</label>
+                              <textarea
+                                id={editMessageInputId}
+                                value={editedMessage}
+                                onChange={(event) => setEditedMessage(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Escape") {
+                                    event.preventDefault();
+                                    setEditingMessageIndex(null);
+                                    setEditedMessage("");
+                                  }
+                                }}
+                                autoFocus
+                                disabled={loading}
+                              />
+                              <div className="ask-user-message-actions">
+                                <button
+                                  type="button"
+                                  className="button-subtle"
+                                  onClick={() => { setEditingMessageIndex(null); setEditedMessage(""); }}
+                                  disabled={loading}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button-primary"
+                                  onClick={handleEditSave}
+                                  disabled={loading || !editedMessage.trim()}
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="ask-user-message-bubble">{message.content}</div>
+                              <button
+                                type="button"
+                                className="button-subtle ask-user-message-edit"
+                                onClick={() => { setEditedMessage(message.content); setEditingMessageIndex(index); }}
+                                aria-label="Edit your message"
+                                title="Edit your message"
+                                disabled={loading}
+                              >
+                                Edit
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={index} className="ask-history-message">
+                      <strong>AI:</strong> {message.content}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -361,7 +485,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
           }}
           disabled={loading}
         />
-        <button type="submit" className="ask-submit" disabled={loading}>
+        <button type="submit" className="button-primary ask-submit" aria-label={loading ? "Sending question" : "Ask"} disabled={loading}>
           {loading ? "…" : "Ask"}
         </button>
         </section>
@@ -373,7 +497,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
                 <div className="ask-context-action-row">
                   <button
                     type="button"
-                    className="ask-action-button ask-context-action"
+                    className="button-subtle ask-action-button ask-context-action"
                     onClick={openNotesPicker}
                     disabled={loading}
                   >
@@ -390,8 +514,9 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null }) {
                             <span>{noteLabel}</span>
                             <button
                               type="button"
-                              className="ask-context-remove"
+                              className="button-icon button-danger ask-context-remove"
                               aria-label={`Remove "${noteLabel}" from context`}
+                              title={`Remove "${noteLabel}" from context`}
                               onClick={() => handleRemoveNote(n.id)}
                               disabled={loading}
                             >

@@ -66,14 +66,14 @@ export default function Login({ onLogin }) {
             disabled={loading}
           />
           {error && <div className="out err">{error}</div>}
-          <button type="submit" disabled={loading}>
+          <button type="submit" className="button-primary" aria-label={loading ? isRegister ? "Creating account" : "Signing in" : isRegister ? "Register and sign in" : "Sign in"} disabled={loading}>
             {loading ? "…" : isRegister ? "Register and sign in" : "Sign in"}
           </button>
         </form>
         <p className="card-desc" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
           <button
             type="button"
-            className="link-button"
+            className="button-subtle link-button"
             onClick={() => { setIsRegister(!isRegister); setError(null); }}
           >
             {isRegister ? "Already have an account? Sign in" : "No account? Register"}

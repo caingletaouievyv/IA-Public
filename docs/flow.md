@@ -8,9 +8,9 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `backend/app/ai/routes.py` → `ask_ai()` | Parse `question`, optional `note_ids` via `_parse_note_ids(data)`, optional `messages` via `_parse_history_messages(data)`; call `ask(..., history_messages=...)`. |
-| 2 | `backend/app/ai/engine.py` → `ask()` | Build context (notes). If `history_messages`: chat format (system + history + current question), cap 30 messages, `call_ai(..., messages=...)`. Else: single prompt, `call_ai(prompt, question=question)`. Return answer + token count. |
-| 3 | `backend/app/memory/manager.py` → `build_context()` | If note_ids: filter notes to subset; use `get_relevant_notes_subset()`. Else: load user's notes; intent cache key; `get_relevant_notes_subset()` (temp FAISS); threshold filter; sort by score desc ([project.md](project.md) — score-weighted packing); dedupe; summarize long notes; trim to `MAX_CONTEXT_TOKENS`; log analytics; return dict. |
+| 1 | `backend/app/ai/routes.py` → `ask_ai()` | Parse `question`, `note_context_mode` (missing mode defaults to `automatic` for older clients), optional `note_ids` via `_parse_note_ids(data)`, and optional `messages` via `_parse_history_messages(data)`; call `ask(...)`. |
+| 2 | `backend/app/ai/engine.py` → `ask()` | Pass the mode and selected IDs to `build_context()`. If `history_messages`: retain the existing chat format (system + history + current question), cap 30 messages, and call `call_ai(..., messages=...)`. Otherwise use the single-prompt path. Return answer + token count. |
+| 3 | `backend/app/memory/manager.py` → `build_context()` | `off` returns empty context before loading notes, regardless of IDs. `focused` with no IDs also returns empty context. With IDs in Automatic or Focused, filter to those notes. `automatic` without IDs searches all user notes, then applies the existing retrieval, threshold, packing, summarization, token-cap, and analytics pipeline. |
 | 4 | `backend/app/memory/embeddings.py` | `get_relevant_notes_subset()`: temp FAISS index from user's notes (all or filtered by note_ids); no global cache in multi-user path. |
 | 5 | `backend/app/ai/client.py` → `call_ai()` | If `messages`: `call_single(messages=...)` (chat API). Else: `call_single(prompt=...)`. Single/ensemble/judge from config. |
 

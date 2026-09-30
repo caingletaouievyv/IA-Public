@@ -85,3 +85,8 @@ timestamp,query,intent,best_score,context_tokens,included_notes,dropped_notes
 2026-09-25T02:42:25.167440,test,exploratory,0.25,156,"['New conversation', 'New conversation']",[]
 2026-09-28T01:49:57.441591,test,exploratory,0.25,236,"['New conversation', 'New conversation', 'New conversation']",[]
 2026-09-28T01:50:30.231833,where are you reading it like i didnt include notes,lookup,0.2,54,['How I want to use my notes'],[]
+2026-09-29T05:16:09.911807,test,exploratory,0.25,379,"['New conversation', 'New conversation', 'New conversation', 'New conversation']",[]
+2026-09-29T07:18:15.156812,test,exploratory,0.25,420,"['New conversation', 'New conversation', 'New conversation', 'New conversation']",[]
+2026-09-29T07:21:36.389697,test,exploratory,0.25,456,"['New conversation', 'New conversation', 'New conversation', 'New conversation']",[]
+2026-09-29T07:22:01.264267,do you have my notes,lookup,0.4,97,"['How I want to use my notes', 'My goals for this month']",[]
+2026-09-30T05:32:36.939573,do you have my notes,lookup,0.4,346,"['How I want to use my notes', 'New conversation', 'New conversation', 'My goals for this month']",[]

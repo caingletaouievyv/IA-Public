@@ -358,12 +358,12 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
           <div className="notes-list-toolbar">
             {isSelectionMode && showList && (
               <div className="notes-toolbar-actions" role="group" aria-label="Select notes for chat context">
-                <button type="button" className="notes-toolbar-btn" onClick={onCloseSelection}>
+                <button type="button" className="button-subtle" onClick={onCloseSelection}>
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="notes-toolbar-btn"
+                  className="button-primary"
                   onClick={() => {
                     onSelect?.(notesForDisplay.filter((note) => selectedNoteIds.has(note.id)));
                     onCloseSelection?.();
@@ -377,22 +377,22 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
             {!isSelectionMode && showList && filteredNotes.length > 0 && (
               <>
                 {selectedNoteIds.size === 0 && (
-                  <button type="button" className="notes-toolbar-btn" onClick={handleSelectAll}>
+                  <button type="button" className="button-subtle ask-shortcut" onClick={handleSelectAll}>
                     Select All
                   </button>
                 )}
                 {selectedNoteIds.size > 0 && selectedNoteIds.size < filteredNotes.length && (
                   <>
-                    <button type="button" className="notes-toolbar-btn" onClick={handleSelectAll}>
+                    <button type="button" className="button-subtle ask-shortcut" onClick={handleSelectAll}>
                       Select All
                     </button>
-                    <button type="button" className="notes-toolbar-btn" onClick={handleUnselectAll}>
+                    <button type="button" className="button-subtle ask-shortcut" onClick={handleUnselectAll}>
                       Unselect All
                     </button>
                   </>
                 )}
                 {selectedNoteIds.size === filteredNotes.length && filteredNotes.length > 0 && (
-                  <button type="button" className="notes-toolbar-btn" onClick={handleUnselectAll}>
+                  <button type="button" className="button-subtle ask-shortcut" onClick={handleUnselectAll}>
                     Unselect All
                   </button>
                 )}
@@ -403,7 +403,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 <div className="notes-toolbar-actions">
                   <button
                     type="button"
-                    className="notes-back-btn"
+                    className="button-subtle notes-back-btn"
                     onClick={closeViewOrForm}
                     aria-label="Back to list"
                     title="Back to list"
@@ -414,7 +414,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                     <button
                       type="submit"
                       form="notes-edit-form"
-                      className="notes-toolbar-btn"
+                      className="button-primary"
                       disabled={editSaving || !editTitle.trim() || !editCategory.trim() || !editContent.trim()}
                       aria-label="Save note"
                       title="Save changes"
@@ -426,7 +426,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                     <button
                       type="submit"
                       form="notes-new-note-form"
-                      className="notes-toolbar-btn"
+                      className="button-primary"
                       disabled={noteLoading || !noteTitle.trim() || !noteCategory.trim() || !noteContent.trim()}
                       aria-label="Add note"
                       title="Add note"
@@ -438,7 +438,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                     <button
                       type="submit"
                       form="notes-from-images-form"
-                      className="notes-toolbar-btn"
+                      className="button-primary"
                       disabled={imgLoading || !imgFiles.length}
                       aria-label="Add note from images"
                       title="Add note from images"
@@ -450,7 +450,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
               ) : showList && selectedNoteIds.size > 0 ? (
                 <button
                   type="button"
-                  className="notes-back-btn notes-toolbar-btn--danger"
+                  className="button-danger notes-back-btn"
                   onClick={() => setShowDeleteConfirm(true)}
                   disabled={bulkDeleteLoading}
                   aria-label={`Delete ${selectedNoteIds.size} selected`}
@@ -462,7 +462,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 <>
                   <button
                     type="button"
-                    className="notes-list-add-btn"
+                    className="button-subtle ask-shortcut notes-list-add-btn"
                     onClick={openNoteForm}
                     aria-expanded={false}
                   >
@@ -471,12 +471,12 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   <div className="notes-add-dropdown" ref={addMenuRef}>
                     <button
                       type="button"
-                      className="notes-add-chevron"
+                      className="button-icon button-subtle notes-add-chevron"
                       onClick={() => setAddMenuOpen((o) => !o)}
                       aria-expanded={addMenuOpen}
                       aria-haspopup="true"
-                      aria-label="More add options"
-                      title="More add options"
+                      aria-label="More note options"
+                      title="More note options"
                     >
                       <span className="notes-add-chevron__icon" aria-hidden>▼</span>
                     </button>
@@ -485,7 +485,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                         <button
                           type="button"
                           role="menuitem"
-                          className="notes-add-menu__item"
+                          className="button-subtle notes-add-menu__item"
                           onClick={openFromImagesForm}
                         >
                           Add from images
@@ -510,7 +510,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
               <div className="notes-delete-confirm__actions">
                 <button
                   type="button"
-                  className="notes-toolbar-btn"
+                  className="button-subtle"
                   onClick={() => setShowDeleteConfirm(false)}
                   disabled={bulkDeleteLoading}
                 >
@@ -518,7 +518,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 </button>
                 <button
                   type="button"
-                  className="notes-toolbar-btn notes-toolbar-btn--danger"
+                  className="button-danger"
                   onClick={handleBulkDelete}
                   disabled={bulkDeleteLoading}
                 >
@@ -604,7 +604,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   {noteTagsArray.map((t, i) => (
                     <span key={`${t}-${i}`} className="notes-tag-chip">
                       <span className="notes-tag-chip__label">{t}</span>
-                      <button type="button" className="notes-tag-chip__remove" aria-label={`Remove ${t}`} onClick={() => setNoteTagsArray(noteTagsArray.filter((_, j) => j !== i))}>×</button>
+                      <button type="button" className="button-icon button-subtle notes-tag-chip__remove" aria-label={`Remove ${t}`} title={`Remove ${t}`} onClick={() => setNoteTagsArray(noteTagsArray.filter((_, j) => j !== i))}>×</button>
                     </span>
                   ))}
                 </div>
@@ -821,7 +821,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   {editTagsArray.map((t, i) => (
                     <span key={`${t}-${i}`} className="notes-tag-chip">
                       <span className="notes-tag-chip__label">{t}</span>
-                      <button type="button" className="notes-tag-chip__remove" aria-label={`Remove ${t}`} onClick={() => setEditTagsArray(editTagsArray.filter((_, j) => j !== i))}>×</button>
+                      <button type="button" className="button-icon button-subtle notes-tag-chip__remove" aria-label={`Remove ${t}`} title={`Remove ${t}`} onClick={() => setEditTagsArray(editTagsArray.filter((_, j) => j !== i))}>×</button>
                     </span>
                   ))}
                 </div>
