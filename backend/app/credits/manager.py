@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 import threading
+import time
 import uuid
 
 from app.config import AI_CREDIT_INITIAL_BALANCE
@@ -11,6 +12,7 @@ from app.config import AI_CREDIT_INITIAL_BALANCE
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(_BACKEND_DIR, "data")
 _FILE_LOCK = threading.RLock()
+_OPERATION_PENDING_TTL_SECONDS = 300
 
 
 class InsufficientCreditsError(Exception):
@@ -61,6 +63,7 @@ def _load_account(user_id: str) -> dict:
             account.setdefault("user_id", user_id)
             account.setdefault("credit_balance", 0)
             account.setdefault("ledger", [])
+            account.setdefault("operations", {})
             return account
         except (OSError, ValueError, TypeError):
             pass
@@ -70,6 +73,7 @@ def _load_account(user_id: str) -> dict:
         "user_id": user_id,
         "credit_balance": initial_balance,
         "ledger": [_ledger_entry(user_id, initial_balance, "initial_balance")],
+        "operations": {},
     }
 
 
@@ -86,6 +90,43 @@ def get_credit_account(user_id: str) -> dict:
         raise ValueError("user_id required")
     with _FILE_LOCK:
         return _get_account_locked(user_id)
+
+
+def claim_operation(user_id: str, operation_id: str) -> dict:
+    """Claim a user-scoped operation, or return its completed result/current state."""
+    if not user_id:
+        raise ValueError("user_id required")
+    if not operation_id:
+        raise ValueError("operation_id required")
+    with _FILE_LOCK:
+        account = _get_account_locked(user_id)
+        existing = account["operations"].get(operation_id)
+        if existing and existing.get("status") == "completed":
+            return {"status": "completed", "result": existing["result"]}
+        if existing and existing.get("status") == "pending":
+            if time.time() - existing.get("started_at", 0) < _OPERATION_PENDING_TTL_SECONDS:
+                return {"status": "pending"}
+        account["operations"][operation_id] = {"status": "pending", "started_at": time.time()}
+        _save_account(account, user_id)
+        return {"status": "claimed"}
+
+
+def complete_operation(user_id: str, operation_id: str, result: dict) -> None:
+    """Persist a successful operation result for exact retries by the same user."""
+    with _FILE_LOCK:
+        account = _get_account_locked(user_id)
+        account["operations"][operation_id] = {"status": "completed", "result": result}
+        _save_account(account, user_id)
+
+
+def release_operation(user_id: str, operation_id: str) -> None:
+    """Allow a failed or rejected operation to be retried."""
+    with _FILE_LOCK:
+        account = _get_account_locked(user_id)
+        existing = account["operations"].get(operation_id)
+        if existing and existing.get("status") == "pending":
+            del account["operations"][operation_id]
+            _save_account(account, user_id)
 
 
 def grant_credits(user_id: str, amount: int, reason: str, operation_id: str) -> dict:

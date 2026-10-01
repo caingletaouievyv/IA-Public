@@ -1,14 +1,14 @@
 # Testing
 
-Run integration checks from the **backend** directory with the app running (`python run.py`). Index: [docs.md](docs.md). API shapes: [project.md](project.md).
+Run backend checks from `backend/`; live API smoke tests require the app running with a configured AI provider. Index: [docs.md](docs.md). Current request behavior: [flow.md](flow.md).
 
-**Auth:** `POST /auth/login` with `{"username","password"}` → JWT. Use `Authorization: Bearer <token>` on protected routes. Scripts use `TEST_USER` / `TEST_PASSWORD` from `.env` (default `testuser` / `testpass`). After `python -m scripts.seed_user`, sign in as `ayi` with `Ayi!23` or set `TEST_USER=ayi` and `TEST_PASSWORD=Ayi!23` for the test scripts.
+**Auth:** `POST /auth/login` with `{"username","password"}` returns a JWT. Use `Authorization: Bearer <token>` on protected routes. The live smoke helper uses `TEST_USER` / `TEST_PASSWORD` from the repository-root `.env` (defaults `testuser` / `testpass`), registering the account if login returns 401. The seed command can create the demo account `ayi` / `Ayi!23`.
 
 ---
 
 ## Prerequisites
 
-- `.env` at repo root: `JWT_SECRET` (or `API_SECRET` fallback), `AI_KEY` (Groq).
+- `.env` at repo root: set a non-default `JWT_SECRET` (the code accepts `API_SECRET` as a legacy fallback). A live `/ai/ask` call also needs credentials for the configured provider; unit tests mock the AI call.
 - Base URL: `http://127.0.0.1:5000`.
 - **Notes from images:** Tesseract installed (e.g. Windows: `choco install tesseract`).
 
@@ -20,7 +20,7 @@ Run integration checks from the **backend** directory with the app running (`pyt
 |-----|--------|------|-------------|----------|
 | **POST /auth/register** | POST | no | `{"username","password"}` | 201 token + user_id or 409 |
 | **POST /auth/login** | POST | no | `{"username","password"}` | 200 token or 401 |
-| **POST /ai/ask** | POST | yes | Bearer + `{"question":"..."}`; optional `note_ids`, `messages` | 200 `answer`, `tokens_estimated` |
+| **POST /ai/ask** | POST | yes | Bearer + `{"question":"..."}`; optional `note_context_mode`, `note_ids`, prior `messages` | 200 `answer`, `tokens_estimated`; 402 for insufficient credits |
 | **POST /ai/estimate_tokens** | POST | yes | Bearer + `{"question":"..."}` | 200 `estimated_tokens`, `context_tokens` |
 | **POST /ai/debug/context** | POST | yes | Bearer + `{"question":"..."}` | 200 context, scores, dropped_notes |
 | **POST /notes** | POST | yes | Bearer + note JSON | 201 note |
@@ -32,25 +32,37 @@ Run integration checks from the **backend** directory with the app running (`pyt
 | **GET /settings** | GET | yes | Bearer | 200 preferences |
 | **PUT /settings** | PUT | yes | Bearer + JSON merge | 200 settings |
 | **GET /health** | GET | no | `curl .../health` | 200 `{"status":"ok"}` |
+| **POST /credits/rewarded-ad** | POST | yes | Bearer + non-empty `reward_id` | 200 configured grant; development foundation only |
 
 ---
 
-## Scripts
+## Backend checks
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/test/test_ask_note_ids_and_health.py` | Smoke: health, login, ask, note_ids |
-| `scripts/test/stress_test_faiss_full.py` | Bulk notes + many ask/debug calls |
-| `scripts/test/stress_test_faiss_heavy.py` | Heavy FAISS scenarios |
-| `scripts/test/test_semantic_retrieval_and_chunked_notes.py` | Retrieval + chunking |
+Run from `backend/`:
 
 ```bash
-cd backend
-python scripts/test/test_ask_note_ids_and_health.py
-python scripts/test/test_ai_credits.py
+python -m compileall -q app scripts
+python -m scripts.test.test_ai_context_modes
+python -m scripts.test.test_ai_credits
+python -m scripts.test.test_ai_response_style
+python -m scripts.test.test_lazy_embeddings
+python -m scripts.test.test_text_retrieval
+python -m scripts.test.test_seed_user
 ```
 
-`test_ai_credits.py` uses temporary credit storage and mocks the AI provider. It covers initial balances, per-user isolation, idempotent grants, the development rewarded-ad callback, Ask spending, insufficient-credit rejection, provider short-circuiting, refunds, retry-safe reservations, JWT authentication, and the existing IP rate limit.
+`test_ai_credits.py` uses temporary credit storage and mocks AI execution. It covers initial balances, per-user isolation, idempotent grants, the development rewarded-ad route, Ask spending, insufficient-credit rejection, unlimited-role behavior, refunds, JWT authentication, and rate limiting. `test_ai_context_modes.py` covers all modes, selected IDs, missing-mode compatibility, and invalid modes. `test_text_retrieval.py` covers deterministic lexical scoring, filtering, thresholds, and token packing. `test_lazy_embeddings.py` verifies model initialization is deferred.
+
+`test_selected_notes_context.py` is pytest-style and can be run with `python -m pytest scripts/test/test_selected_notes_context.py` if pytest is installed; pytest is not listed in `requirements.txt`.
+
+### Live API smoke (optional)
+
+Start the backend from `backend/` with `python run.py`, configure a provider key, and ensure the test account has AI Credits. Then run:
+
+```bash
+python -m scripts.test.test_ask_note_ids_and_health
+```
+
+This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it makes live requests and can create a test user. The `stress_test_faiss_*.py` scripts make bulk writes and AI calls, so they are not routine checks. `test_semantic_retrieval_and_chunked_notes.py` uses the obsolete API-secret-as-Bearer pattern; do not use it as a current authentication or retrieval check.
 
 ---
 
@@ -60,12 +72,16 @@ python scripts/test/test_ai_credits.py
 |------|-----|----------|
 | Health | `curl http://127.0.0.1:5000/health` | 200 ok |
 | Ask | Login → POST `/ai/ask` with Bearer | 200 answer |
-| Selected notes | Ask with `note_ids` array | Context from those notes only |
+| Note context modes | Ask with each `note_context_mode` | Off ignores IDs; Focused uses only selected IDs; Automatic searches all notes unless IDs restrict it; omitted mode defaults to Automatic |
+| Selected notes | Ask with `note_ids` array in Focused or Automatic | Only selected candidates can be used; selected notes remain eligible if no lexical match is found |
+| Default retrieval | Default config / `MEMORY_RETRIEVAL=text` | Deterministic lexical retrieval; no SentenceTransformer model load |
+| Optional semantic retrieval | Set `MEMORY_RETRIEVAL=semantic` before starting backend and inspect `/ai/debug/context` with JWT | Semantic FAISS path; model loads only on first use; requires model dependencies and availability |
+| Credits | Use `test_ai_credits.py` | Charge, insufficient-balance 402, role bypass, and error refund match config |
 | Images | Notes UI or multipart `/notes/from-images` | 201; Tesseract required |
 
 ## Frontend manual regression checklist
 
-Run the frontend build from the repository root:
+Run the frontend production build from the repository root:
 
 ```bash
 npm --prefix .\frontend run build
@@ -73,8 +89,12 @@ npm --prefix .\frontend run build
 
 - Login and register.
 - Open Ask.
-- Open the History selector from Ask; select a conversation; verify the selector closes and Ask uses the selected conversation.
-- Open the Notes selector from Ask; select notes; verify the selector closes and Ask shows the selected context.
+- Verify the Ask shortcuts open the History and Notes selectors; selecting an item returns to Ask and closes the selector.
+- Verify the note mode cycles `Off → Focused → Automatic → Off`; Off ignores selected IDs, Focused without IDs supplies no context, and Automatic searches all notes only when IDs are absent.
+- Verify conversation history is expanded by default, user turns are right-aligned, and AI turns are left-aligned.
+- Edit a user turn inline. Cancel and Escape preserve the original. Save resends through the current conversation; confirm later turns are replaced by the edited turn and new AI response.
+- Verify Edit is available to keyboard focus and remains visible on mobile; confirm the textarea has a label and Save/Cancel are real buttons.
+- Keyboard-tab through Ask shortcuts, mode toggle, Notes/History action buttons, and floating-window controls; verify visible focus, accessible labels, and a clear button surface/hover/pressed state. Compact Ask shortcuts should still read as buttons, not plain labels.
 - Verify one History selector and one Notes selector maximum per Ask window.
 - Verify selectors from different Ask windows remain independent.
 - Create a new conversation from History; verify it appears and opens immediately.
@@ -83,7 +103,7 @@ npm --prefix .\frontend run build
 - Verify Ask, History, Debug, and Settings do not duplicate the FloatingWindow title.
 - Verify loading, error, and empty states still render.
 
-### Floating-window mobile and desktop regression
+### Floating-window mobile and desktop regression (manual)
 
 - Test at approximately `375×667`, `390×844`, and `412×915`.
 - Touch-drag and touch-resize the Ask window.
@@ -95,3 +115,9 @@ npm --prefix .\frontend run build
 - Verify maximize/restore is hidden while collapsed.
 - Verify collapse/expand still works after maximizing/restoring.
 - Verify desktop mouse drag and resize still work.
+
+There is no frontend component-test or browser-automation suite in the repository. Do not treat a browser automation run as a required check.
+
+## Final repository check
+
+From the repository root, run `git diff --check` after reviewing the Markdown diff. The frontend build command above is `npm --prefix .\frontend run build`.

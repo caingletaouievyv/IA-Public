@@ -28,7 +28,6 @@ frontend/
     ├── api.js              # fetch wrappers, token storage, 401 handling
     ├── index.css             # Global theme, layout, component utility classes
     └── components/
-    └── components/
         ├── PublicSite.jsx
         ├── Login.jsx
         ├── FloatingWindow.jsx
@@ -109,15 +108,14 @@ frontend/
 
 | Component | Purpose | Props | Behavior / notes |
 |-----------|---------|-------|------------------|
-| **App** | Auth gate; opens/closes floating panels | — | `token` from `getToken()`; `Login` if absent; listens `ia:unauthorized`; `Header` + link-style triggers; stack of `FloatingWindow` |
-| **App** | Public path handling, auth gate, floating panels | — | Public `/`, `/privacy`, `/terms`, `/contact`; `/app` enters the existing auth flow. Authenticated root behavior and floating windows remain unchanged. |
+| **App** | Public path handling, auth gate, floating panels | — | Public `/`, `/privacy`, `/terms`, `/contact`; `/app` enters the auth flow. `token` from `getToken()`; `Login` if absent; listens for `ia:unauthorized`; otherwise shows Header, link-style triggers, and a stack of `FloatingWindow`s. |
 | **PublicSite** | Landing, Privacy, Terms, Contact | `path` | Path-based public shell with shared header/footer; no router or API dependency |
 | **Header** | Brand + sign out | `onLogout?: fn` | Renders logout only if `onLogout` passed |
 | **Login** | Sign in / register | `onLogin(token)` | Local `username`, `password`, `isRegister`, `loading`, `error`; validates non-empty; toggles register via `link-button` |
 | **FloatingWindow** | Draggable, resizable, collapsible shell | `title`, `id`, `initialPosition`, `onClose`, `onBringToFront`, `isFront`, `stackIndex`, `collapsedStackIndex`, `onCollapsedChange`, `children` | Desktop mouse and mobile touch drag/resize; responsive sizing and viewport clamping; scrollable body; minimize/collapse, maximize/restore, and close controls; position/size per-id in `localStorage` (`ia-floating-window-{id}`); collapse docks bottom-left with horizontal stack; double-click titlebar or toggle button; resize handle; `zIndex` bump when front; owns the single top-level title for each window |
-| **Ask** | `/ai/ask` + optional `note_ids` + per-window `note_context_mode` + conversation | `onHistoryPicker`, `onNotesPicker`, controlled `noteContextMode` | Uses the FloatingWindow shell title; no redundant internal Ask title. Conversation is collapsed by default, followed by Chat Context and Question in the current JSX order. User turns are right-aligned bounded bubbles; AI turns retain the existing left-aligned rendering. Edit appears on hover/focus (always visible on mobile); Save resends the edited turn with only earlier turns, then persists the replacement turn and answer, dropping later turns. Escape cancels. Each Ask window defaults to Off; the third shortcut cycles Off → Automatic → Focused → Off. Selected values return through the existing callbacks and conversation turns persist via `updateNote`. |
+| **Ask** | `/ai/ask` + optional note IDs, context mode, and conversation messages | `onHistoryPicker`, `onNotesPicker`, controlled `noteContextMode` | Uses the FloatingWindow title. Conversation and Notes shortcuts open scoped selectors. Conversation History initially renders expanded above the Question and can be collapsed. User turns are right-aligned bounded bubbles; AI turns are left-aligned. Only user turns can be edited inline. Escape/Cancel exits without changing the original; Save resends through the same Ask flow with earlier turns, then persists the edited turn and new answer, replacing later turns. Each Ask window defaults to Off; the mode shortcut cycles Off → Focused → Automatic → Off. Turns persist in a `_history` note through `updateNote`; there is no edit endpoint. |
 | **Notes** | CRUD, search, bulk delete, image import | `isSelectionMode`, `onSelect`, `onCloseSelection` | List vs add (`note` \| `from-images`) vs detail edit; `getNotesMeta` for tag/category suggestions; client search; first **100** matches shown; visibility + 30s poll when list visible; `_history` hidden. Ask opens the existing note picker in selection mode; note selection and normal CRUD are unchanged. |
-| **History** | Conversations (`_history` notes) | `isSelectionMode`, `onSelect`, `onCloseSelection` | Same list/card/toolbar patterns as Notes; title edit; single + bulk delete modals; visibility + 30s refresh when list visible. In normal mode, the active conversation uses `note-card--active`; creating a conversation adds it to the list, sets it as the viewed conversation, and refreshes the list. In selection mode, clicking or keyboard-selecting a conversation calls `onSelect(id)` and then closes the selector. |
+| **History** | Conversations (`_history` notes) | `isSelectionMode`, `onSelect`, `onCloseSelection` | Same list/card/toolbar patterns as Notes; title edit; single + bulk delete modals; visibility + 30s refresh when list visible. In normal mode, creating a conversation opens it for viewing and active styling. In Ask selection mode, the Conversation shortcut opens the History picker; selecting a conversation or creating a new one returns its ID and closes the picker. |
 | **DebugContext** | Inspect retrieval context | — | `debugContext(question, null)`; JSON in `<pre>` |
 | **Settings** | GET/PUT `/settings/` | — | Manual “Load settings”; form `theme`, `default_model`; optimistic local `prefs` merge; FloatingWindow supplies the sole top-level Settings title |
 
@@ -142,6 +140,20 @@ The maximize/restore control is hidden while the window is collapsed. Maximizing
 - The floating body remains scrollable on touch devices.
 - `touch-action: none` is limited to the interactive titlebar and resize-handle areas, so body scrolling remains available.
 - Existing selector behavior remains unchanged.
+
+### Ask shortcuts and conversation behavior
+
+- **Conversation** opens the History selector, marks the active conversation, and supports starting a new conversation from that picker. The active-conversation badge exposes its title, message count, and update date.
+- **Notes** opens the Notes selector in selection mode. Selected note count/title information appears on the shortcut; the picker returns selected notes to Ask.
+- The third shortcut displays the active note-context mode and cycles `Off → Focused → Automatic → Off`. Off ignores selected IDs; Focused uses selected notes only and has no context without a selection; Automatic searches user notes when relevant and restricts the search when IDs are selected. Requests omitting the mode retain automatic behavior for older clients.
+- Conversation History initially renders expanded and has a toggle. User messages appear on the right; AI messages appear on the left.
+- On desktop, Edit is revealed by hover or keyboard focus. On mobile it remains visible beneath the user message. The inline editor has a visible label; Escape or Cancel leaves the stored message unchanged. Save sends the edited message through `/ai/ask` with only earlier turns, then updates the existing `_history` note and replaces following turns. There is no dedicated edit API.
+- Ask shortcuts use the shared bordered subtle-button treatment at a compact size. Conversation, Notes, and mode shortcuts retain visible hover/active/focus states and accessible labels; they are controls, not plain text labels.
+
+### Notes and History actions
+
+- Notes and History use the shared button hierarchy: primary for save/submit, subtle for navigation and selection tools, danger for delete, and fixed-size icon buttons for compact remove/window actions.
+- History includes new conversation, selection, title save, and single/bulk delete actions. Notes includes add/import, selection, save, and single/bulk delete actions. Selection-mode cards support click and Enter/Space; action buttons expose names/labels where icons alone would be unclear.
 
 ### Floating selector ownership
 
@@ -174,7 +186,7 @@ The maximize/restore control is hidden while the window is collapsed. Maximizing
 | **Success** | `.success-msg` or plain text in `.out`; Notes/History use `out--compact` |
 | **Forms** | HTML5 `label` + `htmlFor`; required fields validated in handlers before API |
 | **Destructive** | Modal `.notes-delete-confirm` (backdrop click dismiss); `.notes-toolbar-btn--danger` |
-| **Focus / keyboard** | `:focus-visible` + `box-shadow: var(--shadow-focus)` on buttons/inputs; note cards `role="button"` + Enter/Space; floating titlebar keyboard toggles collapse |
+| **Focus / keyboard** | `:focus-visible` + `box-shadow: var(--shadow-focus)` on buttons/inputs; selector cards support Enter/Space; Ask shortcut badges expose keyboard focus/tooltips; inline edit uses a labeled textarea and keyboard-operable buttons; floating titlebar keyboard toggles collapse |
 | **Interaction** | Shared button variants distinguish primary, secondary, subtle, destructive, icon, and pressed-toggle actions; `button:active` gives pressed feedback; link-style actions use `.link-button` |
 
 ---

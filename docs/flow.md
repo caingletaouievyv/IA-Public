@@ -4,17 +4,22 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 ---
 
-## 1. POST /ai/ask (answer a question with optional memory)
+## 1. POST /ai/ask (authenticated answer with optional memory)
 
 | Step | Where | What to look at |
-|------|--------|------------------|
-| 1 | `backend/app/ai/routes.py` → `ask_ai()` | Parse `question`, `note_context_mode` (missing mode defaults to `automatic` for older clients), optional `note_ids` via `_parse_note_ids(data)`, and optional `messages` via `_parse_history_messages(data)`; call `ask(...)`. |
-| 2 | `backend/app/ai/engine.py` → `ask()` | Pass the mode and selected IDs to `build_context()`. If `history_messages`: retain the existing chat format (system + history + current question), cap 30 messages, and call `call_ai(..., messages=...)`. Otherwise use the single-prompt path. Return answer + token count. |
-| 3 | `backend/app/memory/manager.py` → `build_context()` | `off` returns empty context before loading notes, regardless of IDs. `focused` with no IDs also returns empty context. With IDs in Automatic or Focused, filter to those notes. `automatic` without IDs searches all user notes, then applies the existing retrieval, threshold, packing, summarization, token-cap, and analytics pipeline. |
-| 4 | `backend/app/memory/embeddings.py` | `get_relevant_notes_subset()`: temp FAISS index from user's notes (all or filtered by note_ids); no global cache in multi-user path. |
-| 5 | `backend/app/ai/client.py` → `call_ai()` | If `messages`: `call_single(messages=...)` (chat API). Else: `call_single(prompt=...)`. Single/ensemble/judge from config. |
+|------|-------|------------------|
+| 1 | `backend/app/ai/routes.py` → `ask_ai()` | Authenticate first with `require_auth()`. Parse JSON; reject a missing/falsey `question` and invalid `note_context_mode` with 400. Missing mode defaults to `automatic` for older clients. Normalize `note_ids` only when it is a list; normalize prior `messages` to user/assistant turns. |
+| 2 | `backend/app/credits/manager.py` and `auth/manager.py` | Unless the persisted role matches `AI_UNLIMITED_ROLE`, reserve `AI_ASK_CREDIT_COST` before AI work. Insufficient balance returns 402 without calling the engine. Operation identity comes from `Idempotency-Key`, `request_id`, or a generated UUID. |
+| 3 | `backend/app/ai/engine.py` → `ask()` | Build note context with the authenticated `user_id`. If previous messages exist, send system instructions + up to 30 prior turns + the current question in chat format. Otherwise send one prompt. |
+| 4 | `backend/app/memory/manager.py` → `build_context()` | `off` returns empty context before loading notes, even if IDs were supplied. `focused` without IDs also returns empty context without loading notes. `automatic` without IDs considers all user notes; either enabled mode with IDs filters to those selected notes. Unknown IDs yield empty context. |
+| 5 | `backend/app/memory/text_retrieval.py` or `memory/embeddings.py` | `MEMORY_RETRIEVAL=text` is the default and uses deterministic weighted lexical overlap over titles, metadata, and chunked note content. `MEMORY_RETRIEVAL=semantic` opts into temporary FAISS indexes. The SentenceTransformer model is imported and initialized lazily. Explicitly selected notes are retained if no positive match is found. |
+| 6 | `backend/app/ai/client.py` → `call_ai()` and `ai/routes.py` | Apply the selected retriever's threshold, then pack, summarize long notes, and cap context tokens. Call the configured provider in single/ensemble/judge mode. Return `answer` and `tokens_estimated`; refund a charged reservation if the engine raises. |
 
-**estimate_tokens:** Route parses `question`, calls `engine.get_token_estimate(question)` (builds context + prompt, returns estimated_tokens, context_tokens); route jsonifies. Business logic in engine only.
+**Credit behavior:** the default ask cost is one internal AI Credit, not one provider token. The configured unlimited role bypasses reservation. An AI exception triggers a ledger refund; insufficient balance is rejected before context/provider work.
+
+**Conversation persistence:** `Ask.jsx` loads history from a note in category `_history`, passes its previous turns in `messages`, then saves the new user/assistant pair with `PUT /notes/<history-id>`.
+
+**`POST /ai/estimate_tokens`:** authenticate, validate `question`, parse optional `note_ids`, build context using the engine's default automatic mode, and return `estimated_tokens` plus `context_tokens`.
 
 ---
 
@@ -41,8 +46,8 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `backend/app/ai/routes.py` → `debug_context()` | Parse `question`; `build_context(question)`; return context, context_tokens, best_faiss_score (real score even when below threshold; see [project.md — FAISS threshold tuning](project.md#faiss-threshold-tuning)), dropped_notes. |
-| 2 | Same as flow 1 steps 3–4 | `build_context` → manager → embeddings/FAISS. |
+| 1 | `backend/app/ai/routes.py` → `debug_context()` | Authenticate, parse `question` and optional `note_ids`, then return context, context_tokens, `best_faiss_score`, and dropped_notes. The response field name is retained for compatibility; it contains the active retriever's score, including lexical scores. |
+| 2 | `backend/app/memory/manager.py` | Uses the configured retriever (`text` by default, optional `semantic`) and the default automatic context mode. |
 
 ---
 
@@ -53,7 +58,7 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 | 1 | `backend/app/memory/manager.py` → `build_context()` | After building result, `log_memory_event(...)` if enabled. |
 | 2 | `backend/app/memory/analytics.py` → `log_memory_event()` | If `MEMORY_ANALYTICS_ENABLED`: append one row to CSV or JSONL at `MEMORY_ANALYTICS_PATH`. |
 | 3 | `backend/scripts/analyze_memory_analytics.py` | Read CSV; group by intent; compute stats, suggested threshold, and p25 percentile (3.2b); print. Run from backend: `python -m scripts.analyze_memory_analytics`. |
-| 4 | `.env` + restart | Set `FAISS_THRESHOLD_LOOKUP`, `FAISS_THRESHOLD_EXPLORATORY` from script output ([project.md — FAISS threshold tuning](project.md#faiss-threshold-tuning)); restart app; re-test /ask or stress test. |
+| 4 | `.env` + restart | For default text retrieval, set `TEXT_RETRIEVAL_THRESHOLD_LOOKUP` and `TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY`; for semantic retrieval, use the `FAISS_THRESHOLD_*` settings. Restart and re-test `/ai/ask` or `/ai/debug/context`. |
 
 ---
 
@@ -113,16 +118,16 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 ---
 
-## 11. Ask with selected notes (chat context)
+## 11. Ask with selected notes (context filtering)
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `backend/app/ai/routes.py` → `ask_ai()` | Parse optional `note_ids: string[]` from JSON; call `ask(question, note_ids=note_ids)`. |
-| 2 | `backend/app/ai/engine.py` → `ask()` | Pass `note_ids` to `build_context(question, max_tokens, note_ids)`. |
-| 3 | `backend/app/memory/manager.py` → `build_context(..., note_ids=None)` | If `note_ids`: filter notes to id in set(note_ids); call `get_relevant_notes_subset()` (temp FAISS, no global cache). Else: load user's notes; build temp FAISS; same pipeline: threshold, summarization, token cap. |
-| 4 | `backend/app/memory/embeddings.py` → `get_relevant_notes_subset()` | Build temporary FAISS index from subset; search; return (score, note) list; do not touch global vector_cache. |
+| 1 | `frontend/src/components/Ask.jsx` → `sendQuestion()` | Send selected note IDs plus the current `note_context_mode`; no IDs are sent when none are selected. |
+| 2 | `backend/app/ai/routes.py` → `ask_ai()` | Parse the mode and optional `note_ids`, then pass them with the authenticated user ID to `ask()`. |
+| 3 | `backend/app/memory/manager.py` → `build_context()` | `off` ignores IDs. In `focused` and `automatic`, supplied IDs restrict the candidate set to those notes. In focused mode without IDs, return empty context. If selected candidates have no positive retrieval score, include the selected candidates subject to token packing. |
+| 4 | `backend/app/memory/text_retrieval.py` / `memory/embeddings.py` | Use deterministic lexical retrieval by default. Only `MEMORY_RETRIEVAL=semantic` imports the optional FAISS path; its embedding model is lazy-loaded. |
 
-Frontend: optional multi-select of notes in Ask; send `note_ids` with each question so "make a reviewer from these notes" uses only selected notes.
+The UI's mode cycle is `Off → Focused → Automatic → Off`. Automatic with no selected IDs can search all user notes; selected IDs narrow either enabled mode.
 
 ---
 
@@ -144,7 +149,7 @@ See [project.md](project.md) roadmap (Phase 8).
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` | Ask invokes `onHistoryPicker` when the user chooses Select conversation. |
+| 1 | `frontend/src/components/Ask.jsx` | The Conversation shortcut invokes `onHistoryPicker` to open saved histories or create a new conversation. |
 | 2 | `frontend/src/App.jsx` → `openHistoryForSelection()` | App creates a History floating window with `isSelectionMode`, the Ask window's `parentAskId`, the selection callback, and `centeredInitialPosition()`. It reuses the existing selector for that Ask when one is already open. |
 | 3 | `frontend/src/components/History.jsx` | Selection mode renders conversations as selectable cards. Click or Enter/Space calls `onSelect(h.id)`. |
 | 4 | `frontend/src/components/Ask.jsx` and `App.jsx` | The callback sets `currentHistoryId` in Ask; `onCloseSelection` removes the selector window. Ask then loads the conversation note and its messages. |
@@ -153,10 +158,10 @@ See [project.md](project.md) roadmap (Phase 8).
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` | Ask invokes `onNotesPicker` when the user chooses Load notes. |
+| 1 | `frontend/src/components/Ask.jsx` | The Notes shortcut invokes `onNotesPicker` to open the Notes window in selection mode. |
 | 2 | `frontend/src/App.jsx` → `openNotesForSelection()` | App creates a Notes floating window with `isSelectionMode`, the Ask window's `parentAskId`, the selection callback, and `centeredInitialPosition()`. It reuses the existing selector for that Ask when one is already open. |
 | 3 | `frontend/src/components/Notes.jsx` | Selection mode renders notes as selectable cards. Click or Enter/Space calls `onSelect(n)`. |
-| 4 | `frontend/src/components/Ask.jsx` and `App.jsx` | The callback stores the selected note in Ask, updates the selected note ID set, and `onCloseSelection` removes the selector window. The next Ask request sends the selected `note_ids`. |
+| 4 | `frontend/src/components/Ask.jsx` and `App.jsx` | The callback stores the selected notes in Ask, updates the selected note ID set, and `onCloseSelection` removes the selector window. The next Ask request sends the selected `note_ids`. |
 
 ## 15. New conversation
 
@@ -175,5 +180,15 @@ See [project.md](project.md) roadmap (Phase 8).
 | 3 | `frontend/src/components/History.jsx` / `Notes.jsx` | Selection callbacks run before `onCloseSelection`, returning the selection and closing the selector. |
 
 ---
+
+## 17. Edit and resend a user message
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `frontend/src/components/Ask.jsx` | Only user turns show an Edit control. Editing is inline in a labeled textarea. Escape or Cancel exits editing; the unchanged message remains in the conversation. |
+| 2 | `handleEditSave()` → `sendQuestion()` | Save sends the edited text through the normal Ask API flow using only messages before the edited turn. |
+| 3 | `sendQuestion()` → `updateNote()` | On success, save the edited user turn and new AI response to the same `_history` note. Turns after the edited message are replaced. |
+
+There is no backend chat-edit endpoint; the frontend uses `POST /ai/ask` and the existing `PUT /notes/<id>` history update.
 
 **Related docs:** [docs.md](docs.md), [ia.md](ia.md), [project.md](project.md).

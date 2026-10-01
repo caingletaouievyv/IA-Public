@@ -7,7 +7,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from app.config import CORS_ORIGINS
+from app.config import CORS_ORIGINS, validate_jwt_secret
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -17,6 +17,7 @@ limiter = Limiter(
 
 def create_app():
     """Flask application factory. Serves API + frontend (Phase 5). Prefers built React SPA (frontend/dist) when present."""
+    validate_jwt_secret()
     app = Flask(__name__)
     limiter.init_app(app)
     if CORS_ORIGINS:

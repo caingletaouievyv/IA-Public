@@ -9,7 +9,14 @@ from app.common.auth import require_auth
 from app.auth.manager import get_user_role
 from app.ai.engine import ask, get_token_estimate
 from app.config import AI_ASK_CREDIT_COST, AI_UNLIMITED_ROLE
-from app.credits.manager import InsufficientCreditsError, refund_credits, reserve_credits
+from app.credits.manager import (
+    InsufficientCreditsError,
+    claim_operation,
+    complete_operation,
+    refund_credits,
+    release_operation,
+    reserve_credits,
+)
 from app.memory.manager import build_context
 
 bp = Blueprint("ai", __name__)
@@ -78,6 +85,11 @@ def ask_ai():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     operation_id = _operation_id(data)
+    operation = claim_operation(user_id, operation_id)
+    if operation["status"] == "completed":
+        return jsonify(operation["result"]), 200
+    if operation["status"] == "pending":
+        return jsonify({"error": "operation_in_progress"}), 409
     reservation = None
     if get_user_role(user_id) != AI_UNLIMITED_ROLE:
         try:
@@ -88,6 +100,7 @@ def ask_ai():
                 operation_id,
             )
         except InsufficientCreditsError as e:
+            release_operation(user_id, operation_id)
             return jsonify({
                 "error": "insufficient_ai_credits",
                 "message": "Not enough AI Credits",
@@ -105,10 +118,13 @@ def ask_ai():
             history_messages=_parse_history_messages(data),
         )
         logger.info("ai_ask ask_complete elapsed_seconds=%.3f", time.perf_counter() - ask_started_at)
-        return jsonify({"answer": answer, "tokens_estimated": tokens}), 200
+        result = {"answer": answer, "tokens_estimated": tokens}
+        complete_operation(user_id, operation_id, result)
+        return jsonify(result), 200
     except Exception as e:
         if reservation and reservation["charged"]:
             refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_ask_refund", operation_id)
+        release_operation(user_id, operation_id)
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/estimate_tokens", methods=["POST"])

@@ -9,6 +9,8 @@ import unittest
 import uuid
 from unittest.mock import patch
 
+os.environ.setdefault("JWT_SECRET", "ia-unit-test-jwt-secret-with-enough-variety-2026")
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import jwt
@@ -17,6 +19,7 @@ from app import create_app, limiter
 from app import config
 from app.ai import routes as ai_routes
 from app.credits import manager as credit_manager
+from app.credits import routes as credit_routes
 
 
 class AICreditTests(unittest.TestCase):
@@ -25,12 +28,15 @@ class AICreditTests(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.data_dir_patch = patch.object(credit_manager, "DATA_DIR", cls.temp_dir.name)
         cls.data_dir_patch.start()
+        cls.reward_env_patch = patch.object(credit_routes, "APP_ENV", "test")
+        cls.reward_env_patch.start()
         cls.app = create_app()
         cls.app.config.update(TESTING=True)
         cls.client = cls.app.test_client()
 
     @classmethod
     def tearDownClass(cls):
+        cls.reward_env_patch.stop()
         cls.data_dir_patch.stop()
         cls.temp_dir.cleanup()
 
@@ -69,6 +75,13 @@ class AICreditTests(unittest.TestCase):
         account = credit_manager.get_credit_account(self.user_id())
         self.assertEqual(account["credit_balance"], max(0, config.AI_CREDIT_INITIAL_BALANCE))
         self.assertEqual(account["ledger"][0]["reason"], "initial_balance")
+
+    def test_app_startup_rejects_missing_or_unsafe_jwt_secret(self):
+        for secret in ("", "change-me-in-production", "a" * 32):
+            with self.subTest(secret_length=len(secret)):
+                with patch.object(config, "JWT_SECRET", secret):
+                    with self.assertRaisesRegex(RuntimeError, "JWT_SECRET"):
+                        create_app()
 
     def test_balances_are_isolated_and_grants_are_ledgered(self):
         first = self.user_id()
@@ -121,6 +134,17 @@ class AICreditTests(unittest.TestCase):
             config.AI_CREDIT_INITIAL_BALANCE + config.REWARDED_AD_CREDIT_AMOUNT,
         )
 
+    def test_unverified_reward_is_disabled_outside_development_and_test(self):
+        user_id = self.user_id()
+        before = credit_manager.get_credit_account(user_id)
+        with patch.object(credit_routes, "APP_ENV", "production"):
+            response = self.rewarded_ad(user_id, "unverified-reward")
+        after = credit_manager.get_credit_account(user_id)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json()["error"], "rewarded_ad_disabled")
+        self.assertEqual(after["credit_balance"], before["credit_balance"])
+        self.assertEqual(after["ledger"], before["ledger"])
+
     def test_reward_requires_non_empty_reward_id(self):
         for reward_id in (None, "", "   "):
             with self.subTest(reward_id=reward_id):
@@ -172,11 +196,35 @@ class AICreditTests(unittest.TestCase):
             retry = self.ask(user_id, operation_id)
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(retry.status_code, 200, retry.get_data(as_text=True))
-        self.assertEqual(ask_mock.call_count, 2)
+        self.assertEqual(response.get_json(), retry.get_json())
+        self.assertEqual(ask_mock.call_count, 1)
         account = credit_manager.get_credit_account(user_id)
         self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - config.AI_ASK_CREDIT_COST)
         self.assertEqual(account["ledger"][-1]["reason"], "ai_ask")
         self.assertEqual(account["ledger"][-1]["amount"], -config.AI_ASK_CREDIT_COST)
+
+    def test_different_idempotency_keys_are_independent_operations(self):
+        user_id = self.user_id()
+        with patch.object(ai_routes, "ask", side_effect=[("first", 3), ("second", 4)]) as ask_mock:
+            first = self.ask(user_id, "ask-first")
+            second = self.ask(user_id, "ask-second")
+        self.assertEqual(first.get_json()["answer"], "first")
+        self.assertEqual(second.get_json()["answer"], "second")
+        self.assertEqual(ask_mock.call_count, 2)
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - 2 * config.AI_ASK_CREDIT_COST)
+
+    def test_idempotency_records_are_isolated_by_user(self):
+        first_user = self.user_id()
+        second_user = self.user_id()
+        with patch.object(ai_routes, "ask", side_effect=[("first", 3), ("second", 4)]) as ask_mock:
+            first = self.ask(first_user, "shared-key")
+            second = self.ask(second_user, "shared-key")
+        self.assertEqual(first.get_json()["answer"], "first")
+        self.assertEqual(second.get_json()["answer"], "second")
+        self.assertEqual(ask_mock.call_count, 2)
+        self.assertEqual(credit_manager.get_credit_account(first_user)["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - config.AI_ASK_CREDIT_COST)
+        self.assertEqual(credit_manager.get_credit_account(second_user)["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - config.AI_ASK_CREDIT_COST)
 
     def test_normal_user_still_pays_credits(self):
         user_id = self.user_id()

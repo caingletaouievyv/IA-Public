@@ -3,7 +3,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.common.auth import require_auth
-from app.config import REWARDED_AD_CREDIT_AMOUNT
+from app.config import APP_ENV, REWARDED_AD_CREDIT_AMOUNT
 from app.credits.manager import grant_credits, get_credit_account
 
 bp = Blueprint("credits", __name__)
@@ -21,10 +21,12 @@ def _has_reward(account: dict, reward_id: str) -> bool:
 
 @bp.route("/rewarded-ad", methods=["POST"])
 def rewarded_ad():
-    """Development foundation for a provider-verified rewarded-ad callback."""
+    """Unverified reward grants are available only in explicit development/test mode."""
     user_id, auth_err = require_auth()
     if auth_err:
         return auth_err
+    if APP_ENV not in {"development", "test"}:
+        return jsonify({"error": "rewarded_ad_disabled"}), 404
 
     data = request.get_json(silent=True) or {}
     reward_id = data.get("reward_id")

@@ -3,9 +3,18 @@
 import os
 
 # auth: JWT for login (no API secret in UI). Set JWT_SECRET in .env (do not commit).
-JWT_SECRET = (os.getenv("JWT_SECRET") or os.getenv("API_SECRET", "change-me-in-production")).strip()
+JWT_SECRET = (os.getenv("JWT_SECRET") or "").strip()
 JWT_ALGORITHM = "HS256"
 JWT_EXP_DAYS = int(os.getenv("JWT_EXP_DAYS", "7"))
+APP_ENV = (os.getenv("APP_ENV") or "production").strip().lower()
+
+
+def validate_jwt_secret(secret: str | None = None) -> str:
+    value = JWT_SECRET if secret is None else secret.strip()
+    known_placeholders = {"change-me-in-production", "changeme", "secret", "password", "test-secret"}
+    if len(value) < 32 or len(set(value)) < 8 or value.casefold() in known_placeholders:
+        raise RuntimeError("JWT_SECRET must be configured with at least 32 characters of non-placeholder secret material.")
+    return value
 
 # AI provider
 MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "groq")

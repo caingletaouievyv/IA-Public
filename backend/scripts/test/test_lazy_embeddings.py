@@ -6,6 +6,8 @@ import sys
 import unittest
 from unittest.mock import patch
 
+os.environ.setdefault("JWT_SECRET", "ia-unit-test-jwt-secret-with-enough-variety-2026")
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
