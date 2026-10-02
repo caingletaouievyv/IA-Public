@@ -12,7 +12,7 @@ Product and technical reference: stack, features, roadmap, and operations.
 |-------|------------|
 | Backend | Python 3.10+, Flask, Pydantic |
 | LLM | Groq by default; Ollama, DeepSeek, and OpenAI provider entries are available in the client configuration |
-| Storage | JSON files: users, per-user notes/settings, and per-user AI Credit ledgers |
+| Storage | Local runtime JSON files: users, per-user notes/settings, AI Credit ledgers, and Ask operation results; `backend/data/` is ignored by Git |
 | Memory | Deterministic lexical retrieval by default; optional FAISS/SentenceTransformer semantic retrieval, thresholds, chunking, summarization |
 | Frontend | React 18, Vite 5, JWT in `localStorage` |
 
@@ -47,11 +47,12 @@ IA/
 
 ## Features
 
-- **Auth** — `POST /auth/register`, `/auth/login` → JWT; Bearer on protected routes.
+- **Auth** — `POST /auth/register`, `/auth/login` → JWT; Bearer on protected routes. `JWT_SECRET` is required when `create_app()` starts, must be at least 32 characters with at least 8 distinct characters, and rejects missing, weak, or placeholder values. No default signing secret is used.
 - **Public site** — Unauthenticated landing page at `/`, plus public Privacy, Terms, and Contact pages. `/app` enters the existing authenticated app.
 - **Notes** — Per-user CRUD; `GET /notes/meta` for categories/tags; `POST /notes/from-images` (OCR + AI; append when same title+category).
 - **Ask** — `POST /ai/ask` requires JWT authentication and a non-empty `question`; it accepts optional `note_ids`, `note_context_mode`, and prior `messages`. The mode is per Ask window and defaults to `off` in the frontend. User turns are right-aligned and AI turns left-aligned. Only user turns can be edited inline; saving resends through the same conversation flow and replaces that turn and later turns. There is no chat-edit endpoint.
-- **AI Credits** — Backend-owned per-user balance and JSON ledger. Normal `/ai/ask` costs the configured number of internal AI Credits (default `1`); insufficient balance returns `402` before the AI provider is called. Users with the persisted role matching `AI_UNLIMITED_ROLE` (default `admin`) bypass AI credit reservation and deduction, while retaining authentication and rate limits. Initial balance and development rewarded-ad grants (`REWARDED_AD_CREDIT_AMOUNT`, default `10`) are configurable. `POST /credits/rewarded-ad` is JWT-protected and idempotent by `reward_id`, but is only a development foundation and must not be exposed as a production reward mechanism until an ad provider/server verification step is integrated. Credit purchasing is not implemented. Persistence is protected by a process-local lock and is not a multi-worker transactional store.
+- **AI Credits** — Backend-owned per-user balance and JSON ledger. Normal `/ai/ask` costs the configured number of internal AI Credits (default `1`); insufficient balance returns `402` before the AI provider is called. Users with the persisted role matching `AI_UNLIMITED_ROLE` (default `admin`) bypass AI credit reservation and deduction, while retaining authentication and rate limits. Initial balance and development/test rewarded-ad grants (`REWARDED_AD_CREDIT_AMOUNT`, default `10`) are configurable. `POST /credits/rewarded-ad` requires JWT auth and is enabled only for `APP_ENV=development` or `APP_ENV=test`; its caller-supplied reward ID is not provider verification. It is disabled in production, where a server-side ad-provider verification step is required before granting credits. Credit purchasing is not implemented. JSON persistence and its lock are process-local and are not a multi-worker transactional store.
+- **Ask idempotency** — Each authenticated user's `operation_id` is stored with that user's credit account. It comes from `Idempotency-Key`, `request_id`, or a generated UUID. A completed retry returns the stored response without another provider call or debit; a currently pending duplicate returns `409 operation_in_progress`. Insufficient-credit and failed-provider operations release their pending record so they can be retried. The state uses the per-user JSON file and process-local lock; concurrent multi-worker coordination is not transactional.
 - **Conversation history** — Stored in the per-user notes file as notes with category `_history`; frontend saves turns with `PUT /notes/<id>`. The AI engine sends up to the most recent 30 prior messages to the provider.
 - **Settings** — `GET/PUT /settings/` per user.
 - **AI modes** — `AI_MODE`: `single` | `ensemble` | `judge`; `AI_ENSEMBLE_PROVIDERS`.
@@ -110,7 +111,7 @@ cd backend && pip install -r requirements.txt && python run.py
 - **Seed:** `python -m scripts.seed_user` → `ayi` / `Ayi!23`. The command preserves an existing `ayi` account and notes and only adds missing demo notes.
 - **CORS:** `CORS_ORIGINS` in `.env` when frontend and API are on different origins.
 - **Notes from images:** Tesseract OCR must be installed on the server.
-- **Runtime:** the repository selects Python `3.13.5` in `.python-version`; the frontend package version is `0.0.1`. Flask serves `frontend/dist` when it exists, otherwise it serves the frontend directory. `/health` is unauthenticated. Vite development proxies `/ai`, `/auth`, `/notes`, `/files`, and `/settings` to the backend; the frontend API can use `VITE_API_BASE_URL` for a separate API origin.
+- **Runtime:** the repository selects Python `3.13.5` in `.python-version`; the frontend package version is `0.0.1`. Flask serves `frontend/dist` when it exists, otherwise it serves the frontend directory. `/health` is unauthenticated. Vite development proxies `/ai`, `/auth`, `/notes`, `/files`, and `/settings` to the backend; the frontend API can use `VITE_API_BASE_URL` for a separate API origin. `backend/data/` is local runtime/user data and generated AI-memory output, ignored by Git and not a source-controlled dataset.
 - **Deployment configuration:** the tracked repository contains no provider-specific backend deployment manifest. The frontend includes a static-host SPA fallback in `frontend/public/_redirects`; actual frontend/backend hostnames, build commands, and secret values are deployment-specific and are not specified here.
 
 ---

@@ -10,6 +10,6 @@
 | **Testing** | [testing.md](testing.md) | Test scripts and per-endpoint reference |
 | **UI** | [ui.md](ui.md) | Frontend layout, theme, components |
 
-**Stack:** Python (repository-selected 3.13.5), Flask, Pydantic, Groq by default, JWT authentication, per-user JSON storage and AI Credit ledgers, deterministic lexical note retrieval by default with optional lazy-loaded FAISS/SentenceTransformer retrieval, and React/Vite UI.
+**Stack:** Python (repository-selected 3.13.5), Flask, Pydantic, Groq by default, startup-validated JWT authentication, ignored per-user JSON runtime storage and AI Credit ledgers, deterministic lexical note retrieval by default with optional lazy-loaded FAISS/SentenceTransformer retrieval, and React/Vite UI.
 
 **How docs relate:** **project.md** describes what the product does today. **ia.md** describes how we build it. **flow.md** and **testing.md** help you navigate and verify behavior. **ui.md** covers the frontend.

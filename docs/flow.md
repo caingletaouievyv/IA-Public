@@ -9,13 +9,13 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 | Step | Where | What to look at |
 |------|-------|------------------|
 | 1 | `backend/app/ai/routes.py` → `ask_ai()` | Authenticate first with `require_auth()`. Parse JSON; reject a missing/falsey `question` and invalid `note_context_mode` with 400. Missing mode defaults to `automatic` for older clients. Normalize `note_ids` only when it is a list; normalize prior `messages` to user/assistant turns. |
-| 2 | `backend/app/credits/manager.py` and `auth/manager.py` | Unless the persisted role matches `AI_UNLIMITED_ROLE`, reserve `AI_ASK_CREDIT_COST` before AI work. Insufficient balance returns 402 without calling the engine. Operation identity comes from `Idempotency-Key`, `request_id`, or a generated UUID. |
+| 2 | `backend/app/credits/manager.py` and `auth/manager.py` | Claim a user-scoped operation using `Idempotency-Key`, `request_id`, or a generated UUID. A completed operation returns its saved result; an active duplicate returns 409 `operation_in_progress`. Unless the persisted role matches `AI_UNLIMITED_ROLE`, reserve `AI_ASK_CREDIT_COST` before AI work. Insufficient balance returns 402 and releases the claim without calling the engine. |
 | 3 | `backend/app/ai/engine.py` → `ask()` | Build note context with the authenticated `user_id`. If previous messages exist, send system instructions + up to 30 prior turns + the current question in chat format. Otherwise send one prompt. |
 | 4 | `backend/app/memory/manager.py` → `build_context()` | `off` returns empty context before loading notes, even if IDs were supplied. `focused` without IDs also returns empty context without loading notes. `automatic` without IDs considers all user notes; either enabled mode with IDs filters to those selected notes. Unknown IDs yield empty context. |
 | 5 | `backend/app/memory/text_retrieval.py` or `memory/embeddings.py` | `MEMORY_RETRIEVAL=text` is the default and uses deterministic weighted lexical overlap over titles, metadata, and chunked note content. `MEMORY_RETRIEVAL=semantic` opts into temporary FAISS indexes. The SentenceTransformer model is imported and initialized lazily. Explicitly selected notes are retained if no positive match is found. |
-| 6 | `backend/app/ai/client.py` → `call_ai()` and `ai/routes.py` | Apply the selected retriever's threshold, then pack, summarize long notes, and cap context tokens. Call the configured provider in single/ensemble/judge mode. Return `answer` and `tokens_estimated`; refund a charged reservation if the engine raises. |
+| 6 | `backend/app/ai/client.py` → `call_ai()` and `ai/routes.py` | Apply the selected retriever's threshold, then pack, summarize long notes, and cap context tokens. Call the configured provider in single/ensemble/judge mode. Return `answer` and `tokens_estimated`, and persist the successful result with the operation record. If the engine raises, refund a charged reservation and release the pending operation so a retry can run. |
 
-**Credit behavior:** the default ask cost is one internal AI Credit, not one provider token. The configured unlimited role bypasses reservation. An AI exception triggers a ledger refund; insufficient balance is rejected before context/provider work.
+**Credit and idempotency behavior:** the default ask cost is one internal AI Credit, not one provider token. The configured unlimited role bypasses reservation. A completed retry for the same authenticated user and operation ID returns the persisted response without another provider call or debit. An active duplicate gets 409. An AI exception triggers a ledger refund and releases the pending record; insufficient balance is rejected before context/provider work and also releases the record. Operation results are stored in per-user JSON under a process-local lock, not a multi-worker transactional store.
 
 **Conversation persistence:** `Ask.jsx` loads history from a note in category `_history`, passes its previous turns in `messages`, then saves the new user/assistant pair with `PUT /notes/<history-id>`.
 
@@ -70,6 +70,17 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 | 2 | `backend/app/common/auth.py` → `require_auth()` | Bearer token = JWT; decode with JWT_SECRET; user_id from `sub`. No API_SECRET. |
 | 3 | GET `/notes/auth-check` | `auth_debug()`: returns auth_ok, header_received, header_length (no secret). |
 
+`create_app()` validates `JWT_SECRET` during startup. It must have at least 32 characters and at least 8 distinct characters; missing, weak, or placeholder values raise a generic startup error. No secret value is logged or returned.
+
+### Rewarded-ad credit callback
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `backend/app/credits/routes.py` → `rewarded_ad()` | Require a valid Bearer JWT first. The route is enabled only when `APP_ENV` is `development` or `test`; otherwise it returns 404 without granting credits. |
+| 2 | `backend/app/credits/manager.py` → `grant_credits()` | In development/test only, a caller-supplied `reward_id` identifies an idempotent ledger grant; it is not proof that an ad was completed. |
+
+Production must not grant credits from this unverified callback. A future production integration requires actual server-side verification with an ad provider before invoking the server-authoritative grant logic; no provider integration currently exists.
+
 ---
 
 ## 7. Phase 4: Ensemble & Judge (AI_MODE)
@@ -88,7 +99,7 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 |------|--------|------------------|
 | 1 | `backend/run.py` | Run from repo root: `cd backend && python run.py`. Loads `.env` from repo root. |
 | 2 | `backend/app/__init__.py` → `create_app()` | Serves from `frontend/dist/` if built, else `frontend/`. Route `/` → `index.html`. |
-| 3 | `frontend/` | React SPA. **Login page** first (sign in / register); then header + **Ask · Notes · Debug · Settings** (floating windows). Auth: JWT in localStorage; 401 → clear token and show login. Proxy: /ai, /auth, /notes, /files, /settings → backend. |
+| 3 | `frontend/` | React SPA. **Login page** first (sign in / register); then header + **Ask · Notes · History · Debug · Settings** (floating windows). Auth: JWT in localStorage; 401 → clear token and show login. Proxy: /ai, /auth, /notes, /files, /settings → backend. |
 | 4 | `frontend/src/api.js` | `login()`, `register()`, `ask()`, `listNotes()`, `checkNotesAuth()`, `debugContext()`, `getSettings()`, `putSettings()`. Token from localStorage; no API secret. |
 
 ---

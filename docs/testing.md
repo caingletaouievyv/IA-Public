@@ -8,7 +8,7 @@ Run backend checks from `backend/`; live API smoke tests require the app running
 
 ## Prerequisites
 
-- `.env` at repo root: set a non-default `JWT_SECRET` (the code accepts `API_SECRET` as a legacy fallback). A live `/ai/ask` call also needs credentials for the configured provider; unit tests mock the AI call.
+- `.env` at repo root: set `JWT_SECRET` to a non-placeholder value with at least 32 characters and at least 8 distinct characters. The Flask app fails during startup if it is missing or does not meet validation; there is no default or `API_SECRET` fallback. A live `/ai/ask` call also needs credentials for the configured provider; unit tests mock the AI call.
 - Base URL: `http://127.0.0.1:5000`.
 - **Notes from images:** Tesseract installed (e.g. Windows: `choco install tesseract`).
 
@@ -32,7 +32,7 @@ Run backend checks from `backend/`; live API smoke tests require the app running
 | **GET /settings** | GET | yes | Bearer | 200 preferences |
 | **PUT /settings** | PUT | yes | Bearer + JSON merge | 200 settings |
 | **GET /health** | GET | no | `curl .../health` | 200 `{"status":"ok"}` |
-| **POST /credits/rewarded-ad** | POST | yes | Bearer + non-empty `reward_id` | 200 configured grant; development foundation only |
+| **POST /credits/rewarded-ad** | POST | yes | Bearer + non-empty `reward_id` | 200 configured grant only in `APP_ENV=development` or `APP_ENV=test`; 404 when disabled elsewhere. The ID is not provider verification. |
 
 ---
 
@@ -50,7 +50,7 @@ python -m scripts.test.test_text_retrieval
 python -m scripts.test.test_seed_user
 ```
 
-`test_ai_credits.py` uses temporary credit storage and mocks AI execution. It covers initial balances, per-user isolation, idempotent grants, the development rewarded-ad route, Ask spending, insufficient-credit rejection, unlimited-role behavior, refunds, JWT authentication, and rate limiting. `test_ai_context_modes.py` covers all modes, selected IDs, missing-mode compatibility, and invalid modes. `test_text_retrieval.py` covers deterministic lexical scoring, filtering, thresholds, and token packing. `test_lazy_embeddings.py` verifies model initialization is deferred.
+`test_ai_credits.py` uses temporary credit storage and mocks AI execution. It covers missing/unsafe JWT-secret startup rejection, initial balances, per-user isolation, idempotent grants, rejection of unverified rewarded-ad grants outside dev/test, Ask spending, insufficient-credit rejection, unlimited-role behavior, refunds, JWT authentication, and rate limiting. It also verifies that completed Ask retries return the saved result without another provider call or debit, distinct IDs create distinct operations, and the same ID is isolated between users. It does not currently assert the active-pending 409 response. `test_ai_context_modes.py` covers all modes, selected IDs, missing-mode compatibility, and invalid modes. `test_text_retrieval.py` covers deterministic lexical scoring, filtering, thresholds, and token packing. `test_lazy_embeddings.py` verifies model initialization is deferred and supplies a test-only JWT secret for app startup.
 
 `test_selected_notes_context.py` is pytest-style and can be run with `python -m pytest scripts/test/test_selected_notes_context.py` if pytest is installed; pytest is not listed in `requirements.txt`.
 
@@ -76,7 +76,9 @@ This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it
 | Selected notes | Ask with `note_ids` array in Focused or Automatic | Only selected candidates can be used; selected notes remain eligible if no lexical match is found |
 | Default retrieval | Default config / `MEMORY_RETRIEVAL=text` | Deterministic lexical retrieval; no SentenceTransformer model load |
 | Optional semantic retrieval | Set `MEMORY_RETRIEVAL=semantic` before starting backend and inspect `/ai/debug/context` with JWT | Semantic FAISS path; model loads only on first use; requires model dependencies and availability |
-| Credits | Use `test_ai_credits.py` | Charge, insufficient-balance 402, role bypass, and error refund match config |
+| Credits and idempotency | Use `test_ai_credits.py` | Charge, insufficient-balance 402, role bypass, refunds, completed retry result reuse, distinct operation IDs, and per-user operation isolation match behavior |
+| Rewarded ads | Use `test_ai_credits.py` | Auth is required; caller-supplied reward IDs cannot grant outside explicit development/test mode |
+| JWT startup validation | Use `test_ai_credits.py` | Missing, weak, and placeholder secrets fail app creation without logging the secret |
 | Images | Notes UI or multipart `/notes/from-images` | 201; Tesseract required |
 
 ## Frontend manual regression checklist
