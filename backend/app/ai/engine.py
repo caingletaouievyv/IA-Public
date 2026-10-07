@@ -6,6 +6,7 @@ Supports conversation history: when history_messages are provided, sends chat fo
 
 import logging
 import time
+from app.context import ContextItem
 from app.ai.client import call_ai
 from app.memory.manager import build_context
 from app.memory.utils import estimate_tokens
@@ -13,8 +14,26 @@ from app.memory.utils import estimate_tokens
 logger = logging.getLogger(__name__)
 
 
-def _build_system_content(context: str, note_titles: list) -> str:
+def _context_items_from_notes(result: dict) -> list[ContextItem]:
+    context = result.get("context", "") if result else ""
+    if not context.strip():
+        return []
+    return [
+        ContextItem(
+            source="notes",
+            content=context,
+            metadata={"note_titles": result.get("note_titles") or []},
+        )
+    ]
+
+
+def _build_system_content(context_items: list[ContextItem]) -> str:
     """Single system block: instructions plus optional note context."""
+    context = "\n".join(item.content for item in context_items)
+    note_titles = next(
+        (item.metadata.get("note_titles", []) for item in context_items if item.source == "notes"),
+        [],
+    )
     if context.strip():
         topic_line = "The following context is from the user's notes"
         if note_titles and len(note_titles) == 1:
@@ -46,9 +65,8 @@ def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, use
     logger.info("ai_ask context_start")
     result = build_context(question, max_tokens, note_ids=note_ids, user_id=user_id, note_context_mode=note_context_mode)
     logger.info("ai_ask context_complete elapsed_seconds=%.3f", time.perf_counter() - context_started_at)
-    context = result.get("context", "") if result else ""
-    note_titles = result.get("note_titles") or []
-    system_content = _build_system_content(context, note_titles)
+    context_items = _context_items_from_notes(result)
+    system_content = _build_system_content(context_items)
 
     if history_messages:
         # Chat format: system + previous turns + current question (so model remembers e.g. "your name is Brian").
@@ -87,9 +105,11 @@ def ask(question: str, max_tokens: int = 2000, note_ids: list | None = None, use
 def get_token_estimate(question: str, note_ids: list | None = None, user_id: str = None):
     """Build context for question (user's notes, optional note_ids subset); return estimated_tokens and context_tokens."""
     result = build_context(question, note_ids=note_ids, user_id=user_id)
+    context_items = _context_items_from_notes(result)
+    context = "\n".join(item.content for item in context_items)
     prompt = (
         "You are a helpful assistant with access to the user's notes.\n\n"
-        f"Context:\n{result['context']}\n\nQuestion:\n{question}"
+        f"Context:\n{context}\n\nQuestion:\n{question}"
     )
     return {
         "estimated_tokens": estimate_tokens(prompt),
