@@ -62,6 +62,10 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   }, []);
 
   useEffect(() => {
+    if (isSelectionMode) setSelectedNoteIds(new Set(selectedIds));
+  }, [isSelectionMode]);
+
+  useEffect(() => {
     getNotesMeta()
       .then((m) => setMeta({ categories: m?.categories || [], tags: m?.tags || [] }))
       .catch(() => setMeta({ categories: [], tags: [] }));
@@ -198,7 +202,10 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     setNoteResult(null);
     setNoteLoading(true);
     try {
-      await createNote({ title, category, content, tags });
+      const created = await createNote({ title, category, content, tags });
+      if (isSelectionMode && created?.id) {
+        setSelectedNoteIds((previous) => new Set([...previous, created.id]));
+      }
       setNoteTitle("");
       setNoteCategory("");
       setNoteContent("");
@@ -230,6 +237,10 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
       const note = res.note || res;
       const appended = res.appended === true;
       setImgResult({ success: true, note, appended });
+      if (isSelectionMode && note?.id) {
+        setSelectedNoteIds((previous) => new Set([...previous, note.id]));
+        setAddFormMode(null);
+      }
       setImgFiles([]);
       if (!appended) setImgTitle("");
       loadNotesList(setData, setLoading, setError);
@@ -240,7 +251,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     }
   };
 
-  const showList = isSelectionMode || (!isFormOpen && !isViewingNote);
+  const showList = !isFormOpen && !isViewingNote;
   const showBackToList = isFormOpen || isViewingNote;
 
   // Auto-refresh when list view is visible: on tab focus (visibility) and every 30s (best practice for list UIs).
@@ -279,7 +290,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     setViewingNoteId(null);
     setNoteResult(null);
     setImgResult(null);
-    setSelectedNoteIds(new Set());
+    if (!isSelectionMode) setSelectedNoteIds(new Set());
   };
 
   const handleSelectAll = () => {
@@ -356,21 +367,61 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
             <span className="notes-list-title">{headerTitle}</span>
           )}
           <div className="notes-list-toolbar">
-            {isSelectionMode && showList && (
+            {isSelectionMode && (
               <div className="notes-toolbar-actions" role="group" aria-label="Select notes for chat context">
-                <button type="button" className="button-subtle" onClick={onCloseSelection}>
-                  Cancel
+                {showList ? (
+                  <>
+                    <button type="button" className="button-subtle" onClick={onCloseSelection}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="button-primary"
+                      onClick={() => {
+                        onSelect?.(notesForDisplay.filter((note) => selectedNoteIds.has(note.id)));
+                        onCloseSelection?.();
+                      }}
+                      disabled={loading}
+                    >
+                      Add selected ({selectedNoteIds.size})
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="button-subtle notes-back-btn" onClick={closeViewOrForm}>
+                      Back to list
+                    </button>
+                    {addFormMode === "note" && (
+                      <button
+                        type="submit"
+                        form="notes-new-note-form"
+                        className="button-primary"
+                        disabled={noteLoading || !noteTitle.trim() || !noteCategory.trim() || !noteContent.trim()}
+                      >
+                        {noteLoading ? "…" : "Add note"}
+                      </button>
+                    )}
+                    {addFormMode === "from-images" && (
+                      <button
+                        type="submit"
+                        form="notes-from-images-form"
+                        className="button-primary"
+                        disabled={imgLoading || !imgFiles.length}
+                      >
+                        {imgLoading ? "…" : "Add from images"}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            {isSelectionMode && showList && (
+              <div className="notes-add-toggle" role="group" aria-label="Create a note">
+                <button type="button" className="button-subtle ask-shortcut" onClick={openNoteForm}>
+                  Add note
                 </button>
-                <button
-                  type="button"
-                  className="button-primary"
-                  onClick={() => {
-                    onSelect?.(notesForDisplay.filter((note) => selectedNoteIds.has(note.id)));
-                    onCloseSelection?.();
-                  }}
-                  disabled={loading}
-                >
-                  Add selected ({selectedNoteIds.size})
+                <button type="button" className="button-subtle ask-shortcut" onClick={openFromImagesForm}>
+                  Add from images
                 </button>
               </div>
             )}

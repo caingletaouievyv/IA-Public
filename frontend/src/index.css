@@ -47,9 +47,56 @@ body {
 /* Full-page layout: full width (docs/ui.md) */
 .app-fullpage {
   width: 100%;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 1.5rem 1.25rem;
   min-height: 100vh;
+}
+.app-navigation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-width: 100%;
+  margin: 0;
+}
+.app-navigation__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.app-navigation__link,
+.app-header__logout {
+  min-height: 2.5rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  font-weight: 500;
+}
+.app-navigation__link.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+.app-navigation__link:hover,
+.app-navigation__link:focus-visible {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+.app-navigation__link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.app-navigation__link.active:hover,
+.app-navigation__link.active:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Public pages share the dark system but stay separate from the authenticated shell. */
@@ -302,16 +349,22 @@ body {
   margin: 0.15rem 0 0 0;
 }
 .app-header__actions {
+  display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.app-header__actions .app-navigation {
+  flex-wrap: wrap;
 }
 .app-header__logout {
-  font-size: 0.9rem;
-  padding: 0.35rem 0.6rem;
   border-radius: var(--radius-sm);
-  transition: color var(--transition), background var(--transition);
+  color: var(--text-muted);
 }
-.app-header__logout:hover {
-  color: var(--accent);
+.app-header__actions .app-header__logout:hover {
+  color: var(--text);
 }
 .app-header__logout:focus-visible {
   outline: none;
@@ -614,7 +667,7 @@ button.secondary:focus-visible,
   max-height: 50vh;
 }
 
-/* Notes list (floating-body content; docs/ui.md) */
+/* Notes and history lists (docs/ui.md) */
 .notes-list-title {
   font-size: 0.8rem;
   font-weight: 600;
@@ -905,7 +958,7 @@ button.secondary:focus-visible,
   margin: 0 0 0.75rem 0;
 }
 
-/* Compact section (e.g. inside floating window; docs/ui.md) */
+/* Compact section (docs/ui.md) */
 
 /* Card compact variant */
 .card--compact {
@@ -945,7 +998,7 @@ button.secondary:focus-visible,
   font-size: 0.85rem;
 }
 
-/* Form compact (floating body) */
+/* Compact forms */
 .form--compact label {
   margin-top: 0.5rem;
   font-size: 0.8rem;
@@ -1028,6 +1081,81 @@ button.secondary:focus-visible,
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.9rem;
+}
+.ask-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.ask-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  animation: ask-overlay-fade-in var(--transition) both;
+}
+.ask-overlay__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: 80vh;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: ask-overlay-enter var(--transition) both;
+}
+.ask-overlay__panel:focus {
+  outline: none;
+}
+.ask-overlay__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.ask-overlay__title {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.ask-overlay__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ask-overlay__close {
+  min-height: 2.5rem;
+  transition: color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+.ask-overlay__close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.ask-overlay__body {
+  min-height: 0;
+  padding: 0.75rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.ask-overlay__body > .section {
+  margin-bottom: 0;
+}
+@keyframes ask-overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ask-overlay-enter {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
 }
 .ask-shortcuts {
   display: flex;
@@ -1314,7 +1442,7 @@ button.secondary:focus-visible,
   padding-top: 0.1rem;
 }
 
-/* Sections in floating window (Ask, Settings, Debug) */
+/* Feature panel titles */
 .section--ask .app-panel__title,
 .section--settings .app-panel__title,
 .section--debug .app-panel__title {
@@ -1646,17 +1774,6 @@ button.secondary:focus-visible,
   color: var(--success);
 }
 
-/* Notes trigger below nav (opens floating window) */
-.notes-trigger {
-  margin: 0 0 1.5rem 0;
-}
-.float-triggers {
-  margin: 0 0 1.5rem 0;
-}
-.float-triggers-sep {
-  color: var(--text-muted);
-  margin: 0 0.25rem;
-}
 .link-button {
   font: inherit;
   color: var(--accent);
@@ -1669,167 +1786,6 @@ button.secondary:focus-visible,
 .link-button:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
-}
-
-/* Floating window (desktop-style, draggable; docs/ui.md) */
-.floating-window {
-  position: fixed;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  overflow: hidden;
-  z-index: 9999;
-  transition: box-shadow var(--transition);
-}
-.floating-window--maximized {
-  border-radius: 0;
-}
-.floating-window:focus-within {
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border), 0 0 0 2px rgba(91, 154, 255, 0.2);
-}
-.floating-titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-subtle);
-  border-bottom: 1px solid var(--border);
-  cursor: grab;
-  user-select: none;
-  min-height: 2.25rem;
-  touch-action: none;
-}
-.floating-titlebar:active {
-  cursor: grabbing;
-}
-.floating-titlebar:focus {
-  outline: none;
-}
-.floating-titlebar:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-.floating-window--collapsed .floating-titlebar {
-  padding: 0.3rem 0.5rem;
-  min-height: 1.6rem;
-  border-bottom: none;
-}
-.floating-window--collapsed {
-  margin-right: 24px;
-}
-.floating-window--collapsed .floating-title {
-  font-size: 0.8rem;
-}
-.floating-window--collapsed .floating-close,
-.floating-window--collapsed .floating-toggle {
-  font-size: 0.9rem;
-}
-.floating-window--collapsed .floating-close {
-  font-size: 1rem;
-}
-.floating-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text);
-}
-.floating-titlebar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-.floating-close,
-.floating-toggle,
-.floating-maximize,
-.floating-restore {
-  margin-top: 0 !important;
-  font-size: 1.1rem;
-  line-height: 1;
-  background: var(--bg);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-}
-.floating-close:hover,
-.floating-toggle:hover,
-.floating-maximize:hover,
-.floating-restore:hover {
-  background: var(--hover-dark);
-  color: #fff;
-}
-.floating-close:hover {
-  background: var(--error);
-  color: #fff;
-}
-.floating-close:focus-visible,
-.floating-toggle:focus-visible,
-.floating-maximize:focus-visible,
-.floating-restore:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus);
-}
-.floating-close {
-  font-size: 1.25rem;
-}
-.floating-toggle {
-  font-size: 1rem;
-}
-.floating-window-icon {
-  position: relative;
-  display: block;
-  width: 0.75rem;
-  height: 0.75rem;
-  color: currentColor;
-}
-.floating-maximize-icon {
-  border: 1.5px solid currentColor;
-}
-.floating-body {
-  padding: 1rem 1.15rem;
-  overflow: auto;
-  overflow-x: hidden;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  scroll-behavior: smooth;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) var(--bg-subtle);
-}
-.floating-window--content-sized .floating-body {
-  flex: 0 1 auto;
-  max-height: calc(100vh - 4rem);
-}
-.floating-body::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.floating-body::-webkit-scrollbar-track {
-  background: var(--bg-subtle);
-  border-radius: 4px;
-}
-.floating-body::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
-.floating-body::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-.floating-resize-handle {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
-  background: linear-gradient(135deg, transparent 0%, transparent 50%, var(--border) 50%, var(--border) 100%);
-  border-radius: 0 0 var(--radius) 0;
-  touch-action: none;
-}
-.floating-resize-handle:hover {
-  background: linear-gradient(135deg, transparent 0%, transparent 45%, var(--accent) 45%, var(--accent) 100%);
 }
 
 /* Login page (matches Notes UI: panel, form--compact, dark buttons) */
@@ -1885,15 +1841,66 @@ button.secondary:focus-visible,
   justify-content: center;
   line-height: 1;
 }
-.login-card .link-button {
-  font-size: 0.875rem;
+.auth-switch {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
   color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  text-align: center;
 }
-.login-card .link-button:hover {
+.auth-switch__action {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
   color: var(--accent);
+  border: 0;
+  border-radius: 2px;
+  font: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  transition: color var(--transition), box-shadow var(--transition);
+}
+.auth-switch__action:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent-hover);
+  box-shadow: none;
+}
+.auth-switch__action:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.auth-switch__action:active {
+  transform: none;
 }
 
 @media (max-width: 767px) {
+  .ask-overlay {
+    padding: 0.5rem;
+  }
+
+  .ask-overlay__panel {
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+  }
+
+  .ask-overlay__header {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .ask-overlay__body {
+    padding: 0.65rem;
+  }
+
   .app-fullpage {
     padding: 1rem;
   }
@@ -1902,43 +1909,9 @@ button.secondary:focus-visible,
     align-items: flex-start;
   }
 
-  .float-triggers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    align-items: center;
-  }
-
-  .float-triggers-sep {
-    margin: 0;
-  }
-
-  .floating-window {
-    min-width: 0;
-  }
-
-  .floating-titlebar {
-    padding: 0.5rem;
-  }
-
-  .floating-title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .floating-titlebar-actions {
-    flex-shrink: 0;
-  }
-
-  .floating-body {
-    padding: 0.75rem;
-  }
-
-  .floating-body > * {
-    min-width: 0;
-    max-width: 100%;
+  .app-header__actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .form-row {
@@ -1984,4 +1957,3 @@ button.secondary:focus-visible,
     padding: 0.85rem 0.9rem;
   }
 }
-

@@ -99,7 +99,7 @@ Production must not grant credits from this unverified callback. A future produc
 |------|--------|------------------|
 | 1 | `backend/run.py` | Run from repo root: `cd backend && python run.py`. Loads `.env` from repo root. |
 | 2 | `backend/app/__init__.py` → `create_app()` | Serves from `frontend/dist/` if built, else `frontend/`. Route `/` → `index.html`. |
-| 3 | `frontend/` | React SPA. **Login page** first (sign in / register); then header + **Ask · Notes · History · Debug · Settings** (floating windows). Auth: JWT in localStorage; 401 → clear token and show login. Proxy: /ai, /auth, /notes, /files, /settings → backend. |
+| 3 | `frontend/` | React SPA. Public pages at `/`, `/privacy`, `/terms`, `/contact`; auth at `/login` and `/register`; authenticated pages at `/ask`, `/debug`, `/settings`. Ask owns Notes and History in-place workflows. Auth: JWT in localStorage; 401 → clear token and show login. Proxy: /ai, /auth, /notes, /files, /settings → backend. |
 | 4 | `frontend/src/api.js` | `login()`, `register()`, `ask()`, `listNotes()`, `checkNotesAuth()`, `debugContext()`, `getSettings()`, `putSettings()`. Token from localStorage; no API secret. |
 
 ---
@@ -160,19 +160,17 @@ See [project.md](project.md) roadmap (Phase 8).
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` | The Conversation shortcut invokes `onHistoryPicker` to open saved histories or create a new conversation. |
-| 2 | `frontend/src/App.jsx` → `openHistoryForSelection()` | App creates a History floating window with `isSelectionMode`, the Ask window's `parentAskId`, the selection callback, and `centeredInitialPosition()`. It reuses the existing selector for that Ask when one is already open. |
-| 3 | `frontend/src/components/History.jsx` | Selection mode renders conversations as selectable cards. Click or Enter/Space calls `onSelect(h.id)`. |
-| 4 | `frontend/src/components/Ask.jsx` and `App.jsx` | The callback sets `currentHistoryId` in Ask; `onCloseSelection` removes the selector window. Ask then loads the conversation note and its messages. |
+| 1 | `frontend/src/components/Ask.jsx` | The Conversation shortcut opens the in-place History selector; Ask remains mounted with its draft, messages, active conversation, and selected-note context. |
+| 2 | `frontend/src/components/History.jsx` | Selection mode renders conversations as selectable cards. Click or Enter/Space calls `onSelect(h.id)`; creating a conversation in the selector returns its ID. Manage mode retains title and delete operations. |
+| 3 | `frontend/src/components/Ask.jsx` | The callback sets `currentHistoryId` and closes the selector. Ask then loads the selected conversation note and its messages. Closing or canceling without a selection leaves the current conversation unchanged. |
 
 ## 14. Ask → select notes
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` | The Notes shortcut invokes `onNotesPicker` to open the Notes window in selection mode. |
-| 2 | `frontend/src/App.jsx` → `openNotesForSelection()` | App creates a Notes floating window with `isSelectionMode`, the Ask window's `parentAskId`, the selection callback, and `centeredInitialPosition()`. It reuses the existing selector for that Ask when one is already open. |
-| 3 | `frontend/src/components/Notes.jsx` | Selection mode renders notes as selectable cards. Click or Enter/Space calls `onSelect(n)`. |
-| 4 | `frontend/src/components/Ask.jsx` and `App.jsx` | The callback stores the selected notes in Ask, updates the selected note ID set, and `onCloseSelection` removes the selector window. The next Ask request sends the selected `note_ids`. |
+| 1 | `frontend/src/components/Ask.jsx` | The Notes shortcut opens the in-place Notes selector; the Ask component remains mounted. |
+| 2 | `frontend/src/components/Notes.jsx` | Selection mode renders notes as selectable cards. Click or Enter/Space toggles selection; Cancel closes without returning the temporary selection; confirmation calls `onSelect(notes)`. Creating a note in selector mode adds it to the temporary selection. |
+| 3 | `frontend/src/components/Ask.jsx` | On confirmation, Ask replaces its selected notes and ID set, then closes the selector. The next Ask request sends the selected `note_ids`; canceling leaves the existing context unchanged. Manage mode retains normal Notes CRUD and import operations. |
 
 ## 15. New conversation
 
@@ -182,13 +180,9 @@ See [project.md](project.md) roadmap (Phase 8).
 | 2 | `frontend/src/components/History.jsx` | The created history note is appended to local state, `viewingId` is set to the created ID, and `loadHistoryList()` refreshes the list. |
 | 3 | `frontend/src/components/History.jsx` | The created conversation is immediately available for viewing and receives the active `note-card--active` styling while viewed. |
 
-## 16. Floating selector ownership
+## 16. Ask selector ownership
 
-| Step | Where | What to look at |
-|------|-------|------------------|
-| 1 | `frontend/src/App.jsx` | Each selector stores `parentAskId`; selector windows are associated with the Ask window that opened them. |
-| 2 | `frontend/src/App.jsx` | The existing-selector checks enforce one History selector and one Notes selector per Ask window. Different Ask IDs can own independent selectors. |
-| 3 | `frontend/src/components/History.jsx` / `Notes.jsx` | Selection callbacks run before `onCloseSelection`, returning the selection and closing the selector. |
+Notes and History selectors are state owned by `Ask.jsx` and rendered in its page. They do not change routes or unmount Ask. The existing `History.jsx` and `Notes.jsx` selection callbacks return the chosen conversation ID or note objects; cancellation only closes the selector.
 
 ---
 

@@ -42,7 +42,7 @@ function PublicHeader() {
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
         <a href="/contact">Contact</a>
-        <a className="public-nav__app" href="/app">Enter IA</a>
+        <a className="public-nav__app" href="/login">Enter IA</a>
       </nav>
     </header>
   );
@@ -71,7 +71,7 @@ function LandingPage() {
           An AI assistant that answers with the context you have already gathered, so your notes become useful when you need them.
         </p>
         <div className="public-hero__actions">
-          <a className="public-cta" href="/app">Enter IA</a>
+          <a className="public-cta" href="/login">Enter IA</a>
           <a className="public-text-link" href="#how-it-works">See how it works</a>
         </div>
       </section>
@@ -97,7 +97,7 @@ function LandingPage() {
       <section className="public-callout">
         <p className="public-kicker">Built for your thinking</p>
         <h2>Start with the notes you already have.</h2>
-        <a className="public-text-link" href="/app">Sign in or create an account <span aria-hidden="true">→</span></a>
+        <a className="public-text-link" href="/login">Sign in or create an account <span aria-hidden="true">→</span></a>
       </section>
     </main>
   );

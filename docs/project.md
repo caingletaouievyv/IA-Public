@@ -48,9 +48,9 @@ IA/
 ## Features
 
 - **Auth** — `POST /auth/register`, `/auth/login` → JWT; Bearer on protected routes. `JWT_SECRET` is required when `create_app()` starts, must be at least 32 characters with at least 8 distinct characters, and rejects missing, weak, or placeholder values. No default signing secret is used.
-- **Public site** — Unauthenticated landing page at `/`, plus public Privacy, Terms, and Contact pages. `/app` enters the existing authenticated app.
+- **Public site** — Unauthenticated landing page at `/`, plus `/privacy`, `/terms`, and `/contact`. Auth routes are `/login` and `/register`; authenticated pages are `/ask`, `/debug`, and `/settings`, with `/ask` as the default.
 - **Notes** — Per-user CRUD; `GET /notes/meta` for categories/tags; `POST /notes/from-images` (OCR + AI; append when same title+category).
-- **Ask** — `POST /ai/ask` requires JWT authentication and a non-empty `question`; it accepts optional `note_ids`, `note_context_mode`, and prior `messages`. The mode is per Ask window and defaults to `off` in the frontend. User turns are right-aligned and AI turns left-aligned. Only user turns can be edited inline; saving resends through the same conversation flow and replaces that turn and later turns. There is no chat-edit endpoint.
+- **Ask** — `POST /ai/ask` requires JWT authentication and a non-empty `question`; it accepts optional `note_ids`, `note_context_mode`, and prior `messages`. The mode is owned by the Ask page and defaults to `off` in the frontend. Notes selection/management and conversation history/management are in-place Ask workflows, not top-level pages. User turns are right-aligned and AI turns left-aligned. Only user turns can be edited inline; saving resends through the same conversation flow and replaces that turn and later turns. There is no chat-edit endpoint.
 - **AI Credits** — Backend-owned per-user balance and JSON ledger. Normal `/ai/ask` costs the configured number of internal AI Credits (default `1`); insufficient balance returns `402` before the AI provider is called. Users with the persisted role matching `AI_UNLIMITED_ROLE` (default `admin`) bypass AI credit reservation and deduction, while retaining authentication and rate limits. Initial balance and development/test rewarded-ad grants (`REWARDED_AD_CREDIT_AMOUNT`, default `10`) are configurable. `POST /credits/rewarded-ad` requires JWT auth and is enabled only for `APP_ENV=development` or `APP_ENV=test`; its caller-supplied reward ID is not provider verification. It is disabled in production, where a server-side ad-provider verification step is required before granting credits. Credit purchasing is not implemented. JSON persistence and its lock are process-local and are not a multi-worker transactional store.
 - **Ask idempotency** — Each authenticated user's `operation_id` is stored with that user's credit account. It comes from `Idempotency-Key`, `request_id`, or a generated UUID. A completed retry returns the stored response without another provider call or debit; a currently pending duplicate returns `409 operation_in_progress`. Insufficient-credit and failed-provider operations release their pending record so they can be retried. The state uses the per-user JSON file and process-local lock; concurrent multi-worker coordination is not transactional.
 - **Conversation history** — Stored in the per-user notes file as notes with category `_history`; frontend saves turns with `PUT /notes/<id>`. The AI engine sends up to the most recent 30 prior messages to the provider.
@@ -94,7 +94,7 @@ For explicitly selected notes, if lexical/semantic matching finds no positive sc
 | 1–4 | Notes, AI, memory, ensemble/judge | Complete |
 | 5 | UI frontend | Complete |
 | 6 | Security and monitoring | Complete |
-| 7 | Mobile floating-window support; AI Credits | Mobile support and credit foundation implemented; development rewarded-ad callback foundation added |
+| 7 | Mobile support; AI Credits | Mobile support and credit foundation implemented; development rewarded-ad callback foundation added |
 | 8 | User-centric auth, per-user notes and settings | Complete |
 
 ---
@@ -118,4 +118,4 @@ cd backend && pip install -r requirements.txt && python run.py
 
 ## UX
 
-Dark theme, floating windows, shared button hierarchy, and clear loading and error states. Ask has Conversation and Notes shortcuts plus the note-context mode control. Conversation history starts expanded; user messages can be edited inline and resent using the existing conversation update flow. Detail: [ui.md](ui.md).
+Dark theme, page-based authenticated shell (`/ask`, `/debug`, `/settings`), shared button hierarchy, and clear loading and error states. Ask has in-place Conversation and Notes workflows plus the note-context mode control. Conversation history starts expanded; user messages can be edited inline and resent using the existing conversation update flow. Detail: [ui.md](ui.md).

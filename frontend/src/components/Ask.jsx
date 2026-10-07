@@ -109,20 +109,20 @@ function AskBadgeInfo({ text, children, ariaLabel }) {
   );
 }
 
-export default function Ask({ onHistoryPicker = null, onNotesPicker = null, noteContextMode = "off", onNoteContextModeChange = null }) {
+export default function Ask({ onHistoryPicker, onNotesPicker }) {
   const editMessageInputId = useId();
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [notes, setNotes] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [noteContextMode, setNoteContextMode] = useState("off");
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [currentHistoryTitle, setCurrentHistoryTitle] = useState("");
   const [currentHistoryUpdatedAt, setCurrentHistoryUpdatedAt] = useState(null);
   const [messages, setMessages] = useState([]);
   const [editingMessageIndex, setEditingMessageIndex] = useState(null);
   const [editedMessage, setEditedMessage] = useState("");
-  const [optionsMode, setOptionsMode] = useState(null);
   const [historyExpanded, setHistoryExpanded] = useState(true);
   const historyRef = useRef(null);
   const submissionInFlightRef = useRef(false);
@@ -133,16 +133,6 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null, note
     const nextNotes = Array.isArray(selectedNotes) ? selectedNotes.filter((note) => note?.id) : [];
     setNotes(nextNotes);
     setSelectedIds(new Set(nextNotes.map((note) => note.id)));
-  };
-
-  const handleRemoveNote = (noteId) => {
-    setNotes((previous) => previous.filter((note) => note.id !== noteId));
-    setSelectedIds((previous) => {
-      if (!previous.has(noteId)) return previous;
-      const next = new Set(previous);
-      next.delete(noteId);
-      return next;
-    });
   };
 
   const selectedNoteTitles = notes.filter((note) => selectedIds.has(note.id));
@@ -162,18 +152,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null, note
     return `${count} notes selected`;
   };
 
-  const openNotesPicker = () => {
-    if (onNotesPicker) {
-      setOptionsMode(null);
-      onNotesPicker(handleNoteSelection, selectedIds);
-      return;
-    }
-    toggleOptionsMode("context");
-  };
-
-  const toggleOptionsMode = (mode) => {
-    setOptionsMode((current) => (current === mode ? null : mode));
-  };
+  const openNotesPicker = () => onNotesPicker?.(handleNoteSelection, Array.from(selectedIds));
 
   const formatConversationMetaDate = (value) => {
     if (!value) return "—";
@@ -233,13 +212,9 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null, note
 
   const handleHistorySelection = (id) => {
     setCurrentHistoryId(id);
-    setOptionsMode(null);
   };
 
-  const openHistoryPicker = () => {
-    setOptionsMode(null);
-    onHistoryPicker?.(handleHistorySelection, currentHistoryId);
-  };
+  const openHistoryPicker = () => onHistoryPicker?.(handleHistorySelection, currentHistoryId);
 
   const selectedConversationTitle = currentHistoryTitle || "";
 
@@ -256,7 +231,6 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null, note
     setCurrentHistoryTitle(created.title || "New conversation");
     setCurrentHistoryUpdatedAt(created.updated_at || new Date().toISOString());
     setMessages([]);
-    setOptionsMode(null);
     return created;
   };
 
@@ -345,7 +319,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null, note
             </button>
             <button
               type="button"
-              className={`button-subtle ask-shortcut${optionsMode === "context" ? " ask-shortcut--active" : ""}`}
+              className="button-subtle ask-shortcut"
               onClick={openNotesPicker}
               aria-label="Open note picker to choose notes for this answer."
               title="Optional notes to help shape the answer."
@@ -364,7 +338,7 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null, note
             <button
               type="button"
               className={`button-subtle button-toggle ask-shortcut${noteContextMode !== "off" ? " ask-shortcut--active" : ""}`}
-              onClick={() => onNoteContextModeChange?.(
+              onClick={() => setNoteContextMode(
                 noteContextMode === "off" ? "focused" : noteContextMode === "focused" ? "automatic" : "off"
               )}
               aria-label={modeDetails.ariaLabel}
@@ -490,49 +464,6 @@ export default function Ask({ onHistoryPicker = null, onNotesPicker = null, note
         </button>
         </section>
 
-        {optionsMode && (
-          <div id="ask-options" className="ask-options" aria-label="Ask options">
-            {(optionsMode === "context" || optionsMode === "all") && (
-              <section id="ask-context-section" className="ask-section ask-section--context">
-                <div className="ask-context-action-row">
-                  <button
-                    type="button"
-                    className="button-subtle ask-action-button ask-context-action"
-                    onClick={openNotesPicker}
-                    disabled={loading}
-                  >
-                    {notes.length > 0 ? "Edit notes" : "Add notes"}
-                  </button>
-                </div>
-                <div className="ask-section-content">
-                  {notes.length > 0 && (
-                    <ul className="check-list ask-context-notes" aria-label="Selected context notes">
-                      {notes.map((n) => {
-                        const noteLabel = n.title || n.id;
-                        return (
-                          <li key={n.id}>
-                            <span>{noteLabel}</span>
-                            <button
-                              type="button"
-                              className="button-icon button-danger ask-context-remove"
-                              aria-label={`Remove "${noteLabel}" from context`}
-                              title={`Remove "${noteLabel}" from context`}
-                              onClick={() => handleRemoveNote(n.id)}
-                              disabled={loading}
-                            >
-                              ×
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              </section>
-            )}
-
-          </div>
-        )}
       </form>
       {error && <div className="out err">{error}</div>}
     </section>

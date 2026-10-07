@@ -14,5 +14,5 @@ Align with **docs/ui.md** and **docs/ia.md**: consistent feedback, no layout shi
 - **Transitions** — Use `var(--transition)` from `index.css` for focus, hover, active. Slight scale on button active (e.g. 0.98).
 - **Focus** — Visible focus ring (e.g. border + box-shadow on `:focus`) for keyboard users.
 - **Accessible** — Labels for inputs, semantic HTML, sufficient contrast (already in theme).
-- **Scroll** — Scrollable areas (e.g. floating-window body): smooth scroll, thin scrollbar (theme-aligned), overflow-x hidden.
-- **Floating window focus** — Use a subtle focus state: soft accent ring on the window (`:focus-within`), no inset ring on the title bar; keeps “which is front” clear without a loud highlight. Prefer small, predictable changes over flashy ones.
+- **Scroll** — Scrollable areas (e.g. Ask selector panels): smooth scroll, thin scrollbar (theme-aligned), overflow-x hidden.
+- **Focus** — Keep keyboard focus visible on navigation, selectors, forms, and controls. Prefer small, predictable changes over flashy ones.

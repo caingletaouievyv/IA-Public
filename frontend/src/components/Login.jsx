@@ -1,15 +1,19 @@
 // IA/frontend/src/components/Login.jsx
 // Login/register page. On success stores token and calls onLogin(token).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { login, register } from "../api";
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, initialIsRegister = false, onModeChange = null }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [isRegister, setIsRegister] = useState(false);
+  const [isRegister, setIsRegister] = useState(initialIsRegister);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setIsRegister(initialIsRegister);
+  }, [initialIsRegister]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,7 +46,7 @@ export default function Login({ onLogin }) {
       <section className="login-card card app-panel">
         <h2 className="app-panel__title">{isRegister ? "Create account" : "Sign in"}</h2>
         <p className="card-desc">
-          {isRegister ? "Register a new account. You can sign in right after." : "Use your account to access notes and AI."}
+          {isRegister ? "Register a new account to access AI." : "Use your account to access AI."}
         </p>
         <form onSubmit={handleSubmit} className={`form--compact ${loading ? "loading" : ""}`}>
           <label htmlFor="login-username">Username</label>
@@ -70,15 +74,21 @@ export default function Login({ onLogin }) {
             {loading ? "…" : isRegister ? "Register and sign in" : "Sign in"}
           </button>
         </form>
-        <p className="card-desc" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+        <div className="auth-switch">
+          <span>{isRegister ? "Already have an account?" : "Don't have an account?"}</span>
           <button
             type="button"
-            className="button-subtle link-button"
-            onClick={() => { setIsRegister(!isRegister); setError(null); }}
+            className="auth-switch__action"
+            onClick={() => {
+              const nextIsRegister = !isRegister;
+              setIsRegister(nextIsRegister);
+              setError(null);
+              onModeChange?.(nextIsRegister);
+            }}
           >
-            {isRegister ? "Already have an account? Sign in" : "No account? Register"}
+            {isRegister ? "Sign in" : "Create one"}
           </button>
-        </p>
+        </div>
       </section>
     </div>
   );

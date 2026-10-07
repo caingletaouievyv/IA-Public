@@ -40,6 +40,18 @@ def create_app():
     def index():
         return send_from_directory(app.static_folder, "index.html")
 
+    @app.route("/privacy")
+    @app.route("/terms")
+    @app.route("/contact")
+    @app.route("/login")
+    @app.route("/register")
+    @app.route("/ask")
+    @app.route("/debug")
+    @app.route("/settings")
+    @app.route("/app")
+    def frontend_page():
+        return send_from_directory(app.static_folder, "index.html")
+
     @app.route("/health", methods=["GET"])
     def health():
         """Phase 6: deploy probes; no auth."""

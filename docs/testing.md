@@ -89,34 +89,25 @@ Run the frontend production build from the repository root:
 npm --prefix .\frontend run build
 ```
 
-- Login and register.
-- Open Ask.
-- Verify the Ask shortcuts open the History and Notes selectors; selecting an item returns to Ask and closes the selector.
+- Logged out: direct-load `/login` and `/register`; verify register switching follows the route, registration/login still works, and success lands on `/ask`.
+- Verify `/` remains public, and `/privacy`, `/terms`, and `/contact` load directly.
+- Verify `/ask` is the authenticated default; navigation contains only Ask, Debug, and Settings.
+- Navigate Ask → Debug → Settings → Ask; verify browser Back and Forward update the visible page and URL.
+- Direct-load and refresh `/ask`, `/debug`, and `/settings`; verify each returns the SPA and renders the correct page.
+- Verify logout and an unauthorized API response return to `/login`.
+- Open Ask and enter a draft. Open and close Notes/History; verify the draft and existing conversation remain intact.
+- Verify the Ask shortcuts open the in-place History and Notes selectors; selecting an item closes the selector without navigating away from `/ask`.
+- Cancel Notes selection and verify the existing note context is unchanged. Select notes and confirm; verify the selected context updates.
+- Create a note from the Notes selector, verify it appears selected, and confirm to add it to Ask context. Verify Notes Manage still supports CRUD and image import.
+- Verify History Manage retains title editing and single/bulk delete. In the selector, start a new conversation and select an existing conversation.
 - Verify the note mode cycles `Off → Focused → Automatic → Off`; Off ignores selected IDs, Focused without IDs supplies no context, and Automatic searches all notes only when IDs are absent.
 - Verify conversation history is expanded by default, user turns are right-aligned, and AI turns are left-aligned.
 - Edit a user turn inline. Cancel and Escape preserve the original. Save resends through the current conversation; confirm later turns are replaced by the edited turn and new AI response.
 - Verify Edit is available to keyboard focus and remains visible on mobile; confirm the textarea has a label and Save/Cancel are real buttons.
-- Keyboard-tab through Ask shortcuts, mode toggle, Notes/History action buttons, and floating-window controls; verify visible focus, accessible labels, and a clear button surface/hover/pressed state. Compact Ask shortcuts should still read as buttons, not plain labels.
-- Verify one History selector and one Notes selector maximum per Ask window.
-- Verify selectors from different Ask windows remain independent.
-- Create a new conversation from History; verify it appears and opens immediately.
+- Keyboard-tab through navigation, Ask shortcuts, mode toggle, Notes/History selector and management actions; verify visible focus, accessible labels, and clear button hover/pressed states. Compact Ask shortcuts should still read as buttons, not plain labels.
 - Verify active conversation styling.
-- Verify normal Notes and History CRUD outside selection mode.
-- Verify Ask, History, Debug, and Settings do not duplicate the FloatingWindow title.
 - Verify loading, error, and empty states still render.
-
-### Floating-window mobile and desktop regression (manual)
-
-- Test at approximately `375×667`, `390×844`, and `412×915`.
-- Touch-drag and touch-resize the Ask window.
-- Touch-drag and touch-resize selector windows.
-- Verify the floating body still scrolls on touch.
-- Verify Minimize → Maximize/Restore → Close ordering.
-- Verify maximize fills the usable viewport.
-- Verify Restore returns the previous position and size.
-- Verify maximize/restore is hidden while collapsed.
-- Verify collapse/expand still works after maximizing/restoring.
-- Verify desktop mouse drag and resize still work.
+- At desktop, narrow desktop, and mobile widths, verify natural page scrolling, touch-friendly controls, and no horizontal overflow or floating/drag/resize behavior.
 
 There is no frontend component-test or browser-automation suite in the repository. Do not treat a browser automation run as a required check.
 

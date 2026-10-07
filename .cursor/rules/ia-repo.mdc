@@ -37,7 +37,7 @@ Python 3.10+, Flask, Pydantic, Groq default LLM (`AI_KEY`), JWT auth, JSON per-u
 
 ## UX
 
-Dark theme; loading / error / empty feedback; floating windows. See **ui.md**.
+Dark theme; page-based authenticated shell; loading / error / empty feedback. See **ui.md**.
 
 ---
 

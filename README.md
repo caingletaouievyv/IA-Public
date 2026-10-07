@@ -13,7 +13,7 @@ Personal notes and AI assistant with memory. Store notes (including from images)
 - **Auth** — Register and sign in; protected API routes use a Bearer JWT. `JWT_SECRET` is required at Flask startup; it must be at least 32 characters with at least 8 distinct characters. Missing, weak, or placeholder values stop startup. No secret value belongs in source control or the UI.
 - **Memory** — Deterministic lexical retrieval is the default (`MEMORY_RETRIEVAL=text`). Optional semantic retrieval uses FAISS and SentenceTransformers; its model loads lazily.
 - **AI Credits** — Backend-owned internal credits; normal Ask costs the configured credit amount (default `1`). Users with the persisted role matching `AI_UNLIMITED_ROLE` (default `admin`) bypass Ask credit consumption. Initial credits and ledger entries are persisted per user. The JWT-protected `/credits/rewarded-ad` callback accepts unverified reward IDs only in explicit `APP_ENV=development` or `APP_ENV=test`; it is disabled in production. A production reward flow requires server-side ad-provider verification first.
-- **UI** — React/Vite SPA, dark theme, floating Ask, Notes, History, Debug, and Settings windows, with shared primary, subtle, destructive, and icon button styles.
+- **UI** — React/Vite SPA with a dark page-based authenticated shell at `/ask`, `/debug`, and `/settings`. Notes and History remain in-place workflows inside Ask.
 
 ---
 
