@@ -79,10 +79,54 @@ export default function App() {
   const openNotesOverlay = useCallback((onSelect, selectedIds) => {
     setAskOverlay({ type: "notes", onSelect, selectedIds: [...selectedIds], manage: false });
   }, []);
+  const openUserMessageOverlay = useCallback((content, onSave) => {
+    setAskOverlay({
+      type: "userMessage",
+      mode: "detail",
+      content,
+      draft: content,
+      onSave,
+      manage: false,
+    });
+  }, []);
   const toggleAskOverlayMode = useCallback(() => {
     setAskOverlay((current) => current && { ...current, manage: !current.manage });
   }, []);
   const closeAskOverlay = useCallback(() => setAskOverlay(null), []);
+  const handleOverlayEscape = useCallback(() => {
+    if (askOverlay?.type !== "userMessage" || askOverlay.mode !== "edit") return false;
+    if (askOverlay.saving) return true;
+    setAskOverlay((current) => current && {
+      ...current,
+      mode: "detail",
+      draft: current.content,
+      error: null,
+    });
+    return true;
+  }, [askOverlay]);
+  const saveUserMessageEdit = async () => {
+    if (askOverlay?.type !== "userMessage" || askOverlay.saving) return;
+    const activeOverlay = askOverlay;
+    setAskOverlay((current) => current && { ...current, saving: true, error: null });
+    let result;
+    try {
+      result = await activeOverlay.onSave(activeOverlay.draft);
+    } catch (error) {
+      result = { success: false, error: error.message || "Failed to save message." };
+    }
+    setAskOverlay((current) => {
+      if (!current || current.type !== "userMessage") return current;
+      if (!result.success) return { ...current, saving: false, error: result.error };
+      return {
+        ...current,
+        mode: "detail",
+        content: result.content,
+        draft: result.content,
+        saving: false,
+        error: null,
+      };
+    });
+  };
 
   useEffect(() => {
     const onPopState = () => setPath(currentPath());
@@ -142,15 +186,30 @@ export default function App() {
       />
       <main className="app-main">
         {activePath === "/ask" ? (
-          <Ask onHistoryPicker={openHistoryOverlay} onNotesPicker={openNotesOverlay} />
+          <Ask
+            onHistoryPicker={openHistoryOverlay}
+            onNotesPicker={openNotesOverlay}
+            onUserMessageDetail={openUserMessageOverlay}
+          />
         ) : activePath === "/debug" ? <DebugContext /> : <Settings />}
       </main>
       {activePath === "/ask" && askOverlay && (
         <AskOverlay
-          title={askOverlay.type === "history" ? "Conversations" : "Notes"}
+          title={
+            askOverlay.type === "history"
+              ? "Conversations"
+              : askOverlay.type === "notes"
+                ? "Notes"
+                : askOverlay.mode === "edit"
+                  ? "Edit Message"
+                  : "User Message"
+          }
           onClose={closeAskOverlay}
+          onEscape={handleOverlayEscape}
           isManaging={askOverlay.manage}
           onManage={toggleAskOverlayMode}
+          showManage={askOverlay.type !== "userMessage"}
+          closeText={askOverlay.type === "userMessage" ? "×" : "Close"}
         >
           {askOverlay.type === "history" ? (
             <History
@@ -159,13 +218,69 @@ export default function App() {
               onSelect={askOverlay.manage ? null : askOverlay.onSelect}
               onCloseSelection={closeAskOverlay}
             />
-          ) : (
+          ) : askOverlay.type === "notes" ? (
             <Notes
               isSelectionMode={!askOverlay.manage}
               selectedIds={askOverlay.manage ? [] : askOverlay.selectedIds}
               onSelect={askOverlay.manage ? null : askOverlay.onSelect}
               onCloseSelection={closeAskOverlay}
             />
+          ) : askOverlay.mode === "edit" ? (
+            <div className="ask-user-message-editor ask-user-message-editor--overlay">
+              <label htmlFor="ask-user-message-edit-input">Edit your message</label>
+              <textarea
+                id="ask-user-message-edit-input"
+                value={askOverlay.draft}
+                onChange={(event) => setAskOverlay((current) => current && ({
+                  ...current,
+                  draft: event.target.value,
+                  error: null,
+                }))}
+                autoFocus
+                disabled={askOverlay.saving}
+              />
+              {askOverlay.error && <div className="out err" role="alert">{askOverlay.error}</div>}
+              <div className="ask-user-message-actions">
+                <button
+                  type="button"
+                  className="button-subtle"
+                  onClick={() => setAskOverlay((current) => current && ({
+                    ...current,
+                    mode: "detail",
+                    draft: current.content,
+                    error: null,
+                  }))}
+                  disabled={askOverlay.saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="button-primary"
+                  onClick={saveUserMessageEdit}
+                  disabled={askOverlay.saving || !askOverlay.draft.trim()}
+                >
+                  {askOverlay.saving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="ask-user-message-detail">
+              <p className="ask-user-message-detail__text">{askOverlay.content}</p>
+              <button
+                type="button"
+                className="button-subtle ask-user-message-detail__edit"
+                onClick={() => setAskOverlay((current) => current && ({
+                  ...current,
+                  mode: "edit",
+                  draft: current.content,
+                  error: null,
+                }))}
+                autoFocus
+              >
+                Edit
+              </button>
+            </div>
           )}
         </AskOverlay>
       )}

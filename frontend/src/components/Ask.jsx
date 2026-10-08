@@ -5,23 +5,11 @@
 import { useState, useEffect, useLayoutEffect, useRef, useId } from "react";
 import { ask, getNote, createHistory, updateNote, getToken } from "../api";
 
-const NOTE_CONTEXT_MODE_DETAILS = {
-  off: {
-    label: "Off",
-    ariaLabel: "Note context mode: Off. Notes are not used.",
-    title: "Off: Notes are not used.",
-  },
-  automatic: {
-    label: "Automatic",
-    ariaLabel: "Note context mode: Automatic. AI can search your notes when relevant.",
-    title: "Automatic: AI can search your notes when relevant.",
-  },
-  focused: {
-    label: "Focused",
-    ariaLabel: "Note context mode: Focused. AI uses selected notes only.",
-    title: "Focused: AI uses selected notes only.",
-  },
-};
+const CONTEXT_MODES = ["off", "selected", "automatic"];
+
+function nextContextMode(mode) {
+  return CONTEXT_MODES[(CONTEXT_MODES.indexOf(mode) + 1) % CONTEXT_MODES.length];
+}
 
 function parseMessages(content) {
   if (!content || !content.trim()) return [];
@@ -33,144 +21,298 @@ function parseMessages(content) {
   }
 }
 
-function ConversationIcon() {
+const CONTEXT_ICON_PATHS = {
+  conversation: (
+    <>
+      <path d="M4 5.75A2.25 2.25 0 0 1 6.25 3.5h7.5A2.25 2.25 0 0 1 16 5.75v5.5a2.25 2.25 0 0 1-2.25 2.25H9l-4 3v-3.75a2.25 2.25 0 0 1-1-1.85Z" />
+      <path d="M7 7.5h6M7 10h4" />
+    </>
+  ),
+  notes: (
+    <>
+      <path d="M5.5 2.75h6l3.75 3.75v10a.75.75 0 0 1-.75.75h-9a.75.75 0 0 1-.75-.75V3.5a.75.75 0 0 1 .75-.75Z" />
+      <path d="M11.5 3v4h4M7.5 10h5M7.5 12.75h5" />
+    </>
+  ),
+  files: (
+    <path d="M2.75 5.5a1.5 1.5 0 0 1 1.5-1.5h4l1.75 2h5.75a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-11a1.5 1.5 0 0 1-1.5-1.5Z" />
+  ),
+  github: (
+    <>
+      <circle cx="10" cy="10" r="7.25" />
+      <path d="M7 15.7v-1.2a2 2 0 0 1 .65-1.5c-1.55-.2-2.4-1.05-2.4-2.65 0-.8.3-1.4.85-1.9-.2-.65-.15-1.15.1-1.7.75 0 1.25.25 1.7.65a6.3 6.3 0 0 1 4.2 0c.45-.4.95-.65 1.7-.65.25.55.3 1.05.1 1.7.55.5.85 1.1.85 1.9 0 1.6-.85 2.45-2.4 2.65a2 2 0 0 1 .65 1.5v1.2" />
+    </>
+  ),
+  memory: (
+    <>
+      <path d="M9.75 4.5a2.75 2.75 0 0 0-5.2 1.2 2.5 2.5 0 0 0-.8 4.45 2.5 2.5 0 0 0 1.75 4.1A2.75 2.75 0 0 0 9.75 15Z" />
+      <path d="M10.25 4.5a2.75 2.75 0 0 1 5.2 1.2 2.5 2.5 0 0 1 .8 4.45 2.5 2.5 0 0 1-1.75 4.1 2.75 2.75 0 0 1-4.25.75ZM6.5 7.25a1.75 1.75 0 0 1 2 1.5m-3.5 2a1.75 1.75 0 0 1 3 1.25m6-4.75a1.75 1.75 0 0 0-2 1.5m3.5 2a1.75 1.75 0 0 0-3 1.25M10 4.5v11" />
+    </>
+  ),
+  drive: (
+    <>
+      <path d="m7 4.25-4 7 2.5 4.5h9L17.25 12l-4-7Z" />
+      <path d="m7 4.25 4.25 7.5M5.5 15.75 9.75 8.5m1.5 3h6" />
+    </>
+  ),
+  web: (
+    <>
+      <circle cx="10" cy="10" r="7.25" />
+      <path d="M2.9 10h14.2M10 2.75a11.5 11.5 0 0 1 0 14.5 11.5 11.5 0 0 1 0-14.5Z" />
+    </>
+  ),
+};
+
+function ContextIcon({ name }) {
   return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <path d="M5 5.25A2.25 2.25 0 0 1 7.25 3h5.5A2.25 2.25 0 0 1 15 5.25v4.5A2.25 2.25 0 0 1 12.75 12H9.25L6 14.5V12H7.25A2.25 2.25 0 0 1 5 9.75v-4.5Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M7.25 7.5h5.5M7.25 9.75h3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className="ask-shortcut-icon__svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      {CONTEXT_ICON_PATHS[name]}
     </svg>
   );
 }
 
-function NotesIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <path d="M6 3.5h5.25L15 8.25V14a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 5 14V5A1.5 1.5 0 0 1 6.5 3.5h-.5Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M11.25 3.5V8.25H15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M7.25 10.25h5.5M7.25 12.75h4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+function AskContextControl({ label, icon, details, mode, status, onModeChange, onOpen }) {
+  const [longPressOpen, setLongPressOpen] = useState(false);
+  const [detailsPinned, setDetailsPinned] = useState(false);
+  const [detailsPosition, setDetailsPosition] = useState({ left: 8, top: 8 });
+  const sourceRef = useRef(null);
+  const pressTimerRef = useRef(null);
+  const pointerStartRef = useRef(null);
+  const suppressClickRef = useRef(false);
+  const longPressTriggeredRef = useRef(false);
+  const detailsId = useId();
 
-function AskBadgeInfo({ text, children, ariaLabel }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const wrapperRef = useRef(null);
+  const updateDetailsAlignment = () => {
+    const bounds = sourceRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const detailsWidth = Math.min(224, window.innerWidth - 16);
+    setDetailsPosition({
+      left: Math.max(8, Math.min(bounds.left, window.innerWidth - detailsWidth - 8)),
+      top: bounds.bottom + 6,
+    });
+  };
+
+  const clearPressTimer = () => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
+    if (!longPressOpen && !detailsPinned) return undefined;
+
     const handlePointerDown = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setIsOpen(false);
+      if (!sourceRef.current?.contains(event.target)) {
+        setLongPressOpen(false);
+        setDetailsPinned(false);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setLongPressOpen(false);
+        setDetailsPinned(false);
       }
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [detailsPinned, longPressOpen]);
+
+  useLayoutEffect(() => {
+    updateDetailsAlignment();
+    window.addEventListener("resize", updateDetailsAlignment);
+    window.addEventListener("scroll", updateDetailsAlignment, true);
+    return () => {
+      window.removeEventListener("resize", updateDetailsAlignment);
+      window.removeEventListener("scroll", updateDetailsAlignment, true);
+    };
   }, []);
 
-  if (!text) return null;
+  useEffect(() => () => clearPressTimer(), []);
 
-  const toggle = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsOpen((open) => !open);
+  const handlePointerDown = (event) => {
+    if (event.pointerType === "mouse" || event.button !== 0) return;
+    suppressClickRef.current = false;
+    longPressTriggeredRef.current = false;
+    updateDetailsAlignment();
+    pointerStartRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    clearPressTimer();
+    pressTimerRef.current = window.setTimeout(() => {
+      setLongPressOpen(true);
+      longPressTriggeredRef.current = true;
+      suppressClickRef.current = true;
+      pressTimerRef.current = null;
+    }, 550);
+  };
+
+  const handlePointerMove = (event) => {
+    const start = pointerStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) {
+      clearPressTimer();
+      pointerStartRef.current = null;
+    }
+  };
+
+  const handlePointerUp = () => {
+    clearPressTimer();
+    pointerStartRef.current = null;
+  };
+
+  const handlePointerCancel = () => {
+    handlePointerUp();
+    if (!longPressTriggeredRef.current) suppressClickRef.current = false;
+  };
+
+  const handleClick = (event) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      longPressTriggeredRef.current = false;
+      event.preventDefault();
+      return;
+    }
+    setLongPressOpen(false);
+    if (onOpen) {
+      setDetailsPinned(false);
+      onOpen();
+    } else {
+      setDetailsPinned((open) => !open);
+    }
   };
 
   return (
-    <span ref={wrapperRef} className="ask-badge" aria-live="polite">
-      <span
-        className={`ask-shortcut-count ask-shortcut-count--interactive${isOpen ? " ask-shortcut-count--open" : ""}`}
-        title={text}
-        tabIndex={0}
-        aria-label={ariaLabel}
-        aria-expanded={isOpen}
-        onMouseEnter={() => setIsOpen(true)}
-        onMouseLeave={() => setIsOpen(false)}
-        onFocus={() => setIsOpen(true)}
-        onBlur={() => setIsOpen(false)}
-        onClick={toggle}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            event.stopPropagation();
-            setIsOpen((open) => !open);
-          }
-        }}
+    <div className={`ask-context-control${mode === null ? " ask-context-control--source-only" : ""}`}>
+      <div
+        ref={sourceRef}
+        className={`ask-context-source-wrap${longPressOpen ? " ask-context-source-wrap--pressed" : ""}${detailsPinned ? " ask-context-source-wrap--pinned" : ""}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onPointerEnter={updateDetailsAlignment}
+        onFocus={updateDetailsAlignment}
+        onContextMenu={(event) => event.preventDefault()}
       >
-        {children}
-      </span>
-      {isOpen && (
-        <span role="tooltip" className="ask-badge-info">
-          {text.split("\n").map((line, index) => (
-            <span key={`${line}-${index}`}>{line}</span>
-          ))}
+        <button
+          type="button"
+          className="button-subtle ask-shortcut ask-context-source"
+          onClick={handleClick}
+          aria-describedby={detailsId}
+        >
+          <span className="ask-shortcut-icon" aria-hidden="true"><ContextIcon name={icon} /></span>
+          <span>{label}</span>
+          {status !== null && status !== undefined && (
+            <span className="ask-context-count" aria-hidden="true">{status}</span>
+          )}
+        </button>
+        <span
+          id={detailsId}
+          role="tooltip"
+          className="ask-context-details"
+          style={{
+            position: "fixed",
+            left: `${detailsPosition.left}px`,
+            top: `${detailsPosition.top}px`,
+            ...(longPressOpen || detailsPinned ? { visibility: "visible", opacity: 1 } : {}),
+          }}
+        >
+          <strong>{label}</strong>
+          {details.split("\n").map((line) => <span key={line}>{line}</span>)}
         </span>
+      </div>
+      {mode !== null && (
+        <button
+          type="button"
+          className={`button-subtle button-toggle ask-shortcut ask-context-mode${mode !== "off" ? " ask-shortcut--active" : ""}`}
+          onClick={() => onModeChange(nextContextMode(mode))}
+          aria-label={`${label} context mode: ${mode.toUpperCase()}. Activate to change mode.`}
+          aria-pressed={mode !== "off"}
+        >
+          [{mode.toUpperCase()}]
+        </button>
       )}
-    </span>
+    </div>
   );
 }
 
-export default function Ask({ onHistoryPicker, onNotesPicker }) {
-  const editMessageInputId = useId();
+export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetail }) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [notes, setNotes] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [noteContextMode, setNoteContextMode] = useState("off");
+  const [contextModes, setContextModes] = useState({
+    notes: "off",
+    files: "off",
+    github: "off",
+    memory: "off",
+    drive: "off",
+    web: "off",
+  });
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [currentHistoryTitle, setCurrentHistoryTitle] = useState("");
   const [currentHistoryUpdatedAt, setCurrentHistoryUpdatedAt] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [editingMessageIndex, setEditingMessageIndex] = useState(null);
-  const [editedMessage, setEditedMessage] = useState("");
   const [historyExpanded, setHistoryExpanded] = useState(true);
+  const [activeHistoryUserIndex, setActiveHistoryUserIndex] = useState(null);
   const historyRef = useRef(null);
+  const historyUserMessageRefs = useRef([]);
   const submissionInFlightRef = useRef(false);
   const skipNextHistoryLoadRef = useRef(null);
-  const modeDetails = NOTE_CONTEXT_MODE_DETAILS[noteContextMode] || NOTE_CONTEXT_MODE_DETAILS.off;
-
+  const setContextMode = (source, mode) => {
+    setContextModes((current) => ({ ...current, [source]: mode }));
+  };
   const handleNoteSelection = (selectedNotes) => {
     const nextNotes = Array.isArray(selectedNotes) ? selectedNotes.filter((note) => note?.id) : [];
     setNotes(nextNotes);
     setSelectedIds(new Set(nextNotes.map((note) => note.id)));
   };
 
-  const selectedNoteTitles = notes.filter((note) => selectedIds.has(note.id));
-
-  const getNotesBadgeTooltip = () => {
-    const count = selectedNoteTitles.length;
-    if (count === 0) return "";
-    if (count <= 9) {
-      return selectedNoteTitles
-        .slice(0, 9)
-        .map((note) => {
-          const label = (note?.title || "Untitled note").trim();
-          return label.length > 36 ? `${label.slice(0, 33)}…` : label;
-        })
-        .join("\n");
-    }
-    return `${count} notes selected`;
-  };
-
   const openNotesPicker = () => onNotesPicker?.(handleNoteSelection, Array.from(selectedIds));
-
+  const selectedNoteTitles = notes.filter((note) => selectedIds.has(note.id));
+  const notesDetails = [
+    "Your saved notes.",
+    "Select notes to provide as context to the AI.",
+    ...(selectedNoteTitles.length
+      ? [
+          `Selected: ${selectedNoteTitles
+            .slice(0, 3)
+            .map((note) => (note.title || "Untitled note").trim())
+            .join(", ")}${selectedNoteTitles.length > 3 ? `, +${selectedNoteTitles.length - 3} more` : ""}`,
+        ]
+      : []),
+  ].join("\n");
   const formatConversationMetaDate = (value) => {
     if (!value) return "—";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
     return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   };
-
-  const getConversationBadgeTooltip = () => {
-    if (!currentHistoryId || !currentHistoryTitle) return "";
-    const title = currentHistoryTitle.trim() || "Untitled";
-    const summaryTitle = title.length > 36 ? `${title.slice(0, 33)}…` : title;
-    return [
-      summaryTitle,
-      `Messages: ${messages.length}`,
-      `Updated: ${formatConversationMetaDate(currentHistoryUpdatedAt)}`,
-    ].join("\n");
-  };
+  const conversationDetails = [
+    "The active conversation and its saved messages.",
+    "Choose or start a conversation.",
+    ...(currentHistoryId
+      ? [
+          currentHistoryTitle || "Untitled",
+          `${messages.length} messages`,
+          `Updated ${formatConversationMetaDate(currentHistoryUpdatedAt)}`,
+        ]
+      : []),
+  ].join("\n");
+  const historyUserIndices = messages.reduce((indices, message, index) => {
+    if (message.role === "user") indices.push(index);
+    return indices;
+  }, []);
+  const activeHistoryUserPosition = historyUserIndices.indexOf(activeHistoryUserIndex);
 
   useEffect(() => {
     if (!currentHistoryId) {
@@ -187,9 +329,8 @@ export default function Ask({ onHistoryPicker, onNotesPicker }) {
     getNote(currentHistoryId)
       .then((n) => {
         if (!cancelled && n) {
-          const nextTitle = n.title || "Untitled";
           const nextMessages = parseMessages(n.content || "");
-          setCurrentHistoryTitle(nextTitle);
+          setCurrentHistoryTitle(n.title || "Untitled");
           setCurrentHistoryUpdatedAt(n.updated_at || null);
           setMessages(nextMessages);
         }
@@ -204,6 +345,10 @@ export default function Ask({ onHistoryPicker, onNotesPicker }) {
     return () => { cancelled = true; };
   }, [currentHistoryId]);
 
+  useEffect(() => {
+    setActiveHistoryUserIndex(historyUserIndices.length ? historyUserIndices[historyUserIndices.length - 1] : null);
+  }, [currentHistoryId, messages]);
+
   useLayoutEffect(() => {
     if (historyRef.current && messages.length > 0) {
       historyRef.current.scrollTop = historyRef.current.scrollHeight;
@@ -216,7 +361,19 @@ export default function Ask({ onHistoryPicker, onNotesPicker }) {
 
   const openHistoryPicker = () => onHistoryPicker?.(handleHistorySelection, currentHistoryId);
 
-  const selectedConversationTitle = currentHistoryTitle || "";
+  const navigateHistoryUserMessage = (direction) => {
+    if (!historyUserIndices.length) return;
+    const currentPosition = activeHistoryUserPosition < 0
+      ? direction > 0 ? -1 : historyUserIndices.length
+      : activeHistoryUserPosition;
+    const targetPosition = Math.max(0, Math.min(historyUserIndices.length - 1, currentPosition + direction));
+    const targetIndex = historyUserIndices[targetPosition];
+    const target = historyUserMessageRefs.current[targetIndex];
+    if (!target) return;
+    setActiveHistoryUserIndex(targetIndex);
+    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    target.focus({ preventScroll: true });
+  };
 
   const createNewConversation = async () => {
     if (!getToken()) {
@@ -246,9 +403,10 @@ export default function Ask({ onHistoryPicker, onNotesPicker }) {
   const sendQuestion = async (prompt, previousMessages) => {
     const historyId = currentHistoryId || (await createNewConversation()).id;
     const activeMessages = currentHistoryId ? previousMessages : [];
-    const noteIds = selectedIds.size ? Array.from(selectedIds) : null;
+    const noteIds = contextModes.notes !== "off" && selectedIds.size ? Array.from(selectedIds) : null;
     const historyMessages = activeMessages.length > 0 ? activeMessages : null;
-    const data = await ask(prompt, noteIds, historyMessages, noteContextMode);
+    const noteApiMode = contextModes.notes === "selected" ? "focused" : contextModes.notes;
+    const data = await ask(prompt, noteIds, historyMessages, noteApiMode);
     const userContent = (prompt || "").trim();
     const assistantContent = (data.answer || "").trim();
     if (historyId && (userContent || assistantContent)) {
@@ -258,19 +416,24 @@ export default function Ask({ onHistoryPicker, onNotesPicker }) {
     }
   };
 
-  const handleEditSave = async () => {
-    const targetMessage = messages[editingMessageIndex];
-    const editedContent = editedMessage.trim();
-    if (!targetMessage || targetMessage.role !== "user" || !editedContent || loading || submissionInFlightRef.current) return;
+  const saveUserMessage = async (messageIndex, content) => {
+    const targetMessage = messages[messageIndex];
+    const editedContent = content.trim();
+    if (!targetMessage || targetMessage.role !== "user" || !editedContent) {
+      return { success: false, error: "Enter a message before saving." };
+    }
+    if (loading || submissionInFlightRef.current) {
+      return { success: false, error: "A request is already in progress." };
+    }
     submissionInFlightRef.current = true;
     setError(null);
     setLoading(true);
     try {
-      await sendQuestion(editedContent, messages.slice(0, editingMessageIndex));
-      setEditingMessageIndex(null);
-      setEditedMessage("");
+      await sendQuestion(editedContent, messages.slice(0, messageIndex));
+      return { success: true, content: editedContent };
     } catch (err) {
       setError(err.message);
+      return { success: false, error: err.message };
     } finally {
       setLoading(false);
       submissionInFlightRef.current = false;
@@ -299,59 +462,58 @@ export default function Ask({ onHistoryPicker, onNotesPicker }) {
       <form onSubmit={handleSubmit} className={`card app-panel form--compact ask-form ${loading ? "loading" : ""}`}>
         <header className="ask-header">
           <div className="ask-shortcuts" aria-label="Ask shortcuts">
-            <button
-              type="button"
-              className="button-subtle ask-shortcut"
-              onClick={openHistoryPicker}
-              aria-label="Open conversation history to continue a saved conversation or start fresh."
-              title="Continue a saved conversation or start fresh."
-            >
-              <span className="ask-shortcut-icon" aria-hidden="true"><ConversationIcon /></span>
-              <span>Conversation</span>
-              {currentHistoryId && (
-                <AskBadgeInfo
-                  text={getConversationBadgeTooltip()}
-                  ariaLabel={`Active conversation: ${selectedConversationTitle || "Untitled"}. ${messages.length} messages. Updated ${formatConversationMetaDate(currentHistoryUpdatedAt)}.`}
-                >
-                  ●
-                </AskBadgeInfo>
-              )}
-            </button>
-            <button
-              type="button"
-              className="button-subtle ask-shortcut"
-              onClick={openNotesPicker}
-              aria-label="Open note picker to choose notes for this answer."
-              title="Optional notes to help shape the answer."
-            >
-              <span className="ask-shortcut-icon" aria-hidden="true"><NotesIcon /></span>
-              <span>Notes</span>
-              {selectedIds.size > 0 && (
-                <AskBadgeInfo
-                  text={getNotesBadgeTooltip()}
-                  ariaLabel={getNotesBadgeTooltip() || `${selectedIds.size} selected notes`}
-                >
-                  {selectedIds.size}
-                </AskBadgeInfo>
-              )}
-            </button>
-            <button
-              type="button"
-              className={`button-subtle button-toggle ask-shortcut${noteContextMode !== "off" ? " ask-shortcut--active" : ""}`}
-              onClick={() => setNoteContextMode(
-                noteContextMode === "off" ? "focused" : noteContextMode === "focused" ? "automatic" : "off"
-              )}
-              aria-label={modeDetails.ariaLabel}
-              aria-pressed={noteContextMode !== "off"}
-              title={modeDetails.title}
-            >
-              <span className="ask-shortcut-icon" aria-hidden="true"><NotesIcon /></span>
-              <span>{modeDetails.label}</span>
-              <span
-                className={`ask-context-mode-indicator${noteContextMode === "automatic" ? " ask-context-mode-indicator--automatic" : noteContextMode === "focused" ? " ask-context-mode-indicator--focused" : ""}`}
-                aria-hidden="true"
-              />
-            </button>
+            <AskContextControl
+              label="Conversation"
+              icon="conversation"
+              details={conversationDetails}
+              mode={null}
+              status={currentHistoryId ? messages.length : null}
+              onOpen={openHistoryPicker}
+            />
+            <AskContextControl
+              label="Notes"
+              icon="notes"
+              details={notesDetails}
+              mode={contextModes.notes}
+              status={selectedIds.size || null}
+              onModeChange={(mode) => setContextMode("notes", mode)}
+              onOpen={openNotesPicker}
+            />
+            <AskContextControl
+              label="Files"
+              icon="files"
+              details="Files are unavailable as Ask context: the file tree endpoint exists, but Ask has no file-selection or file-context flow."
+              mode={contextModes.files}
+              onModeChange={(mode) => setContextMode("files", mode)}
+            />
+            <AskContextControl
+              label="GitHub"
+              icon="github"
+              details="GitHub context is not connected yet."
+              mode={contextModes.github}
+              onModeChange={(mode) => setContextMode("github", mode)}
+            />
+            <AskContextControl
+              label="Memory"
+              icon="memory"
+              details="Separate Memory context is not connected yet. Notes automatic retrieval remains available."
+              mode={contextModes.memory}
+              onModeChange={(mode) => setContextMode("memory", mode)}
+            />
+            <AskContextControl
+              label="Drive"
+              icon="drive"
+              details="Google Drive context is not connected yet."
+              mode={contextModes.drive}
+              onModeChange={(mode) => setContextMode("drive", mode)}
+            />
+            <AskContextControl
+              label="Web"
+              icon="web"
+              details="Web context is not connected yet."
+              mode={contextModes.web}
+              onModeChange={(mode) => setContextMode("web", mode)}
+            />
           </div>
         </header>
 
@@ -361,80 +523,85 @@ export default function Ask({ onHistoryPicker, onNotesPicker }) {
               <button
                 type="button"
                 className="button-subtle ask-history-toggle"
-                onClick={() => setHistoryExpanded((expanded) => !expanded)}
+                onClick={() => {
+                  setHistoryExpanded((expanded) => !expanded);
+                }}
                 aria-expanded={historyExpanded}
                 aria-controls="ask-history-content"
               >
                 <span>Conversation History</span>
                 <span aria-hidden="true">{historyExpanded ? "−" : "+"}</span>
               </button>
+              <div className="ask-history-navigation" role="group" aria-label="Navigate conversation messages">
+                <button
+                  type="button"
+                  className="button-subtle button-icon ask-history-navigation__button"
+                  onClick={() => navigateHistoryUserMessage(-1)}
+                  disabled={!historyExpanded || historyUserIndices.length === 0 || activeHistoryUserPosition <= 0}
+                  aria-label="Previous user message"
+                  title="Previous user message"
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <path d="M10 15.5V4.5M5.5 9l4.5-4.5L14.5 9" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="button-subtle button-icon ask-history-navigation__button"
+                  onClick={() => navigateHistoryUserMessage(1)}
+                  disabled={!historyExpanded || historyUserIndices.length === 0 || activeHistoryUserPosition === -1 || activeHistoryUserPosition >= historyUserIndices.length - 1}
+                  aria-label="Next user message"
+                  title="Next user message"
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <path d="M10 4.5v11M14.5 11 10 15.5 5.5 11" />
+                  </svg>
+                </button>
+              </div>
             </h3>
             {historyExpanded && (
               <div id="ask-history-content" ref={historyRef} className="ask-history-scroll">
                 {messages.map((message, index) => {
+                  const isUserMessage = message.role === "user";
+                  const isActiveMessage = isUserMessage && activeHistoryUserIndex === index;
+                  const messageClassName = `ask-history-message${isActiveMessage ? " ask-history-message--navigation-active" : ""}`;
                   if (message.role === "user") {
-                    const isEditing = editingMessageIndex === index;
                     return (
-                      <div key={index} className="ask-history-message ask-history-message--user">
-                        <div className={`ask-user-message-wrap${isEditing ? " ask-user-message-wrap--editing" : ""}`}>
-                          {isEditing ? (
-                            <div className="ask-user-message-editor">
-                              <label htmlFor={editMessageInputId}>Edit your message</label>
-                              <textarea
-                                id={editMessageInputId}
-                                value={editedMessage}
-                                onChange={(event) => setEditedMessage(event.target.value)}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Escape") {
-                                    event.preventDefault();
-                                    setEditingMessageIndex(null);
-                                    setEditedMessage("");
-                                  }
-                                }}
-                                autoFocus
-                                disabled={loading}
-                              />
-                              <div className="ask-user-message-actions">
-                                <button
-                                  type="button"
-                                  className="button-subtle"
-                                  onClick={() => { setEditingMessageIndex(null); setEditedMessage(""); }}
-                                  disabled={loading}
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  className="button-primary"
-                                  onClick={handleEditSave}
-                                  disabled={loading || !editedMessage.trim()}
-                                >
-                                  Save
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="ask-user-message-bubble">{message.content}</div>
-                              <button
-                                type="button"
-                                className="button-subtle ask-user-message-edit"
-                                onClick={() => { setEditedMessage(message.content); setEditingMessageIndex(index); }}
-                                aria-label="Edit your message"
-                                title="Edit your message"
-                                disabled={loading}
-                              >
-                                Edit
-                              </button>
-                            </>
-                          )}
+                      <div
+                        key={index}
+                        ref={(element) => { historyUserMessageRefs.current[index] = element; }}
+                        className={`${messageClassName} ask-history-message--user`}
+                        tabIndex={-1}
+                        aria-label={`User message ${index + 1} of ${messages.length}`}
+                        aria-current={isActiveMessage ? "location" : undefined}
+                      >
+                        <div className="ask-user-message-bubble">
+                          <button
+                            type="button"
+                            className="ask-user-message-toggle"
+                            onClick={() => onUserMessageDetail?.(
+                              message.content,
+                              (editedContent) => saveUserMessage(index, editedContent)
+                            )}
+                            aria-haspopup="dialog"
+                            aria-label={`View user message ${index + 1}: ${message.content}`}
+                          >
+                            <span className="ask-user-message-toggle__text" aria-hidden="true">
+                              <strong>User:</strong> {message.content}
+                            </span>
+                          </button>
                         </div>
                       </div>
                     );
                   }
                   return (
-                    <div key={index} className="ask-history-message">
-                      <strong>AI:</strong> {message.content}
+                    <div
+                      key={index}
+                      className={messageClassName}
+                    >
+                      <div className="ask-history-message__content">
+                        <strong>AI:</strong> {message.content}
+                      </div>
                     </div>
                   );
                 })}

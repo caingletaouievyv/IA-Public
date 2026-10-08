@@ -72,8 +72,8 @@ This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it
 |------|-----|----------|
 | Health | `curl http://127.0.0.1:5000/health` | 200 ok |
 | Ask | Login → POST `/ai/ask` with Bearer | 200 answer |
-| Note context modes | Ask with each `note_context_mode` | Off ignores IDs; Focused uses only selected IDs; Automatic searches all notes unless IDs restrict it; omitted mode defaults to Automatic |
-| Selected notes | Ask with `note_ids` array in Focused or Automatic | Only selected candidates can be used; selected notes remain eligible if no lexical match is found |
+| Note context modes | Ask with each `note_context_mode` | Off ignores IDs; API `focused` (UI Selected) uses only selected IDs; Automatic searches all notes unless IDs restrict it; omitted mode defaults to Automatic |
+| Selected notes | Ask with `note_ids` array in API `focused` (UI Selected) or Automatic | Only selected candidates can be used; selected notes remain eligible if no lexical match is found |
 | Default retrieval | Default config / `MEMORY_RETRIEVAL=text` | Deterministic lexical retrieval; no SentenceTransformer model load |
 | Optional semantic retrieval | Set `MEMORY_RETRIEVAL=semantic` before starting backend and inspect `/ai/debug/context` with JWT | Semantic FAISS path; model loads only on first use; requires model dependencies and availability |
 | Credits and idempotency | Use `test_ai_credits.py` | Charge, insufficient-balance 402, role bypass, refunds, completed retry result reuse, distinct operation IDs, and per-user operation isolation match behavior |
@@ -100,11 +100,16 @@ npm --prefix .\frontend run build
 - Cancel Notes selection and verify the existing note context is unchanged. Select notes and confirm; verify the selected context updates.
 - Create a note from the Notes selector, verify it appears selected, and confirm to add it to Ask context. Verify Notes Manage still supports CRUD and image import.
 - Verify History Manage retains title editing and single/bulk delete. In the selector, start a new conversation and select an existing conversation.
-- Verify the note mode cycles `Off → Focused → Automatic → Off`; Off ignores selected IDs, Focused without IDs supplies no context, and Automatic searches all notes only when IDs are absent.
-- Verify conversation history is expanded by default, user turns are right-aligned, and AI turns are left-aligned.
-- Edit a user turn inline. Cancel and Escape preserve the original. Save resends through the current conversation; confirm later turns are replaced by the edited turn and new AI response.
-- Verify Edit is available to keyboard focus and remains visible on mobile; confirm the textarea has a label and Save/Cancel are real buttons.
-- Keyboard-tab through navigation, Ask shortcuts, mode toggle, Notes/History selector and management actions; verify visible focus, accessible labels, and clear button hover/pressed states. Compact Ask shortcuts should still read as buttons, not plain labels.
+- Verify the header shows Conversation, Notes, Files, GitHub, Memory, Drive, and Web. Conversation has no mode button and opens the existing History UI.
+- Verify Notes, Files, GitHub, Memory, Drive, and Web each have separate source and mode buttons; each mode cycles `Off → Selected → Automatic → Off` without opening a menu. Notes Selected still uses the API's `focused` mode; Notes Off excludes note context and Automatic retains current note retrieval.
+- Verify active conversation turns continue to be sent as before. Placeholder source modes do not affect AI requests. Files remains an unavailable Ask context source while its backend file-tree listing remains intact.
+- On desktop, hover and keyboard-focus each source button to show its details; confirm mode buttons do not show details. On mobile, tap a source to open its selector, press and hold to show details without opening the selector, move past the gesture threshold to cancel, scroll normally, dismiss details by tapping elsewhere, and dismiss with Escape.
+- Verify conversation history is expanded by default, AI turns are left-aligned, and user bubbles are right-aligned with long messages clamped to a compact preview.
+- Click/tap a user bubble and verify the shared Ask overlay shows the complete message. Click Edit and verify the same overlay switches to Edit Message mode and focuses the textarea. Cancel returns to detail; Save updates the history and returns to detail without closing the overlay. Verify × and backdrop close the overlay, Escape returns from edit to detail and closes from detail, and clicks inside do not close it. Verify focus trap/restoration and no horizontal overflow on desktop and mobile.
+- Use the previous/next controls to navigate only User messages; confirm AI turns are skipped, scrolling is smooth, the target gets focus/active indication, and controls disable at the first/last User message. Check the thin dark scrollbar and no horizontal overflow at desktop and mobile widths.
+- Save an edited user turn through the overlay. Confirm the existing Ask flow resends only prior turns and later turns are replaced by the edited turn and new AI response. Cancel and Escape preserve the original.
+- Confirm the overlay Edit action is keyboard accessible; confirm the focused textarea has a label and Save/Cancel are real buttons.
+- Keyboard-tab through navigation, both buttons for each Ask source, Notes/History selectors and management actions; verify visible focus, accessible labels/descriptions, and clear button hover/pressed states. Source details should be available on keyboard focus without activating the source action.
 - Verify active conversation styling.
 - Verify loading, error, and empty states still render.
 - At desktop, narrow desktop, and mobile widths, verify natural page scrolling, touch-friendly controls, and no horizontal overflow or floating/drag/resize behavior.

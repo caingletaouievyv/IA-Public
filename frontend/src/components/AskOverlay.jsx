@@ -3,9 +3,20 @@
 
 import { useEffect, useId, useRef } from "react";
 
-export default function AskOverlay({ title, onClose, isManaging, onManage, children }) {
+export default function AskOverlay({
+  title,
+  onClose,
+  onEscape,
+  isManaging,
+  onManage,
+  showManage = true,
+  closeText = "Close",
+  children,
+}) {
   const titleId = useId();
   const panelRef = useRef(null);
+  const onEscapeRef = useRef(onEscape);
+  onEscapeRef.current = onEscape;
 
   useEffect(() => {
     const previouslyFocused = document.activeElement;
@@ -16,6 +27,7 @@ export default function AskOverlay({ title, onClose, isManaging, onManage, child
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        if (onEscapeRef.current?.()) return;
         onClose();
         return;
       }
@@ -62,16 +74,18 @@ export default function AskOverlay({ title, onClose, isManaging, onManage, child
         <header className="ask-overlay__header">
           <h2 id={titleId} className="ask-overlay__title">{title}</h2>
           <div className="ask-overlay__actions">
-            <button type="button" className="button-subtle ask-overlay__close" onClick={onManage}>
-              {isManaging ? "Choose" : "Manage"}
-            </button>
+            {showManage && (
+              <button type="button" className="button-subtle ask-overlay__close" onClick={onManage}>
+                {isManaging ? "Choose" : "Manage"}
+              </button>
+            )}
             <button
               type="button"
               className="button-subtle ask-overlay__close"
               onClick={onClose}
               aria-label={`Close ${title}`}
             >
-              Close
+              {closeText}
             </button>
           </div>
         </header>

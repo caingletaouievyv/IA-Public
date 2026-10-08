@@ -133,12 +133,12 @@ Production must not grant credits from this unverified callback. A future produc
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` → `sendQuestion()` | Send selected note IDs plus the current `note_context_mode`; no IDs are sent when none are selected. |
+| 1 | `frontend/src/components/Ask.jsx` → `sendQuestion()` | Send selected note IDs plus the current Notes mode; Off omits IDs, and the UI's Selected mode maps to API `focused`. Prior turns from the active Conversation continue to be sent as before. Other visible source modes are placeholders and do not affect the request. |
 | 2 | `backend/app/ai/routes.py` → `ask_ai()` | Parse the mode and optional `note_ids`, then pass them with the authenticated user ID to `ask()`. |
 | 3 | `backend/app/memory/manager.py` → `build_context()` | `off` ignores IDs. In `focused` and `automatic`, supplied IDs restrict the candidate set to those notes. In focused mode without IDs, return empty context. If selected candidates have no positive retrieval score, include the selected candidates subject to token packing. |
 | 4 | `backend/app/memory/text_retrieval.py` / `memory/embeddings.py` | Use deterministic lexical retrieval by default. Only `MEMORY_RETRIEVAL=semantic` imports the optional FAISS path; its embedding model is lazy-loaded. |
 
-The UI's mode cycle is `Off → Focused → Automatic → Off`. Automatic with no selected IDs can search all user notes; selected IDs narrow either enabled mode.
+The Notes UI mode cycle is `Off → Selected → Automatic → Off`; Selected maps to the existing API mode `focused`. Automatic with no selected IDs can search all user notes; selected IDs narrow either enabled mode. Conversation remains a source-only History selector and prior turns continue to be sent as before. Files, GitHub, Memory, Drive, and Web modes only cycle visibly; they do not retrieve context. The Files backend route continues to provide its existing file-tree listing and is not changed here.
 
 ---
 
@@ -190,9 +190,10 @@ Notes and History selectors are state owned by `Ask.jsx` and rendered in its pag
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` | Only user turns show an Edit control. Editing is inline in a labeled textarea. Escape or Cancel exits editing; the unchanged message remains in the conversation. |
-| 2 | `handleEditSave()` → `sendQuestion()` | Save sends the edited text through the normal Ask API flow using only messages before the edited turn. |
-| 3 | `sendQuestion()` → `updateNote()` | On success, save the edited user turn and new AI response to the same `_history` note. Turns after the edited message are replaced. |
+| 1 | `frontend/src/components/Ask.jsx` → `App.jsx` → `AskOverlay.jsx` | Activating a User bubble opens the full message in the shared Notes/History overlay shell. Edit switches the same overlay into edit mode and focuses its labeled textarea. Cancel returns to detail; Escape returns to detail while editing or closes from detail. |
+| 2 | `frontend/src/components/Ask.jsx` | Previous/next controls navigate only User message elements, skipping assistant turns; the target is smoothly scrolled into view and focused. |
+| 3 | `saveUserMessage()` → `sendQuestion()` | Save in the overlay sends the edited text through the normal Ask API flow using only messages before the edited turn; on success, the overlay remains open and shows the updated detail. |
+| 4 | `sendQuestion()` → `updateNote()` | On success, save the edited user turn and new AI response to the same `_history` note. Turns after the edited message are replaced. |
 
 There is no backend chat-edit endpoint; the frontend uses `POST /ai/ask` and the existing `PUT /notes/<id>` history update.
 
