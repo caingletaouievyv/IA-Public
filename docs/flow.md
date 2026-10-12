@@ -181,7 +181,7 @@ See [project.md](project.md) roadmap (Phase 8).
 | 2 | `frontend/src/components/Notes.jsx` | Selection mode renders notes as selectable cards. Click or Enter/Space toggles selection; Cancel closes without returning the temporary selection; confirmation calls `onSelect(notes)`. Note creation and image import are available in Manage, not in Ask selection mode. |
 | 3 | `frontend/src/components/Ask.jsx` | On confirmation, Ask replaces its selected notes and ID set, then closes the selector. The next Ask request sends the selected `note_ids`; canceling leaves the existing context unchanged. Manage mode retains normal Notes CRUD and import operations. |
 
-## 15. New conversation
+## 16. New conversation
 
 | Step | Where | What to look at |
 |------|-------|------------------|
@@ -189,13 +189,13 @@ See [project.md](project.md) roadmap (Phase 8).
 | 2 | `frontend/src/components/History.jsx` | The created history note is appended to local state, `viewingId` is set to the created ID, and `loadHistoryList()` refreshes the list. |
 | 3 | `frontend/src/components/History.jsx` | The created conversation is immediately available for viewing and receives the active `note-card--active` styling while viewed. |
 
-## 16. Ask selector ownership
+## 17. Ask selector ownership
 
 Notes and History selectors are state owned by `Ask.jsx` and rendered in its page. They do not change routes or unmount Ask. The existing `History.jsx` and `Notes.jsx` selection callbacks return the chosen conversation ID or note objects; cancellation only closes the selector.
 
 ---
 
-## 17. Edit and resend a user message
+## 18. Edit and resend a user message
 
 | Step | Where | What to look at |
 |------|-------|------------------|

@@ -40,16 +40,19 @@ python run.py
 
 Open **http://127.0.0.1:5000** — sign in or register.
 
-**Optional demo user** (from `backend/`):
+**Optional demo user** (development/test only; run from `backend/`):
+
+Set `APP_ENV=development` and `SEED_USER_PASSWORD` in your local, ignored root `.env`.
+Use a unique password of at least 12 characters; do not copy a real account password.
 
 ```bash
 python -m scripts.seed_user
-# demo / 12345678
 ```
 
-The seed is safe to rerun: an existing `demo` account's password and notes are not
-overwritten, and only missing demo notes are added. An existing `ayi` account is
-left untouched.
+The seed refuses to run outside `APP_ENV=development` or `APP_ENV=test`, and refuses
+an unset or too-short `SEED_USER_PASSWORD`. It is safe to rerun: it does not change an
+existing `demo` account's password and only adds missing demo notes. Existing `ayi`
+accounts are left untouched.
 
 **Development:** run `python run.py` from `backend/`, then run `npm run dev` from `frontend/` → http://127.0.0.1:5174. Vite proxies `/ai`, `/auth`, `/notes`, `/files`, and `/settings` to port 5000.
 
@@ -91,7 +94,7 @@ All protected routes: `Authorization: Bearer <JWT>`. Details and curl examples: 
 |----------|-------------|
 | [docs/docs.md](docs/docs.md) | Index of all docs |
 | [docs/project.md](docs/project.md) | Stack, roadmap, features, configuration |
-| [docs/ia.md](docs/ia.md) | Engineering agreement (architecture, API standards) |
+| [docs/ia.md](docs/ia.md) | Engineering agreement (architecture, security, testing standards) |
 | [docs/flow.md](docs/flow.md) | Code flow traces |
 | [docs/testing.md](docs/testing.md) | Testing and API reference |
 | [docs/ui.md](docs/ui.md) | Frontend UX |

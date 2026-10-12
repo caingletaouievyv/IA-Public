@@ -5,7 +5,7 @@ alwaysApply: true
 
 # IA repo rules
 
-**Index:** [docs/docs.md](docs/docs.md). **Source of truth:** [docs/ia.md](docs/ia.md) (agreement, layers) and [docs/project.md](docs/project.md) (product, stack, roadmap). [docs/ui.md](docs/ui.md) for frontend UX. [flow.md](docs/flow.md) / [testing.md](docs/testing.md) for traces and APIs.
+**Index:** [docs/docs.md](docs/docs.md). **Engineering agreement:** [docs/ia.md](docs/ia.md) (principles, layers, security, testing) and [docs/project.md](docs/project.md) (product, stack, roadmap). [docs/ui.md](docs/ui.md) for frontend UX. [flow.md](docs/flow.md) / [testing.md](docs/testing.md) for traces and APIs.
 
 ---
 
@@ -52,4 +52,4 @@ Dark theme; page-based authenticated shell; loading / error / empty feedback. Se
 | **Tests** | Keep `backend/scripts/test/` runnable |
 | **Communication** | State → intent → action |
 
-When in doubt: **docs/ia.md** and **docs/project.md**.
+When in doubt: **docs/ia.md** and **docs/project.md**. Keep demo seeding limited to development/test and require a configured password.

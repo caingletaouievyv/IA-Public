@@ -109,7 +109,7 @@ cd backend && pip install -r requirements.txt && python run.py
 ```
 
 - **Dev:** `npm run dev` in `frontend/` (port 5174, proxy to 5000).
-- **Seed:** `python -m scripts.seed_user` → `demo` / `12345678`. The command does not update an existing `demo` account's password or overwrite its notes; it only adds missing demo notes. Any existing `ayi` account is left untouched.
+- **Seed:** `python -m scripts.seed_user` is for development/test only. Set `APP_ENV=development` (or `test`) and `SEED_USER_PASSWORD` with at least 12 characters in the ignored root `.env` before running it. The command refuses production/default environments and missing or short passwords. It does not update an existing `demo` account's password or overwrite its notes; it only adds missing demo notes. Any existing `ayi` account is left untouched.
 - **CORS:** `CORS_ORIGINS` in `.env` when frontend and API are on different origins.
 - **Notes from images:** Tesseract OCR must be installed on the server.
 - **Runtime:** the repository selects Python `3.13.5` in `.python-version`; the frontend package version is `0.0.1`. Flask serves `frontend/dist` when it exists, otherwise it serves the frontend directory. `/health` is unauthenticated. Vite development proxies `/ai`, `/auth`, `/notes`, `/files`, and `/settings` to the backend; the frontend API can use `VITE_API_BASE_URL` for a separate API origin. `backend/data/` is local runtime/user data and generated AI-memory output, ignored by Git and not a source-controlled dataset.

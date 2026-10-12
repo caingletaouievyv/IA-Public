@@ -11,11 +11,14 @@ if dotenv.exists():
     from dotenv import load_dotenv
     load_dotenv(dotenv)
 
+from app.config import APP_ENV
 from app.auth.manager import find_user_by_username, create_user
 from app.notes.manager import load_notes, add_note
 
-SEED_USERNAME = "demo"
-SEED_PASSWORD = "12345678"
+SEED_USERNAME = (os.getenv("SEED_USERNAME") or "demo").strip()
+SEED_PASSWORD = (os.getenv("SEED_USER_PASSWORD") or "").strip()
+ALLOWED_SEED_ENVS = {"development", "test"}
+MIN_SEED_PASSWORD_LENGTH = 12
 
 SEED_NOTES = [
     {
@@ -63,7 +66,15 @@ SEED_NOTES = [
 ]
 
 
+def validate_seed_configuration():
+    if APP_ENV not in ALLOWED_SEED_ENVS:
+        raise RuntimeError("Demo seeding is allowed only when APP_ENV=development or APP_ENV=test.")
+    if len(SEED_PASSWORD) < MIN_SEED_PASSWORD_LENGTH:
+        raise RuntimeError("Set SEED_USER_PASSWORD to a unique password of at least 12 characters.")
+
+
 def seed_user():
+    validate_seed_configuration()
     user = find_user_by_username(SEED_USERNAME)
     created = False
     if not user:
@@ -96,8 +107,12 @@ def seed_user():
 
 def main():
     seed_user()
-    print("Done. Sign in with", SEED_USERNAME, "/", SEED_PASSWORD)
+    print("Done. Sign in with the configured seed username and password.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as error:
+        print(f"Seed refused: {error}", file=sys.stderr)
+        sys.exit(2)
