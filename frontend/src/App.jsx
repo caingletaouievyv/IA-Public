@@ -8,6 +8,7 @@ import Ask from "./components/Ask";
 import AskOverlay from "./components/AskOverlay";
 import DebugContext from "./components/DebugContext";
 import History from "./components/History";
+import Manage from "./components/Manage";
 import Notes from "./components/Notes";
 import Settings from "./components/Settings";
 import PublicSite from "./components/PublicSite";
@@ -15,7 +16,7 @@ import PublicSite from "./components/PublicSite";
 const UNAUTH_EVENT = "ia:unauthorized";
 const PUBLIC_PATHS = new Set(["/", "/privacy", "/terms", "/contact"]);
 const AUTH_PATHS = new Set(["/login", "/register"]);
-const APP_PATHS = new Set(["/ask", "/debug", "/settings"]);
+const APP_PATHS = new Set(["/ask", "/manage", "/debug", "/settings"]);
 
 function currentPath() {
   return window.location.pathname.replace(/\/+$/, "") || "/";
@@ -32,6 +33,7 @@ function Header({ onLogout, activePath, onNavigate }) {
         <nav className="app-navigation" aria-label="Application navigation">
           {[
             ["/ask", "Ask"],
+            ["/manage", "Manage"],
             ["/debug", "Debug"],
             ["/settings", "Settings"],
           ].map(([href, label]) => (
@@ -58,12 +60,14 @@ export default function App() {
   const [token, setTokenState] = useState(() => getToken());
   const [path, setPath] = useState(currentPath);
   const [askOverlay, setAskOverlay] = useState(null);
+  const [askHistoryFocused, setAskHistoryFocused] = useState(false);
 
   const navigate = (nextPath, replace = false) => {
     if (window.location.pathname !== nextPath) {
       if (replace) window.history.replaceState(null, "", nextPath);
       else window.history.pushState(null, "", nextPath);
     }
+    setAskHistoryFocused(false);
     setPath(nextPath);
   };
 
@@ -74,10 +78,10 @@ export default function App() {
   };
 
   const openHistoryOverlay = useCallback((onSelect, activeId) => {
-    setAskOverlay({ type: "history", onSelect, activeId, manage: false });
+    setAskOverlay({ type: "history", onSelect, activeId });
   }, []);
   const openNotesOverlay = useCallback((onSelect, selectedIds) => {
-    setAskOverlay({ type: "notes", onSelect, selectedIds: [...selectedIds], manage: false });
+    setAskOverlay({ type: "notes", onSelect, selectedIds: [...selectedIds] });
   }, []);
   const openUserMessageOverlay = useCallback((content, onSave) => {
     setAskOverlay({
@@ -86,11 +90,7 @@ export default function App() {
       content,
       draft: content,
       onSave,
-      manage: false,
     });
-  }, []);
-  const toggleAskOverlayMode = useCallback(() => {
-    setAskOverlay((current) => current && { ...current, manage: !current.manage });
   }, []);
   const closeAskOverlay = useCallback(() => setAskOverlay(null), []);
   const handleOverlayEscape = useCallback(() => {
@@ -129,7 +129,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    const onPopState = () => setPath(currentPath());
+    const onPopState = () => {
+      setAskHistoryFocused(false);
+      setPath(currentPath());
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -178,7 +181,7 @@ export default function App() {
   };
 
   return (
-    <div className="app-fullpage">
+    <div className={`app-fullpage${askHistoryFocused && activePath === "/ask" ? " app-fullpage--ask-history-focused" : ""}`}>
       <Header
         onLogout={() => setAuthToken(null)}
         activePath={activePath}
@@ -190,8 +193,15 @@ export default function App() {
             onHistoryPicker={openHistoryOverlay}
             onNotesPicker={openNotesOverlay}
             onUserMessageDetail={openUserMessageOverlay}
+            onHistoryFocusChange={setAskHistoryFocused}
           />
-        ) : activePath === "/debug" ? <DebugContext /> : <Settings />}
+        ) : activePath === "/manage" ? (
+          <Manage />
+        ) : activePath === "/debug" ? (
+          <DebugContext />
+        ) : (
+          <Settings />
+        )}
       </main>
       {activePath === "/ask" && askOverlay && (
         <AskOverlay
@@ -206,23 +216,21 @@ export default function App() {
           }
           onClose={closeAskOverlay}
           onEscape={handleOverlayEscape}
-          isManaging={askOverlay.manage}
-          onManage={toggleAskOverlayMode}
-          showManage={askOverlay.type !== "userMessage"}
+          showManage={false}
           closeText={askOverlay.type === "userMessage" ? "×" : "Close"}
         >
           {askOverlay.type === "history" ? (
             <History
-              isSelectionMode={!askOverlay.manage}
+              isSelectionMode
               activeId={askOverlay.activeId}
-              onSelect={askOverlay.manage ? null : askOverlay.onSelect}
+              onSelect={askOverlay.onSelect}
               onCloseSelection={closeAskOverlay}
             />
           ) : askOverlay.type === "notes" ? (
             <Notes
-              isSelectionMode={!askOverlay.manage}
-              selectedIds={askOverlay.manage ? [] : askOverlay.selectedIds}
-              onSelect={askOverlay.manage ? null : askOverlay.onSelect}
+              isSelectionMode
+              selectedIds={askOverlay.selectedIds}
+              onSelect={askOverlay.onSelect}
               onCloseSelection={closeAskOverlay}
             />
           ) : askOverlay.mode === "edit" ? (

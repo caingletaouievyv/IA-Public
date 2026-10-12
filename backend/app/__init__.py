@@ -46,6 +46,7 @@ def create_app():
     @app.route("/login")
     @app.route("/register")
     @app.route("/ask")
+    @app.route("/manage")
     @app.route("/debug")
     @app.route("/settings")
     @app.route("/app")

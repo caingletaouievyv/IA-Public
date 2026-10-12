@@ -14,8 +14,8 @@ if dotenv.exists():
 from app.auth.manager import find_user_by_username, create_user
 from app.notes.manager import load_notes, add_note
 
-SEED_USERNAME = "ayi"
-SEED_PASSWORD = "Ayi!23"
+SEED_USERNAME = "demo"
+SEED_PASSWORD = "12345678"
 
 SEED_NOTES = [
     {

@@ -3,7 +3,14 @@
 // No authenticated API calls without token; surface auth errors in UI.
 
 import { useState, useEffect, useLayoutEffect, useRef, useId } from "react";
-import { ask, getNote, createHistory, updateNote, getToken } from "../api";
+import { ask, getNote, createHistory, updateNote, getToken, getSettings, putSettings } from "../api";
+import AskContextIcon from "./AskContextIcon";
+import {
+  DEFAULT_CONTEXT_MODES,
+  DEFAULT_VISIBLE_CONTEXT_SOURCES,
+  getVisibleContextSources,
+  normalizeContextModes,
+} from "../askContextSources";
 
 const CONTEXT_MODES = ["off", "selected", "automatic"];
 
@@ -21,57 +28,21 @@ function parseMessages(content) {
   }
 }
 
-const CONTEXT_ICON_PATHS = {
-  conversation: (
-    <>
-      <path d="M4 5.75A2.25 2.25 0 0 1 6.25 3.5h7.5A2.25 2.25 0 0 1 16 5.75v5.5a2.25 2.25 0 0 1-2.25 2.25H9l-4 3v-3.75a2.25 2.25 0 0 1-1-1.85Z" />
-      <path d="M7 7.5h6M7 10h4" />
-    </>
-  ),
-  notes: (
-    <>
-      <path d="M5.5 2.75h6l3.75 3.75v10a.75.75 0 0 1-.75.75h-9a.75.75 0 0 1-.75-.75V3.5a.75.75 0 0 1 .75-.75Z" />
-      <path d="M11.5 3v4h4M7.5 10h5M7.5 12.75h5" />
-    </>
-  ),
-  files: (
-    <path d="M2.75 5.5a1.5 1.5 0 0 1 1.5-1.5h4l1.75 2h5.75a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-11a1.5 1.5 0 0 1-1.5-1.5Z" />
-  ),
-  github: (
-    <>
-      <circle cx="10" cy="10" r="7.25" />
-      <path d="M7 15.7v-1.2a2 2 0 0 1 .65-1.5c-1.55-.2-2.4-1.05-2.4-2.65 0-.8.3-1.4.85-1.9-.2-.65-.15-1.15.1-1.7.75 0 1.25.25 1.7.65a6.3 6.3 0 0 1 4.2 0c.45-.4.95-.65 1.7-.65.25.55.3 1.05.1 1.7.55.5.85 1.1.85 1.9 0 1.6-.85 2.45-2.4 2.65a2 2 0 0 1 .65 1.5v1.2" />
-    </>
-  ),
-  memory: (
-    <>
-      <path d="M9.75 4.5a2.75 2.75 0 0 0-5.2 1.2 2.5 2.5 0 0 0-.8 4.45 2.5 2.5 0 0 0 1.75 4.1A2.75 2.75 0 0 0 9.75 15Z" />
-      <path d="M10.25 4.5a2.75 2.75 0 0 1 5.2 1.2 2.5 2.5 0 0 1 .8 4.45 2.5 2.5 0 0 1-1.75 4.1 2.75 2.75 0 0 1-4.25.75ZM6.5 7.25a1.75 1.75 0 0 1 2 1.5m-3.5 2a1.75 1.75 0 0 1 3 1.25m6-4.75a1.75 1.75 0 0 0-2 1.5m3.5 2a1.75 1.75 0 0 0-3 1.25M10 4.5v11" />
-    </>
-  ),
-  drive: (
-    <>
-      <path d="m7 4.25-4 7 2.5 4.5h9L17.25 12l-4-7Z" />
-      <path d="m7 4.25 4.25 7.5M5.5 15.75 9.75 8.5m1.5 3h6" />
-    </>
-  ),
-  web: (
-    <>
-      <circle cx="10" cy="10" r="7.25" />
-      <path d="M2.9 10h14.2M10 2.75a11.5 11.5 0 0 1 0 14.5 11.5 11.5 0 0 1 0-14.5Z" />
-    </>
-  ),
-};
-
-function ContextIcon({ name }) {
-  return (
-    <svg className="ask-shortcut-icon__svg" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      {CONTEXT_ICON_PATHS[name]}
-    </svg>
-  );
+function markdownToPlainText(content) {
+  return content
+    .replace(/```[^\r\n]*\r?\n?/g, "")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^(\s*)[-*+]\s+/gm, "$1• ")
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    .replace(/~~(.*?)~~/g, "$1");
 }
 
-function AskContextControl({ label, icon, details, mode, status, onModeChange, onOpen }) {
+function AskContextControl({ label, icon, details, mode, status, onModeChange, onOpen, modeDisabled = false }) {
   const [longPressOpen, setLongPressOpen] = useState(false);
   const [detailsPinned, setDetailsPinned] = useState(false);
   const [detailsPosition, setDetailsPosition] = useState({ left: 8, top: 8 });
@@ -208,7 +179,7 @@ function AskContextControl({ label, icon, details, mode, status, onModeChange, o
           onClick={handleClick}
           aria-describedby={detailsId}
         >
-          <span className="ask-shortcut-icon" aria-hidden="true"><ContextIcon name={icon} /></span>
+          <span className="ask-shortcut-icon" aria-hidden="true"><AskContextIcon name={icon} /></span>
           <span>{label}</span>
           {status !== null && status !== undefined && (
             <span className="ask-context-count" aria-hidden="true">{status}</span>
@@ -234,6 +205,7 @@ function AskContextControl({ label, icon, details, mode, status, onModeChange, o
           type="button"
           className={`button-subtle button-toggle ask-shortcut ask-context-mode${mode !== "off" ? " ask-shortcut--active" : ""}`}
           onClick={() => onModeChange(nextContextMode(mode))}
+          disabled={modeDisabled}
           aria-label={`${label} context mode: ${mode.toUpperCase()}. Activate to change mode.`}
           aria-pressed={mode !== "off"}
         >
@@ -244,32 +216,63 @@ function AskContextControl({ label, icon, details, mode, status, onModeChange, o
   );
 }
 
-export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetail }) {
+export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetail, onHistoryFocusChange }) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [notes, setNotes] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [contextModes, setContextModes] = useState({
-    notes: "off",
-    files: "off",
-    github: "off",
-    memory: "off",
-    drive: "off",
-    web: "off",
-  });
+  const [visibleContextSources, setVisibleContextSources] = useState(DEFAULT_VISIBLE_CONTEXT_SOURCES);
+  const [contextModes, setContextModes] = useState(DEFAULT_CONTEXT_MODES);
+  const [contextSettingsLoaded, setContextSettingsLoaded] = useState(false);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [currentHistoryTitle, setCurrentHistoryTitle] = useState("");
   const [currentHistoryUpdatedAt, setCurrentHistoryUpdatedAt] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [historyExpanded, setHistoryExpanded] = useState(true);
+  const [historyFocused, setHistoryFocused] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState(null);
   const [activeHistoryUserIndex, setActiveHistoryUserIndex] = useState(null);
   const historyRef = useRef(null);
   const historyUserMessageRefs = useRef([]);
+  const copyFeedbackTimerRef = useRef(null);
   const submissionInFlightRef = useRef(false);
   const skipNextHistoryLoadRef = useRef(null);
+  const contextModesRef = useRef(DEFAULT_CONTEXT_MODES);
+  const modeSaveQueueRef = useRef(Promise.resolve());
+
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setVisibleContextSources(getVisibleContextSources(settings?.ask_context_sources).map((source) => source.id));
+          const savedModes = normalizeContextModes(settings?.ask_context_modes);
+          contextModesRef.current = savedModes;
+          setContextModes(savedModes);
+        }
+      })
+      .catch((settingsError) => {
+        if (!cancelled) setError(`Could not load Ask context source preferences: ${settingsError.message}`);
+      })
+      .finally(() => {
+        if (!cancelled) setContextSettingsLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(copyFeedbackTimerRef.current), []);
+
   const setContextMode = (source, mode) => {
-    setContextModes((current) => ({ ...current, [source]: mode }));
+    const nextModes = { ...contextModesRef.current, [source]: mode };
+    contextModesRef.current = nextModes;
+    setContextModes(nextModes);
+    const save = modeSaveQueueRef.current
+      .catch(() => {})
+      .then(() => putSettings({ ask_context_modes: nextModes }));
+    modeSaveQueueRef.current = save;
+    save.catch((settingsError) => {
+      setError(`Could not save context mode preference: ${settingsError.message}`);
+    });
   };
   const handleNoteSelection = (selectedNotes) => {
     const nextNotes = Array.isArray(selectedNotes) ? selectedNotes.filter((note) => note?.id) : [];
@@ -353,7 +356,7 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
     if (historyRef.current && messages.length > 0) {
       historyRef.current.scrollTop = historyRef.current.scrollHeight;
     }
-  }, [currentHistoryId, historyExpanded, messages]);
+  }, [currentHistoryId, messages]);
 
   const handleHistorySelection = (id) => {
     setCurrentHistoryId(id);
@@ -457,156 +460,178 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
     }
   };
 
+  const toggleHistoryFocus = () => {
+    const nextFocused = !historyFocused;
+    setHistoryFocused(nextFocused);
+    onHistoryFocusChange?.(nextFocused);
+  };
+
+  const copyAiResponse = async (index, content) => {
+    window.clearTimeout(copyFeedbackTimerRef.current);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable in this browser.");
+      }
+      await navigator.clipboard.writeText(markdownToPlainText(content));
+      setCopyFeedback({ index, status: "copied", message: "AI response copied." });
+    } catch (error) {
+      setCopyFeedback({
+        index,
+        status: "failed",
+        message: `${error.message || "Clipboard access failed."} Select and copy the response manually.`,
+      });
+    }
+    copyFeedbackTimerRef.current = window.setTimeout(() => setCopyFeedback(null), 2500);
+  };
+
   return (
-    <section className="section section--ask">
+    <section className={`section section--ask${historyFocused ? " section--ask-history-focused" : ""}`}>
       <form onSubmit={handleSubmit} className={`card app-panel form--compact ask-form ${loading ? "loading" : ""}`}>
-        <header className="ask-header">
-          <div className="ask-shortcuts" aria-label="Ask shortcuts">
-            <AskContextControl
-              label="Conversation"
-              icon="conversation"
-              details={conversationDetails}
-              mode={null}
-              status={currentHistoryId ? messages.length : null}
-              onOpen={openHistoryPicker}
-            />
-            <AskContextControl
-              label="Notes"
-              icon="notes"
-              details={notesDetails}
-              mode={contextModes.notes}
-              status={selectedIds.size || null}
-              onModeChange={(mode) => setContextMode("notes", mode)}
-              onOpen={openNotesPicker}
-            />
-            <AskContextControl
-              label="Files"
-              icon="files"
-              details="Files are unavailable as Ask context: the file tree endpoint exists, but Ask has no file-selection or file-context flow."
-              mode={contextModes.files}
-              onModeChange={(mode) => setContextMode("files", mode)}
-            />
-            <AskContextControl
-              label="GitHub"
-              icon="github"
-              details="GitHub context is not connected yet."
-              mode={contextModes.github}
-              onModeChange={(mode) => setContextMode("github", mode)}
-            />
-            <AskContextControl
-              label="Memory"
-              icon="memory"
-              details="Separate Memory context is not connected yet. Notes automatic retrieval remains available."
-              mode={contextModes.memory}
-              onModeChange={(mode) => setContextMode("memory", mode)}
-            />
-            <AskContextControl
-              label="Drive"
-              icon="drive"
-              details="Google Drive context is not connected yet."
-              mode={contextModes.drive}
-              onModeChange={(mode) => setContextMode("drive", mode)}
-            />
-            <AskContextControl
-              label="Web"
-              icon="web"
-              details="Web context is not connected yet."
-              mode={contextModes.web}
-              onModeChange={(mode) => setContextMode("web", mode)}
-            />
-          </div>
-        </header>
+        {!historyFocused && (
+          <header className="ask-header">
+            <div className="ask-shortcuts" aria-label="Ask shortcuts">
+              {getVisibleContextSources(visibleContextSources).map((source) => (
+                <AskContextControl
+                  key={source.id}
+                  label={source.label}
+                  icon={source.id}
+                  details={source.id === "conversation"
+                    ? conversationDetails
+                    : source.id === "notes" ? notesDetails : source.details}
+                  mode={source.id === "conversation" ? null : contextModes[source.id]}
+                  status={source.id === "conversation"
+                    ? currentHistoryId ? messages.length : null
+                    : source.id === "notes" ? selectedIds.size || null : null}
+                  onModeChange={source.id === "conversation"
+                    ? undefined
+                    : (mode) => setContextMode(source.id, mode)}
+                  modeDisabled={!contextSettingsLoaded}
+                  onOpen={source.id === "conversation"
+                    ? openHistoryPicker
+                    : source.id === "notes" ? openNotesPicker : undefined}
+                />
+              ))}
+            </div>
+          </header>
+        )}
 
         {currentHistoryId && (
           <div className="ask-previous-messages">
             <h3 className="ask-section-heading ask-history-heading">
-              <button
-                type="button"
-                className="button-subtle ask-history-toggle"
-                onClick={() => {
-                  setHistoryExpanded((expanded) => !expanded);
-                }}
-                aria-expanded={historyExpanded}
-                aria-controls="ask-history-content"
-              >
-                <span>Conversation History</span>
-                <span aria-hidden="true">{historyExpanded ? "−" : "+"}</span>
-              </button>
-              <div className="ask-history-navigation" role="group" aria-label="Navigate conversation messages">
+              <span className="ask-history-title">Conversation History</span>
+              <div className="ask-history-heading__controls">
                 <button
                   type="button"
-                  className="button-subtle button-icon ask-history-navigation__button"
-                  onClick={() => navigateHistoryUserMessage(-1)}
-                  disabled={!historyExpanded || historyUserIndices.length === 0 || activeHistoryUserPosition <= 0}
-                  aria-label="Previous user message"
-                  title="Previous user message"
+                  className="button-subtle ask-history-focus"
+                  onClick={toggleHistoryFocus}
+                  aria-pressed={historyFocused}
+                  aria-label={historyFocused
+                    ? "Exit Conversation History focus"
+                    : "Focus Conversation History"}
+                  title={historyFocused
+                    ? "Exit Conversation History focus"
+                    : "Focus Conversation History"}
                 >
-                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                    <path d="M10 15.5V4.5M5.5 9l4.5-4.5L14.5 9" />
+                  <svg className="ask-history-focus__icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    {historyFocused ? (
+                      <path d="M2.5 2.5 7.5 7.5M4.5 7.5h3v-3M17.5 2.5 12.5 7.5m0-3v3h3M2.5 17.5l5-5m-3 0h3v3M17.5 17.5l-5-5m0 3v-3h3" />
+                    ) : (
+                      <path d="M7.5 7.5 2.5 2.5m0 0v4m0-4h4M12.5 7.5l5-5m-5 0h5v5M7.5 12.5l-5 5m0-5v5h5m5-5 5 5m0-5v5h-5" />
+                    )}
                   </svg>
+                  <span>{historyFocused ? "Exit Focus" : "Focus"}</span>
                 </button>
-                <button
-                  type="button"
-                  className="button-subtle button-icon ask-history-navigation__button"
-                  onClick={() => navigateHistoryUserMessage(1)}
-                  disabled={!historyExpanded || historyUserIndices.length === 0 || activeHistoryUserPosition === -1 || activeHistoryUserPosition >= historyUserIndices.length - 1}
-                  aria-label="Next user message"
-                  title="Next user message"
-                >
-                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                    <path d="M10 4.5v11M14.5 11 10 15.5 5.5 11" />
-                  </svg>
-                </button>
+                <div className="ask-history-navigation" role="group" aria-label="Navigate conversation messages">
+                  <button
+                    type="button"
+                    className="button-subtle button-icon ask-history-navigation__button"
+                    onClick={() => navigateHistoryUserMessage(-1)}
+                    disabled={historyUserIndices.length === 0 || activeHistoryUserPosition <= 0}
+                    aria-label="Previous user message"
+                    title="Previous user message"
+                  >
+                    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                      <path d="M10 15.5V4.5M5.5 9l4.5-4.5L14.5 9" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="button-subtle button-icon ask-history-navigation__button"
+                    onClick={() => navigateHistoryUserMessage(1)}
+                    disabled={historyUserIndices.length === 0 || activeHistoryUserPosition === -1 || activeHistoryUserPosition >= historyUserIndices.length - 1}
+                    aria-label="Next user message"
+                    title="Next user message"
+                  >
+                    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                      <path d="M10 4.5v11M14.5 11 10 15.5 5.5 11" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </h3>
-            {historyExpanded && (
-              <div id="ask-history-content" ref={historyRef} className="ask-history-scroll">
-                {messages.map((message, index) => {
-                  const isUserMessage = message.role === "user";
-                  const isActiveMessage = isUserMessage && activeHistoryUserIndex === index;
-                  const messageClassName = `ask-history-message${isActiveMessage ? " ask-history-message--navigation-active" : ""}`;
-                  if (message.role === "user") {
-                    return (
-                      <div
-                        key={index}
-                        ref={(element) => { historyUserMessageRefs.current[index] = element; }}
-                        className={`${messageClassName} ask-history-message--user`}
-                        tabIndex={-1}
-                        aria-label={`User message ${index + 1} of ${messages.length}`}
-                        aria-current={isActiveMessage ? "location" : undefined}
-                      >
-                        <div className="ask-user-message-bubble">
-                          <button
-                            type="button"
-                            className="ask-user-message-toggle"
-                            onClick={() => onUserMessageDetail?.(
-                              message.content,
-                              (editedContent) => saveUserMessage(index, editedContent)
-                            )}
-                            aria-haspopup="dialog"
-                            aria-label={`View user message ${index + 1}: ${message.content}`}
-                          >
-                            <span className="ask-user-message-toggle__text" aria-hidden="true">
-                              <strong>User:</strong> {message.content}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  }
+            <div id="ask-history-content" ref={historyRef} className="ask-history-scroll">
+              {messages.map((message, index) => {
+                const isUserMessage = message.role === "user";
+                const isActiveMessage = isUserMessage && activeHistoryUserIndex === index;
+                const messageClassName = `ask-history-message${isActiveMessage ? " ask-history-message--navigation-active" : ""}`;
+                if (message.role === "user") {
                   return (
                     <div
                       key={index}
-                      className={messageClassName}
+                      ref={(element) => { historyUserMessageRefs.current[index] = element; }}
+                      className={`${messageClassName} ask-history-message--user`}
+                      tabIndex={-1}
+                      aria-label={`User message ${index + 1} of ${messages.length}`}
+                      aria-current={isActiveMessage ? "location" : undefined}
                     >
-                      <div className="ask-history-message__content">
-                        <strong>AI:</strong> {message.content}
+                      <div className="ask-user-message-bubble">
+                        <button
+                          type="button"
+                          className="ask-user-message-toggle"
+                          onClick={() => onUserMessageDetail?.(
+                            message.content,
+                            (editedContent) => saveUserMessage(index, editedContent)
+                          )}
+                          aria-haspopup="dialog"
+                          aria-label={`View user message ${index + 1}: ${message.content}`}
+                        >
+                          <span className="ask-user-message-toggle__text" aria-hidden="true">
+                            <strong>User:</strong> {message.content}
+                          </span>
+                        </button>
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
+                }
+                return (
+                  <div
+                    key={index}
+                    className={`${messageClassName} ask-history-message--assistant`}
+                  >
+                    <div className="ask-history-message__content">
+                      <strong>AI:</strong> <span className="ask-history-message__text">{message.content}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="button-subtle button-icon ask-history-copy"
+                      onClick={() => copyAiResponse(index, message.content)}
+                      aria-label={`Copy AI response ${messages.slice(0, index).filter((priorMessage) => priorMessage.role === "assistant").length + 1}`}
+                      title={copyFeedback?.index === index && copyFeedback.status === "failed"
+                        ? copyFeedback.message
+                        : "Copy AI response"}
+                    >
+                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                        <rect x="7" y="7" width="10" height="10" rx="1.5" />
+                        <path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v7A1.5 1.5 0 0 0 4.5 14H7" />
+                      </svg>
+                    </button>
+                    <span className="ask-history-copy-status" role="status" aria-live="polite">
+                      {copyFeedback?.index === index ? copyFeedback.message : ""}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

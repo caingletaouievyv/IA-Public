@@ -2,7 +2,9 @@
 
 Run backend checks from `backend/`; live API smoke tests require the app running with a configured AI provider. Index: [docs.md](docs.md). Current request behavior: [flow.md](flow.md).
 
-**Auth:** `POST /auth/login` with `{"username","password"}` returns a JWT. Use `Authorization: Bearer <token>` on protected routes. The live smoke helper uses `TEST_USER` / `TEST_PASSWORD` from the repository-root `.env` (defaults `testuser` / `testpass`), registering the account if login returns 401. The seed command can create the demo account `ayi` / `Ayi!23`.
+**Auth:** `POST /auth/login` with `{"username","password"}` returns a JWT. Use `Authorization: Bearer <token>` on protected routes. The live smoke helper uses `TEST_USER` / `TEST_PASSWORD` from the repository-root `.env` (defaults `testuser` / `testpass`), registering the account if login returns 401.
+
+The seed command can create the demo account `demo` / `12345678`; it does not change an existing account's password, and it leaves any existing `ayi` account untouched.
 
 ---
 
@@ -48,6 +50,7 @@ python -m scripts.test.test_ai_response_style
 python -m scripts.test.test_lazy_embeddings
 python -m scripts.test.test_text_retrieval
 python -m scripts.test.test_seed_user
+python -m scripts.test.test_settings_preferences
 ```
 
 `test_ai_credits.py` uses temporary credit storage and mocks AI execution. It covers missing/unsafe JWT-secret startup rejection, initial balances, per-user isolation, idempotent grants, rejection of unverified rewarded-ad grants outside dev/test, Ask spending, insufficient-credit rejection, unlimited-role behavior, refunds, JWT authentication, and rate limiting. It also verifies that completed Ask retries return the saved result without another provider call or debit, distinct IDs create distinct operations, and the same ID is isolated between users. It does not currently assert the active-pending 409 response. `test_ai_context_modes.py` covers all modes, selected IDs, missing-mode compatibility, and invalid modes. `test_text_retrieval.py` covers deterministic lexical scoring, filtering, thresholds, and token packing. `test_lazy_embeddings.py` verifies model initialization is deferred and supplies a test-only JWT secret for app startup.
@@ -91,20 +94,26 @@ npm --prefix .\frontend run build
 
 - Logged out: direct-load `/login` and `/register`; verify register switching follows the route, registration/login still works, and success lands on `/ask`.
 - Verify `/` remains public, and `/privacy`, `/terms`, and `/contact` load directly.
-- Verify `/ask` is the authenticated default; navigation contains only Ask, Debug, and Settings.
-- Navigate Ask → Debug → Settings → Ask; verify browser Back and Forward update the visible page and URL.
-- Direct-load and refresh `/ask`, `/debug`, and `/settings`; verify each returns the SPA and renders the correct page.
+- Verify `/ask` is the authenticated default; navigation order is Ask, Manage, Debug, Settings, Sign out.
+- Navigate Ask → Manage → Debug → Settings → Ask; verify browser Back and Forward update the visible page and URL.
+- Direct-load and refresh `/ask`, `/manage`, `/debug`, and `/settings`; verify each returns the SPA and renders the correct page.
+- On `/manage`, switch among Notes, Conversations, and Memory. Verify Notes and Conversations expose the existing CRUD interfaces, Notes excludes `_history`, and Memory accurately states that saved notes provide retrieval context without offering separate memory CRUD.
 - Verify logout and an unauthorized API response return to `/login`.
 - Open Ask and enter a draft. Open and close Notes/History; verify the draft and existing conversation remain intact.
-- Verify the Ask shortcuts open the in-place History and Notes selectors; selecting an item closes the selector without navigating away from `/ask`.
+- Verify the Ask shortcuts open the in-place History and Notes selectors; selecting an item closes the selector without navigating away from `/ask`. Ask selectors remain selection-only; saved-content CRUD is in Manage.
 - Cancel Notes selection and verify the existing note context is unchanged. Select notes and confirm; verify the selected context updates.
-- Create a note from the Notes selector, verify it appears selected, and confirm to add it to Ask context. Verify Notes Manage still supports CRUD and image import.
-- Verify History Manage retains title editing and single/bulk delete. In the selector, start a new conversation and select an existing conversation.
-- Verify the header shows Conversation, Notes, Files, GitHub, Memory, Drive, and Web. Conversation has no mode button and opens the existing History UI.
-- Verify Notes, Files, GitHub, Memory, Drive, and Web each have separate source and mode buttons; each mode cycles `Off → Selected → Automatic → Off` without opening a menu. Notes Selected still uses the API's `focused` mode; Notes Off excludes note context and Automatic retains current note retrieval.
+- Verify the Notes selector is selection-only: no Add note or Add from images shortcuts appear there. Confirm selected notes update Ask context, and verify Manage retains note creation and image import.
+- Verify Manage → Conversations retains title editing and single/bulk delete. In the Ask selector, start a new conversation and select an existing conversation.
+- Verify a new or unset Ask context-source preference shows Conversation, Notes, and Memory only. In Settings → Ask Context Sources, verify all seven entries have their existing icons and descriptions, Conversation stays checked/disabled, and toggling another source immediately saves.
+- Navigate back to Ask and verify only enabled source/mode controls appear, with no gaps. Refresh or sign out/in and verify visibility persists for that user; malformed or outdated visibility settings fall back to Conversation, Notes, and Memory.
+- Verify Conversation has no mode button and opens the existing History UI. Visible Notes, Files, GitHub, Memory, Drive, and Web have separate source and mode buttons; each mode cycles `Off → Selected → Automatic → Off` without opening a menu. Notes Selected still uses the API's `focused` mode; Notes Off excludes note context and Automatic retains current note retrieval. Hiding and showing a source does not reset its mode or change its data or retrieval behavior.
 - Verify active conversation turns continue to be sent as before. Placeholder source modes do not affect AI requests. Files remains an unavailable Ask context source while its backend file-tree listing remains intact.
 - On desktop, hover and keyboard-focus each source button to show its details; confirm mode buttons do not show details. On mobile, tap a source to open its selector, press and hold to show details without opening the selector, move past the gesture threshold to cancel, scroll normally, dismiss details by tapping elsewhere, and dismiss with Escape.
-- Verify conversation history is expanded by default, AI turns are left-aligned, and user bubbles are right-aligned with long messages clamped to a compact preview.
+- Verify Conversation History is expanded by default and its heading is not clickable. The separate Focus button should enter focus mode, hide the app header and Ask context shortcuts, and keep history, the question textarea, and Ask button available. Click Focus again and verify the normal layout returns without changing the active conversation, messages, or selection. Check independently scrollable history, message navigation, long-message wrapping, and chat submission on desktop and mobile.
+- Verify the Focus button's accessible name and `aria-pressed` state. It should not expose `aria-expanded`; hidden header and shortcuts must not receive keyboard focus while focus mode is active.
+- Verify Focus uses an outward-corner icon when inactive and inward-corner icon when active, while the Conversation History title remains left-aligned and Focus/navigation controls align right. In narrow widths, confirm controls remain usable without horizontal overflow.
+- For multiple AI responses, activate each icon-only Copy button and verify only that response is copied as plain text, retaining line breaks and list structure. Verify accessible success feedback without a text-label change, clipboard failure feedback, keyboard activation, mobile usability, and visible focus; user messages should not have Copy buttons.
+- Verify the Question label is visually hidden in Conversation History focus mode and remains an accessible name for the textarea. Confirm the textarea and Ask button remain usable.
 - Click/tap a user bubble and verify the shared Ask overlay shows the complete message. Click Edit and verify the same overlay switches to Edit Message mode and focuses the textarea. Cancel returns to detail; Save updates the history and returns to detail without closing the overlay. Verify × and backdrop close the overlay, Escape returns from edit to detail and closes from detail, and clicks inside do not close it. Verify focus trap/restoration and no horizontal overflow on desktop and mobile.
 - Use the previous/next controls to navigate only User messages; confirm AI turns are skipped, scrolling is smooth, the target gets focus/active indication, and controls disable at the first/last User message. Check the thin dark scrollbar and no horizontal overflow at desktop and mobile widths.
 - Save an edited user turn through the overlay. Confirm the existing Ask flow resends only prior turns and later turns are replaced by the edited turn and new AI response. Cancel and Escape preserve the original.
@@ -114,7 +123,7 @@ npm --prefix .\frontend run build
 - Verify loading, error, and empty states still render.
 - At desktop, narrow desktop, and mobile widths, verify natural page scrolling, touch-friendly controls, and no horizontal overflow or floating/drag/resize behavior.
 
-There is no frontend component-test or browser-automation suite in the repository. Do not treat a browser automation run as a required check.
+There is no frontend component-test or browser-automation suite in the repository. Route, tab, and component reuse checks therefore require manual browser verification; the frontend production build verifies bundling.
 
 ## Final repository check
 

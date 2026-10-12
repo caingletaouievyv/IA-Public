@@ -99,7 +99,7 @@ Production must not grant credits from this unverified callback. A future produc
 |------|--------|------------------|
 | 1 | `backend/run.py` | Run from repo root: `cd backend && python run.py`. Loads `.env` from repo root. |
 | 2 | `backend/app/__init__.py` → `create_app()` | Serves from `frontend/dist/` if built, else `frontend/`. Route `/` → `index.html`. |
-| 3 | `frontend/` | React SPA. Public pages at `/`, `/privacy`, `/terms`, `/contact`; auth at `/login` and `/register`; authenticated pages at `/ask`, `/debug`, `/settings`. Ask owns Notes and History in-place workflows. Auth: JWT in localStorage; 401 → clear token and show login. Proxy: /ai, /auth, /notes, /files, /settings → backend. |
+| 3 | `frontend/` | React SPA. Public pages at `/`, `/privacy`, `/terms`, `/contact`; auth at `/login` and `/register`; authenticated pages at `/ask`, `/manage`, `/debug`, `/settings`. Manage reuses Notes and History for organization; Ask retains their selection workflows. Auth: JWT in localStorage; 401 → clear token and show login. Proxy: /ai, /auth, /notes, /files, /settings → backend. |
 | 4 | `frontend/src/api.js` | `login()`, `register()`, `ask()`, `listNotes()`, `checkNotesAuth()`, `debugContext()`, `getSettings()`, `putSettings()`. Token from localStorage; no API secret. |
 
 ---
@@ -138,7 +138,7 @@ Production must not grant credits from this unverified callback. A future produc
 | 3 | `backend/app/memory/manager.py` → `build_context()` | `off` ignores IDs. In `focused` and `automatic`, supplied IDs restrict the candidate set to those notes. In focused mode without IDs, return empty context. If selected candidates have no positive retrieval score, include the selected candidates subject to token packing. |
 | 4 | `backend/app/memory/text_retrieval.py` / `memory/embeddings.py` | Use deterministic lexical retrieval by default. Only `MEMORY_RETRIEVAL=semantic` imports the optional FAISS path; its embedding model is lazy-loaded. |
 
-The Notes UI mode cycle is `Off → Selected → Automatic → Off`; Selected maps to the existing API mode `focused`. Automatic with no selected IDs can search all user notes; selected IDs narrow either enabled mode. Conversation remains a source-only History selector and prior turns continue to be sent as before. Files, GitHub, Memory, Drive, and Web modes only cycle visibly; they do not retrieve context. The Files backend route continues to provide its existing file-tree listing and is not changed here.
+The Notes UI mode cycle is `Off → Selected → Automatic → Off`; Selected maps to the existing API mode `focused`. Automatic with no selected IDs can search all user notes; selected IDs narrow either enabled mode. Conversation remains a source-only History selector and prior turns continue to be sent as before. The Ask toolbar defaults to Conversation, Notes, and Memory; users configure source visibility in Settings, persisted through the existing per-user `/settings/` API. Context modes are saved independently in that same settings record so hiding a source does not reset its mode. Conversation is always visible, and missing or invalid visibility preferences restore the defaults. Files, GitHub, Memory, Drive, and Web modes only cycle visibly; they do not retrieve context. The Files backend route continues to provide its existing file-tree listing and is not changed here.
 
 ---
 
@@ -156,7 +156,16 @@ See [project.md](project.md) roadmap (Phase 8).
 
 ---
 
-## 13. Ask → select conversation
+## 13. Manage saved content
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `frontend/src/App.jsx` and `backend/app/__init__.py` | Authenticated `/manage` route, navigation link, and direct-load/refresh SPA route. |
+| 2 | `frontend/src/components/Manage.jsx` | Internal Notes, Conversations, and Memory sections. |
+| 3 | `frontend/src/components/Notes.jsx` and `History.jsx` | Manage embeds these existing CRUD interfaces directly. Ask opens the same components in selection mode. |
+| 4 | `backend/app/memory/manager.py` → `build_context()` | Memory retrieval uses relevant saved notes; there is no separate memory collection or CRUD API. |
+
+## 14. Ask → select conversation
 
 | Step | Where | What to look at |
 |------|-------|------------------|
@@ -164,12 +173,12 @@ See [project.md](project.md) roadmap (Phase 8).
 | 2 | `frontend/src/components/History.jsx` | Selection mode renders conversations as selectable cards. Click or Enter/Space calls `onSelect(h.id)`; creating a conversation in the selector returns its ID. Manage mode retains title and delete operations. |
 | 3 | `frontend/src/components/Ask.jsx` | The callback sets `currentHistoryId` and closes the selector. Ask then loads the selected conversation note and its messages. Closing or canceling without a selection leaves the current conversation unchanged. |
 
-## 14. Ask → select notes
+## 15. Ask → select notes
 
 | Step | Where | What to look at |
 |------|-------|------------------|
 | 1 | `frontend/src/components/Ask.jsx` | The Notes shortcut opens the in-place Notes selector; the Ask component remains mounted. |
-| 2 | `frontend/src/components/Notes.jsx` | Selection mode renders notes as selectable cards. Click or Enter/Space toggles selection; Cancel closes without returning the temporary selection; confirmation calls `onSelect(notes)`. Creating a note in selector mode adds it to the temporary selection. |
+| 2 | `frontend/src/components/Notes.jsx` | Selection mode renders notes as selectable cards. Click or Enter/Space toggles selection; Cancel closes without returning the temporary selection; confirmation calls `onSelect(notes)`. Note creation and image import are available in Manage, not in Ask selection mode. |
 | 3 | `frontend/src/components/Ask.jsx` | On confirmation, Ask replaces its selected notes and ID set, then closes the selector. The next Ask request sends the selected `note_ids`; canceling leaves the existing context unchanged. Manage mode retains normal Notes CRUD and import operations. |
 
 ## 15. New conversation

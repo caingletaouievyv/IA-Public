@@ -415,16 +415,6 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 )}
               </div>
             )}
-            {isSelectionMode && showList && (
-              <div className="notes-add-toggle" role="group" aria-label="Create a note">
-                <button type="button" className="button-subtle ask-shortcut" onClick={openNoteForm}>
-                  Add note
-                </button>
-                <button type="button" className="button-subtle ask-shortcut" onClick={openFromImagesForm}>
-                  Add from images
-                </button>
-              </div>
-            )}
             {!isSelectionMode && showList && filteredNotes.length > 0 && (
               <>
                 {selectedNoteIds.size === 0 && (
