@@ -2,7 +2,8 @@
 // Public routes, auth gate, and lightweight authenticated page navigation.
 
 import { useCallback, useEffect, useState } from "react";
-import { getToken, setToken } from "./api";
+import { getToken, getTokenUserId, setToken } from "./api";
+import { clearActiveConversation, clearSelectedNoteIds } from "./activeConversation";
 import Login from "./components/Login";
 import Ask from "./components/Ask";
 import AskOverlay from "./components/AskOverlay";
@@ -58,9 +59,11 @@ function Header({ onLogout, activePath, onNavigate }) {
 
 export default function App() {
   const [token, setTokenState] = useState(() => getToken());
+  const [userId, setUserId] = useState(() => getTokenUserId());
   const [path, setPath] = useState(currentPath);
   const [askOverlay, setAskOverlay] = useState(null);
   const [askHistoryFocused, setAskHistoryFocused] = useState(false);
+  const [manageInitialSection, setManageInitialSection] = useState("notes");
 
   const navigate = (nextPath, replace = false) => {
     if (window.location.pathname !== nextPath) {
@@ -71,8 +74,13 @@ export default function App() {
     setPath(nextPath);
   };
 
-  const setAuthToken = (nextToken) => {
+  const setAuthToken = (nextToken, nextUserId = getTokenUserId(nextToken)) => {
+    if (!nextToken || (userId && nextUserId && userId !== nextUserId)) {
+      clearActiveConversation(userId);
+      clearSelectedNoteIds(userId);
+    }
     setTokenState(nextToken);
+    setUserId(nextToken ? nextUserId : null);
     setToken(nextToken);
     navigate(nextToken ? "/ask" : "/login", true);
   };
@@ -83,6 +91,10 @@ export default function App() {
   const openNotesOverlay = useCallback((onSelect, selectedIds) => {
     setAskOverlay({ type: "notes", onSelect, selectedIds: [...selectedIds] });
   }, []);
+  const openMemoryManager = () => {
+    setManageInitialSection("memory");
+    navigate("/manage");
+  };
   const openUserMessageOverlay = useCallback((content, onSave) => {
     setAskOverlay({
       type: "userMessage",
@@ -141,7 +153,7 @@ export default function App() {
     const onUnauth = () => setAuthToken(null);
     window.addEventListener(UNAUTH_EVENT, onUnauth);
     return () => window.removeEventListener(UNAUTH_EVENT, onUnauth);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (path === "/app") {
@@ -177,6 +189,7 @@ export default function App() {
   const handleNavigation = (event, nextPath) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
+    if (nextPath === "/manage") setManageInitialSection("notes");
     navigate(nextPath);
   };
 
@@ -190,13 +203,16 @@ export default function App() {
       <main className="app-main">
         {activePath === "/ask" ? (
           <Ask
+            key={userId}
+            userId={userId}
             onHistoryPicker={openHistoryOverlay}
             onNotesPicker={openNotesOverlay}
+            onMemoryManage={openMemoryManager}
             onUserMessageDetail={openUserMessageOverlay}
             onHistoryFocusChange={setAskHistoryFocused}
           />
         ) : activePath === "/manage" ? (
-          <Manage />
+          <Manage initialSection={manageInitialSection} />
         ) : activePath === "/debug" ? (
           <DebugContext />
         ) : (

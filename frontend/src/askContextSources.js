@@ -28,8 +28,8 @@ export const ASK_CONTEXT_SOURCES = [
   {
     id: "memory",
     label: "Memory",
-    description: "Separate Memory context is unavailable; retrieval remains part of Notes.",
-    details: "Separate Memory context is not connected yet. Notes automatic retrieval remains available.",
+    description: "When on, IA can save useful information and use relevant saved memories.",
+    details: "Your private saved Memory, separate from Notes and conversation history.\nWhen on, IA can remember useful details and use relevant saved memories in answers.\nClick to review or manage saved memories.",
   },
   {
     id: "drive",
@@ -46,6 +46,7 @@ export const ASK_CONTEXT_SOURCES = [
 ];
 
 export const DEFAULT_VISIBLE_CONTEXT_SOURCES = ["conversation", "notes", "memory"];
+export const DEFAULT_SHOW_CONTEXT_SOURCE_LABELS = true;
 export const DEFAULT_CONTEXT_MODES = {
   notes: "off",
   files: "off",

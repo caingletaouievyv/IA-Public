@@ -20,6 +20,7 @@ from app import config
 from app.ai import routes as ai_routes
 from app.credits import manager as credit_manager
 from app.credits import routes as credit_routes
+from app.settings import manager as settings_manager
 
 
 class AICreditTests(unittest.TestCase):
@@ -28,6 +29,8 @@ class AICreditTests(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.data_dir_patch = patch.object(credit_manager, "DATA_DIR", cls.temp_dir.name)
         cls.data_dir_patch.start()
+        cls.settings_dir_patch = patch.object(settings_manager, "DATA_DIR", cls.temp_dir.name)
+        cls.settings_dir_patch.start()
         cls.reward_env_patch = patch.object(credit_routes, "APP_ENV", "test")
         cls.reward_env_patch.start()
         cls.app = create_app()
@@ -37,6 +40,7 @@ class AICreditTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.reward_env_patch.stop()
+        cls.settings_dir_patch.stop()
         cls.data_dir_patch.stop()
         cls.temp_dir.cleanup()
 
@@ -57,10 +61,10 @@ class AICreditTests(unittest.TestCase):
         )
         return {"Authorization": f"Bearer {token}"}
 
-    def ask(self, user_id, operation_id):
+    def ask(self, user_id, operation_id, **payload):
         return self.client.post(
             "/ai/ask",
-            json={"question": "hello"},
+            json={"question": "hello", **payload},
             headers={**self.headers(user_id), "Idempotency-Key": operation_id},
         )
 
@@ -191,21 +195,77 @@ class AICreditTests(unittest.TestCase):
     def test_successful_ask_consumes_one_credit_and_is_retry_safe(self):
         user_id = self.user_id()
         operation_id = "ask-success"
-        with patch.object(ai_routes, "ask", return_value=("answer", 3)) as ask_mock:
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")) as ask_mock:
             response = self.ask(user_id, operation_id)
             retry = self.ask(user_id, operation_id)
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(retry.status_code, 200, retry.get_data(as_text=True))
         self.assertEqual(response.get_json(), retry.get_json())
         self.assertEqual(ask_mock.call_count, 1)
+        self.assertEqual(ask_mock.call_args.kwargs["note_context_mode"], "automatic")
+        self.assertFalse(ask_mock.call_args.kwargs["memory_enabled"])
         account = credit_manager.get_credit_account(user_id)
         self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - config.AI_ASK_CREDIT_COST)
         self.assertEqual(account["ledger"][-1]["reason"], "ai_ask")
         self.assertEqual(account["ledger"][-1]["amount"], -config.AI_ASK_CREDIT_COST)
 
+    def test_ask_passes_context_modes_and_authenticated_user_to_engine(self):
+        user_id = self.user_id()
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")) as ask_mock:
+            response = self.ask(
+                user_id,
+                "memory-context",
+                note_context_mode="focused",
+                memory_context_mode="selected",
+                note_ids=["owned-note"],
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(ask_mock.call_args.kwargs["user_id"], user_id)
+        self.assertEqual(ask_mock.call_args.kwargs["note_context_mode"], "focused")
+        self.assertFalse(ask_mock.call_args.kwargs["memory_enabled"])
+        self.assertEqual(ask_mock.call_args.kwargs["note_ids"], ["owned-note"])
+
+    def test_ask_uses_persisted_memory_setting_and_only_charges_one_credit(self):
+        user_id = self.user_id()
+        settings_manager.save_settings(user_id, {"memory_enabled": True})
+
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "saved")) as ask_mock:
+            response = self.ask(user_id, "memory-enabled", memory_enabled=False)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["memory_status"], "saved")
+        self.assertTrue(ask_mock.call_args.kwargs["memory_enabled"])
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE - config.AI_ASK_CREDIT_COST)
+
+    def test_malformed_context_payloads_are_rejected_before_credit_charge(self):
+        user_id = self.user_id()
+        malformed_payloads = [
+            {"memory_context_mode": "focused"},
+            {"memory_context_mode": []},
+            {"note_ids": "owned-note"},
+            {"note_ids": [""]},
+            {"note_ids": [None]},
+        ]
+        with patch.object(ai_routes, "ask") as ask_mock:
+            for index, payload in enumerate(malformed_payloads):
+                with self.subTest(payload=payload):
+                    response = self.ask(user_id, f"malformed-{index}", **payload)
+                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+            response = self.client.post(
+                "/ai/ask",
+                json=["not", "an", "object"],
+                headers={**self.headers(user_id), "Idempotency-Key": "malformed-object"},
+            )
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        ask_mock.assert_not_called()
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE)
+
     def test_different_idempotency_keys_are_independent_operations(self):
         user_id = self.user_id()
-        with patch.object(ai_routes, "ask", side_effect=[("first", 3), ("second", 4)]) as ask_mock:
+        with patch.object(ai_routes, "ask", side_effect=[("first", 3, "disabled"), ("second", 4, "disabled")]) as ask_mock:
             first = self.ask(user_id, "ask-first")
             second = self.ask(user_id, "ask-second")
         self.assertEqual(first.get_json()["answer"], "first")
@@ -217,7 +277,7 @@ class AICreditTests(unittest.TestCase):
     def test_idempotency_records_are_isolated_by_user(self):
         first_user = self.user_id()
         second_user = self.user_id()
-        with patch.object(ai_routes, "ask", side_effect=[("first", 3), ("second", 4)]) as ask_mock:
+        with patch.object(ai_routes, "ask", side_effect=[("first", 3, "disabled"), ("second", 4, "disabled")]) as ask_mock:
             first = self.ask(first_user, "shared-key")
             second = self.ask(second_user, "shared-key")
         self.assertEqual(first.get_json()["answer"], "first")
@@ -228,7 +288,7 @@ class AICreditTests(unittest.TestCase):
 
     def test_normal_user_still_pays_credits(self):
         user_id = self.user_id()
-        with patch.object(ai_routes, "ask", return_value=("answer", 3)):
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
             response = self.ask(user_id, "normal-user-pays")
         self.assertEqual(response.status_code, 200)
         account = credit_manager.get_credit_account(user_id)
@@ -240,7 +300,7 @@ class AICreditTests(unittest.TestCase):
         for index in range(config.AI_CREDIT_INITIAL_BALANCE):
             credit_manager.reserve_credits(user_id, config.AI_ASK_CREDIT_COST, "ai_ask", f"zero-{index}")
         with patch.object(ai_routes, "get_user_role", return_value=config.AI_UNLIMITED_ROLE):
-            with patch.object(ai_routes, "ask", return_value=("answer", 3)):
+            with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
                 response = self.ask(user_id, "unlimited-ask")
         self.assertEqual(response.status_code, 200)
         account = credit_manager.get_credit_account(user_id)
@@ -249,7 +309,7 @@ class AICreditTests(unittest.TestCase):
 
     def test_request_payload_cannot_activate_unlimited_mode(self):
         user_id = self.user_id()
-        with patch.object(ai_routes, "ask", return_value=("answer", 3)):
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
             response = self.client.post(
                 "/ai/ask",
                 json={"question": "hello", "unlimited": True, "role": config.AI_UNLIMITED_ROLE},

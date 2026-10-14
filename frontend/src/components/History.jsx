@@ -25,7 +25,7 @@ function loadHistoryList(setList, setLoading, setError) {
 
 export default function History({ isSelectionMode = false, activeId = null, onSelect = null, onCloseSelection = null }) {
   const [list, setList] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -250,7 +250,7 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
       {showList && (
         <>
           {loading && list.length === 0 && <p className="notes-list-empty">Loading…</p>}
-          {!loading && list.length === 0 && (
+          {!loading && !error && list.length === 0 && (
             <p className="notes-list-empty">No conversations yet. Create one, then select it in Ask to continue that chat.</p>
           )}
           {list.length > 0 && (

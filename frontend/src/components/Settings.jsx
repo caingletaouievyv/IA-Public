@@ -6,18 +6,21 @@ import { getSettings, putSettings } from "../api";
 import AskContextIcon from "./AskContextIcon";
 import {
   ASK_CONTEXT_SOURCES,
+  DEFAULT_SHOW_CONTEXT_SOURCE_LABELS,
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
   normalizeVisibleContextSources,
 } from "../askContextSources";
 
 export default function Settings() {
   const [settings, setSettings] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sourceSaving, setSourceSaving] = useState(false);
+  const [labelSaving, setLabelSaving] = useState(false);
   const [error, setError] = useState(null);
   const [prefs, setPrefs] = useState({ theme: "dark", default_model: "" });
   const [visibleSources, setVisibleSources] = useState(DEFAULT_VISIBLE_CONTEXT_SOURCES);
+  const [showContextSourceLabels, setShowContextSourceLabels] = useState(DEFAULT_SHOW_CONTEXT_SOURCE_LABELS);
 
   const load = async () => {
     setError(null);
@@ -26,9 +29,16 @@ export default function Settings() {
       const data = await getSettings();
       const loaded = data && typeof data === "object" && !Array.isArray(data) ? data : {};
       const sources = normalizeVisibleContextSources(loaded.ask_context_sources);
+      const showLabels = loaded.show_context_source_labels !== false;
       setSettings(loaded);
       setVisibleSources(sources);
-      setPrefs((p) => ({ ...p, ...loaded, ask_context_sources: sources }));
+      setShowContextSourceLabels(showLabels);
+      setPrefs((p) => ({
+        ...p,
+        ...loaded,
+        ask_context_sources: sources,
+        show_context_source_labels: showLabels,
+      }));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -64,14 +74,37 @@ export default function Settings() {
     }
   };
 
+  const changeContextSourceLabels = async (showLabels) => {
+    const previousValue = showContextSourceLabels;
+    setShowContextSourceLabels(showLabels);
+    setPrefs((current) => ({ ...current, show_context_source_labels: showLabels }));
+    setError(null);
+    setLabelSaving(true);
+    try {
+      const updated = await putSettings({ show_context_source_labels: showLabels });
+      setSettings(updated);
+    } catch (e) {
+      setShowContextSourceLabels(previousValue);
+      setPrefs((current) => ({ ...current, show_context_source_labels: previousValue }));
+      setError(e.message);
+    } finally {
+      setLabelSaving(false);
+    }
+  };
+
   const save = async (e) => {
     e.preventDefault();
     setError(null);
     setSaving(true);
     try {
-      const updated = await putSettings({ ...prefs, ask_context_sources: visibleSources });
+      const updated = await putSettings({
+        ...prefs,
+        ask_context_sources: visibleSources,
+        show_context_source_labels: showContextSourceLabels,
+      });
       setSettings(updated);
       setVisibleSources(normalizeVisibleContextSources(updated.ask_context_sources));
+      setShowContextSourceLabels(updated.show_context_source_labels !== false);
       setPrefs({ ...updated, ask_context_sources: normalizeVisibleContextSources(updated.ask_context_sources) });
     } catch (e) {
       setError(e.message);
@@ -85,33 +118,54 @@ export default function Settings() {
       <p className="card-desc">Per-user preferences. Stored with your account.</p>
       <div className="card app-panel ask-context-settings">
         <p className="card-title" id="ask-context-sources-title">Ask Context Sources</p>
-        <p className="card-desc">Choose which source controls appear in the Ask toolbar. Changes save automatically.</p>
-        <div className="ask-context-settings__list" role="group" aria-labelledby="ask-context-sources-title">
-          {ASK_CONTEXT_SOURCES.map((source) => {
-            const alwaysVisible = source.id === "conversation";
-            return (
-              <label
-                className={`ask-context-settings__option${alwaysVisible ? " ask-context-settings__option--locked" : ""}`}
-                key={source.id}
-              >
-                <input
-                  type="checkbox"
-                  checked={visibleSources.includes(source.id) || alwaysVisible}
-                  disabled={loading || sourceSaving || saving || alwaysVisible}
-                  onChange={(event) => changeSourceVisibility(source.id, event.target.checked)}
-                />
-                <span className="ask-context-settings__icon"><AskContextIcon name={source.id} /></span>
-                <span className="ask-context-settings__copy">
-                  <span className="ask-context-settings__name">{source.label}</span>
-                  <span className="ask-context-settings__description">{source.description}</span>
-                  {alwaysVisible && <span className="ask-context-settings__locked">Always visible to access conversation history.</span>}
-                </span>
-              </label>
-            );
-          })}
-        </div>
+        <p className="card-desc">Choose which source controls appear in the Ask toolbar and whether their labels are shown. Changes save automatically.</p>
+        {settings === null ? (
+          <p className="ask-context-settings__status" role="status">
+            {loading ? "Loading saved sources…" : "Saved source preferences are unavailable."}
+          </p>
+        ) : (
+          <>
+            <label className="ask-context-settings__option" htmlFor="show-context-source-labels">
+              <input
+                id="show-context-source-labels"
+                type="checkbox"
+                checked={showContextSourceLabels}
+                disabled={loading || sourceSaving || labelSaving || saving}
+                onChange={(event) => changeContextSourceLabels(event.target.checked)}
+              />
+              <span className="ask-context-settings__copy">
+                <span className="ask-context-settings__name">Show context source labels</span>
+                <span className="ask-context-settings__description">Show text labels beside context source icons.</span>
+              </span>
+            </label>
+            <div className="ask-context-settings__list" role="group" aria-labelledby="ask-context-sources-title">
+              {ASK_CONTEXT_SOURCES.map((source) => {
+                const alwaysVisible = source.id === "conversation";
+                return (
+                  <label
+                    className={`ask-context-settings__option${alwaysVisible ? " ask-context-settings__option--locked" : ""}`}
+                    key={source.id}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visibleSources.includes(source.id) || alwaysVisible}
+                      disabled={loading || sourceSaving || labelSaving || saving || alwaysVisible}
+                      onChange={(event) => changeSourceVisibility(source.id, event.target.checked)}
+                    />
+                    <span className="ask-context-settings__icon"><AskContextIcon name={source.id} /></span>
+                    <span className="ask-context-settings__copy">
+                      <span className="ask-context-settings__name">{source.label}</span>
+                      <span className="ask-context-settings__description">{source.description}</span>
+                      {alwaysVisible && <span className="ask-context-settings__locked">Always visible to access conversation history.</span>}
+                    </span>
+                  </label>
+              );
+              })}
+            </div>
+          </>
+        )}
         <p className="ask-context-settings__status" role="status">
-          {loading ? "Loading saved sources…" : sourceSaving ? "Saving…" : ""}
+          {loading && settings !== null ? "Refreshing saved sources…" : sourceSaving || labelSaving ? "Saving…" : ""}
         </p>
       </div>
       <div className="card app-panel">
@@ -120,8 +174,8 @@ export default function Settings() {
         </button>
       </div>
       {error && <div className="out err">{error}</div>}
-      {(settings !== null || prefs.theme || prefs.default_model) && (
-        <form onSubmit={save} className={`card app-panel form--compact ${saving || sourceSaving ? "loading" : ""}`}>
+      {settings !== null && (
+        <form onSubmit={save} className={`card app-panel form--compact ${saving || sourceSaving || labelSaving ? "loading" : ""}`}>
           <p className="card-title">Preferences</p>
           <label htmlFor="prefTheme">Theme</label>
           <input
@@ -141,7 +195,7 @@ export default function Settings() {
             onChange={(e) => setPrefs((p) => ({ ...p, default_model: e.target.value }))}
             disabled={saving || sourceSaving || loading}
           />
-          <button type="submit" className="button-primary" aria-label={saving ? "Saving settings" : "Save settings"} disabled={saving || sourceSaving}>
+          <button type="submit" className="button-primary" aria-label={saving ? "Saving settings" : "Save settings"} disabled={saving || sourceSaving || labelSaving}>
             {saving ? "…" : "Save"}
           </button>
         </form>

@@ -12,7 +12,9 @@ def get_settings_route():
     user_id, auth_err = require_auth()
     if auth_err:
         return auth_err
-    return jsonify(get_settings(user_id))
+    settings = get_settings(user_id)
+    settings.setdefault("memory_enabled", False)
+    return jsonify(settings)
 
 @bp.route("/", methods=["PUT"], strict_slashes=False)
 def put_settings_route():
@@ -22,5 +24,7 @@ def put_settings_route():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "JSON object required"}), 400
+    if "memory_enabled" in data and not isinstance(data["memory_enabled"], bool):
+        return jsonify({"error": "'memory_enabled' must be a boolean"}), 400
     updated = save_settings(user_id, data)
     return jsonify(updated)

@@ -8,16 +8,17 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `backend/app/ai/routes.py` → `ask_ai()` | Authenticate first with `require_auth()`. Parse JSON; reject a missing/falsey `question` and invalid `note_context_mode` with 400. Missing mode defaults to `automatic` for older clients. Normalize `note_ids` only when it is a list; normalize prior `messages` to user/assistant turns. |
+| 1 | `backend/app/ai/routes.py` → `ask_ai()` | Authenticate first with `require_auth()`. Require a JSON object; reject a missing/falsey `question`, malformed `note_ids`, invalid `note_context_mode`, or invalid legacy `memory_context_mode` with 400. Notes mode defaults to `automatic` for older clients. Read the `memory_enabled` boolean from server-side per-user Settings; ignore any request-supplied enablement value. Normalize prior `messages` to user/assistant turns. |
 | 2 | `backend/app/credits/manager.py` and `auth/manager.py` | Claim a user-scoped operation using `Idempotency-Key`, `request_id`, or a generated UUID. A completed operation returns its saved result; an active duplicate returns 409 `operation_in_progress`. Unless the persisted role matches `AI_UNLIMITED_ROLE`, reserve `AI_ASK_CREDIT_COST` before AI work. Insufficient balance returns 402 and releases the claim without calling the engine. |
-| 3 | `backend/app/ai/engine.py` → `ask()` | Build note context with the authenticated `user_id`, then wrap the existing packed note text and note titles in a `ContextItem(source="notes", content=..., metadata=...)` from `backend/app/context.py`. Notes are the only implemented source; the prompt receives the same note content and instructions as before. If previous messages exist, send system instructions + up to 30 prior turns + the current question in chat format. Otherwise send one prompt. |
-| 4 | `backend/app/memory/manager.py` → `build_context()` | `off` returns empty context before loading notes, even if IDs were supplied. `focused` without IDs also returns empty context without loading notes. `automatic` without IDs considers all user notes; either enabled mode with IDs filters to those selected notes. Unknown IDs yield empty context. |
-| 5 | `backend/app/memory/text_retrieval.py` or `memory/embeddings.py` | `MEMORY_RETRIEVAL=text` is the default and uses deterministic weighted lexical overlap over titles, metadata, and chunked note content. `MEMORY_RETRIEVAL=semantic` opts into temporary FAISS indexes. The SentenceTransformer model is imported and initialized lazily. Explicitly selected notes are retained if no positive match is found. |
-| 6 | `backend/app/ai/client.py` → `call_ai()` and `ai/routes.py` | Apply the selected retriever's threshold, then pack, summarize long notes, and cap context tokens. Call the configured provider in single/ensemble/judge mode. Return `answer` and `tokens_estimated`, and persist the successful result with the operation record. If the engine raises, refund a charged reservation and release the pending operation so a retry can run. |
+| 3 | `backend/app/ai/engine.py` → `ask()` | Build Notes context only through `app/memory/manager.py` and the supplied Notes mode. Separately, when the persisted setting is on, call `app/memories/manager.py` to retrieve relevant dedicated Memory records. `_build_system_content()` puts Notes and Memory in separate sections; Memory is serialized as data and labeled untrusted, never as instructions. If prior messages exist, send system instructions + up to 30 turns + the current question; history is not a Memory store. |
+| 4 | `backend/app/memories/manager.py` → `retrieve_memories()` | Load only the per-user hashed JSON file derived from JWT `sub`, rank by lexical overlap, deduplicate, and cap at eight records / 180 estimated tokens. Memory OFF skips loading and injection. The Notes retriever is not called to obtain Memory records. |
+| 5 | `backend/app/ai/client.py` → `call_ai()` | Call the configured provider in single/ensemble/judge mode and generate the normal answer. The route keeps its existing one credit reservation and operation ID. |
+| 6 | `backend/app/memories/extraction.py` → `best_effort_extract()` | Only when Memory is on, pass bounded user-message data and the user's existing records to a second structured extraction call after the answer. Require JSON output, exact quoted evidence from user messages, bounded text, known IDs, and explicit user intent for deletes. Reject credential/secret patterns, deduplicate/upsert and apply explicitly requested deletes. Extraction or storage errors produce `memory_status="unavailable"` and do not fail the answer. No second IA credit is reserved. |
+| 7 | `backend/app/ai/routes.py` | Return `answer`, `tokens_estimated`, and a non-sensitive `memory_status`, then persist that response with the operation record. If normal answer generation raises, refund a charged reservation and release the pending operation so a retry can run. |
 
-**Credit and idempotency behavior:** the default ask cost is one internal AI Credit, not one provider token. The configured unlimited role bypasses reservation. A completed retry for the same authenticated user and operation ID returns the persisted response without another provider call or debit. An active duplicate gets 409. An AI exception triggers a ledger refund and releases the pending record; insufficient balance is rejected before context/provider work and also releases the record. Operation results are stored in per-user JSON under a process-local lock, not a multi-worker transactional store.
+**Credit and idempotency behavior:** the default Ask cost is one internal AI Credit, not one provider token/call. The configured unlimited role bypasses reservation. A completed retry for the same authenticated user and operation ID returns the persisted response without another call or debit. An active duplicate gets 409. An AI exception triggers a ledger refund and releases the pending record; insufficient balance is rejected before context/provider work. Memory extraction is best-effort after the main answer and makes no additional internal-credit reservation. Operation results are stored in per-user JSON under a process-local lock, not a multi-worker transactional store.
 
-**Conversation persistence:** `Ask.jsx` loads history from a note in category `_history`, passes its previous turns in `messages`, then saves the new user/assistant pair with `PUT /notes/<history-id>`.
+**Conversation persistence:** `Ask.jsx` loads history from a note in category `_history`, passes prior turns in `messages`, then saves the new user/assistant pair with `PUT /notes/<history-id>`. Extraction considers user turns only and never uses history as persistent Memory storage.
 
 **`POST /ai/estimate_tokens`:** authenticate, validate `question`, parse optional `note_ids`, build context using the engine's default automatic mode, and return `estimated_tokens` plus `context_tokens`.
 
@@ -42,7 +43,24 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 ---
 
-## 4. POST /ai/debug/context (inspect memory context for a question)
+## 4. Memory settings and management
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `backend/app/settings/routes.py` → `put_settings_route()` | Validate `memory_enabled` is boolean; `settings/manager.py` persists it alongside existing per-user preferences. Missing setting is false. |
+| 2 | `backend/app/memories/routes.py` | Authenticated list, update, delete, and clear routes derive owner from `require_auth()`. Memory IDs are only resolved inside that owner's file. |
+| 3 | `backend/app/memories/manager.py` | Store records separately at a SHA-256 user-keyed JSON path under `backend/data/`; writes are atomic within the process. Validate lengths and recognized secrets; retrieve with a separate lexical ranker. |
+| 4 | `frontend/src/components/MemoryManager.jsx` | Manage loads actual backend memories/settings, offers individual edit/delete and confirmation before clear-all, and shows loading/empty/success/error state. Ask's Memory toggle opens this section and shares the same saved setting. |
+
+---
+
+## 5. Memory request safeguards
+
+`backend/app/memories/extraction.py` uses the existing AI provider client. Its system prompt treats conversation/memory fields as untrusted data, while the parser independently checks JSON shape, record length, exact evidence excerpts, known user-owned IDs, and explicit current-message forget intent. It caps input/output and returns statuses without text contents. Recognized credentials/tokens/private keys are rejected regardless of user intent; selected sensitive categories are skipped unless explicitly requested. Extraction errors are logged without record contents and converted to an unavailable status so the already-generated answer succeeds.
+
+---
+
+## 6. POST /ai/debug/context (inspect Notes context for a question)
 
 | Step | Where | What to look at |
 |------|--------|------------------|
@@ -51,7 +69,7 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 ---
 
-## 5. Memory analytics (per query)
+## 7. Memory analytics (Notes retrieval per query)
 
 | Step | Where | What to look at |
 |------|--------|------------------|
@@ -62,7 +80,7 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 ---
 
-## 6. Auth (login; no API secret)
+## 8. Auth (login; no API secret)
 
 | Step | Where | What to look at |
 |------|--------|------------------|
@@ -83,7 +101,7 @@ Production must not grant credits from this unverified callback. A future produc
 
 ---
 
-## 7. Phase 4: Ensemble & Judge (AI_MODE)
+## 9. Phase 4: Ensemble & Judge (AI_MODE)
 
 | Step | Where | What to look at |
 |------|--------|------------------|
@@ -129,16 +147,21 @@ Production must not grant credits from this unverified callback. A future produc
 
 ---
 
-## 11. Ask with selected notes (context filtering)
+## 11. Ask with Notes and persistent Memory
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` → `sendQuestion()` | Send selected note IDs plus the current Notes mode; Off omits IDs, and the UI's Selected mode maps to API `focused`. Prior turns from the active Conversation continue to be sent as before. Other visible source modes are placeholders and do not affect the request. |
-| 2 | `backend/app/ai/routes.py` → `ask_ai()` | Parse the mode and optional `note_ids`, then pass them with the authenticated user ID to `ask()`. |
-| 3 | `backend/app/memory/manager.py` → `build_context()` | `off` ignores IDs. In `focused` and `automatic`, supplied IDs restrict the candidate set to those notes. In focused mode without IDs, return empty context. If selected candidates have no positive retrieval score, include the selected candidates subject to token packing. |
-| 4 | `backend/app/memory/text_retrieval.py` / `memory/embeddings.py` | Use deterministic lexical retrieval by default. Only `MEMORY_RETRIEVAL=semantic` imports the optional FAISS path; its embedding model is lazy-loaded. |
+| 1 | `frontend/src/components/Ask.jsx` → `sendQuestion()` | Send the selected Notes mode/IDs and prior turns from the active Conversation. Memory is controlled by the persisted `memory_enabled` setting and is not a client-selected note mode. |
+| 2 | `backend/app/ai/routes.py` → `ask_ai()` | Validate Notes inputs before claiming an operation/reserving credits. Derive the user ID from the JWT, then read the server-side Memory setting; request-supplied enablement is not authoritative. |
+| 3 | `backend/app/ai/engine.py` → `ask()` | Build optional Notes context with the existing note retrieval manager. Separately retrieve persistent Memory only when enabled; history turns remain a third, independent context path. |
+| 4 | `backend/app/memories/manager.py` → `retrieve_memories()` | Read only the authenticated user's dedicated memory file, rank by lexical overlap, deduplicate, and cap at eight records / 180 estimated tokens. No Notes or `_history` record is used as Memory. |
+| 5 | `backend/app/memories/extraction.py` → `best_effort_extract()` | After the answer and only when enabled, use structured extraction from user messages, validate exact evidence/length/known IDs/secrets, then update, deduplicate, or honor explicit forget requests. Failure does not fail the answer or reserve another IA credit. |
 
-The Notes UI mode cycle is `Off → Selected → Automatic → Off`; Selected maps to the existing API mode `focused`. Automatic with no selected IDs can search all user notes; selected IDs narrow either enabled mode. Conversation remains a source-only History selector and prior turns continue to be sent as before. The Ask toolbar defaults to Conversation, Notes, and Memory; users configure source visibility in Settings, persisted through the existing per-user `/settings/` API. Context modes are saved independently in that same settings record so hiding a source does not reset its mode. Conversation is always visible, and missing or invalid visibility preferences restore the defaults. Files, GitHub, Memory, Drive, and Web modes only cycle visibly; they do not retrieve context. The Files backend route continues to provide its existing file-tree listing and is not changed here.
+Memory's source button opens Manage → Memory. Manage displays persisted records, the shared ON/OFF setting, individual edit/delete actions, and confirmation-protected clear-all. Notes context modes affect only Notes. Conversation History remains separate from both Notes retrieval and Memory storage. Context-source visibility remains in the existing per-user Settings record.
+
+### Ask context preference initialization
+
+Settings remain persisted through the existing per-user `GET/PUT /settings/` API. The frontend API client keeps loaded/updated Settings in an in-memory cache keyed by the JWT subject and invalidates cached values when the account changes. Ask reads that cache in its initial state so saved context-source visibility and labels are correct on the first render. If Settings are not cached, or a Settings write is still pending, Ask does not render the context toolbar until the request/write completes. No preference or credential is added to browser storage.
 
 ---
 
@@ -163,15 +186,15 @@ See [project.md](project.md) roadmap (Phase 8).
 | 1 | `frontend/src/App.jsx` and `backend/app/__init__.py` | Authenticated `/manage` route, navigation link, and direct-load/refresh SPA route. |
 | 2 | `frontend/src/components/Manage.jsx` | Internal Notes, Conversations, and Memory sections. |
 | 3 | `frontend/src/components/Notes.jsx` and `History.jsx` | Manage embeds these existing CRUD interfaces directly. Ask opens the same components in selection mode. |
-| 4 | `backend/app/memory/manager.py` → `build_context()` | Memory retrieval uses relevant saved notes; there is no separate memory collection or CRUD API. |
+| 4 | `backend/app/memories/manager.py` and `backend/app/memories/routes.py` | Memory records are stored in a dedicated per-user JSON file named from a SHA-256 hash of the authenticated user ID. Authenticated CRUD routes are registered under `/memories`: `GET /memories/`, `PUT`/`DELETE /memories/<id>`, and `DELETE /memories/clear`. |
 
 ## 14. Ask → select conversation
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `frontend/src/components/Ask.jsx` | The Conversation shortcut opens the in-place History selector; Ask remains mounted with its draft, messages, active conversation, and selected-note context. |
+| 1 | `frontend/src/components/Ask.jsx` | The Conversation shortcut opens the in-place History selector; Ask stays mounted while this overlay is open, so its draft, messages, active conversation, and selected-note context remain in memory. |
 | 2 | `frontend/src/components/History.jsx` | Selection mode renders conversations as selectable cards. Click or Enter/Space calls `onSelect(h.id)`; creating a conversation in the selector returns its ID. Manage mode retains title and delete operations. |
-| 3 | `frontend/src/components/Ask.jsx` | The callback sets `currentHistoryId` and closes the selector. Ask then loads the selected conversation note and its messages. Closing or canceling without a selection leaves the current conversation unchanged. |
+| 3 | `frontend/src/components/Ask.jsx` | The callback sets `currentHistoryId` and closes the selector. Ask then loads the selected conversation note and its messages. Closing or canceling without a selection leaves the current conversation unchanged. Notes selections are similarly returned to Ask and their IDs retained in user-scoped tab state for an Ask page remount. |
 
 ## 15. Ask → select notes
 
@@ -185,17 +208,26 @@ See [project.md](project.md) roadmap (Phase 8).
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `frontend/src/components/History.jsx` → `handleNew()` | History calls `createHistory("New conversation")`. |
-| 2 | `frontend/src/components/History.jsx` | The created history note is appended to local state, `viewingId` is set to the created ID, and `loadHistoryList()` refreshes the list. |
-| 3 | `frontend/src/components/History.jsx` | The created conversation is immediately available for viewing and receives the active `note-card--active` styling while viewed. |
+| 1 | `frontend/src/components/History.jsx` → `handleNew()` | History calls `createHistory("New conversation")`. In Ask selection mode it returns the new ID to Ask and closes the selector; Manage mode adds it to the list and opens it for management. |
+| 2 | `frontend/src/components/Ask.jsx` | Ask marks the created ID active and starts with the new note's empty messages. It does not restore the previously active conversation. |
+| 3 | `frontend/src/components/History.jsx` | In Manage, the created conversation is immediately available for viewing and receives the active `note-card--active` styling while viewed. |
 
-## 17. Ask selector ownership
+## 17. Ask selector and route restoration
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `frontend/src/App.jsx` | Page rendering is conditional: navigating from `/ask` to `/manage` unmounts `Ask`, and returning mounts a fresh component. Ask's local messages, title, and active ID therefore do not survive the page switch by themselves. |
+| 2 | `frontend/src/activeConversation.js` and `frontend/src/App.jsx` | Store only the active history-note ID in `sessionStorage`, keyed by the authenticated JWT subject. Logout and account changes clear the prior user's selection; no token or message content is stored there. |
+| 3 | `frontend/src/components/Ask.jsx` and `frontend/src/api.js` | On mount, read the scoped ID and use `GET /notes/<id>` to load the latest `_history` title and messages. Selecting or creating a conversation updates the saved ID; clearing the selection removes it. |
+| 4 | `frontend/src/components/Ask.jsx` | Loading disables Ask and displays feedback. A missing/non-history note clears the stale ID and returns to the empty state. Cancelled requests and active-ID checks prevent an old delayed load or answer from replacing a newer selection. Selected Notes IDs are independently kept in user-scoped per-tab state; only the IDs survive navigation, while content remains in Notes and the normal `POST /ai/ask` retrieval flow. Message writes continue through the existing `PUT /notes/<id>` flow. |
+
+## 18. Ask selector ownership
 
 Notes and History selectors are state owned by `Ask.jsx` and rendered in its page. They do not change routes or unmount Ask. The existing `History.jsx` and `Notes.jsx` selection callbacks return the chosen conversation ID or note objects; cancellation only closes the selector.
 
 ---
 
-## 18. Edit and resend a user message
+## 19. Edit and resend a user message
 
 | Step | Where | What to look at |
 |------|-------|------------------|

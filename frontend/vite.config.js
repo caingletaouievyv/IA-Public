@@ -9,6 +9,7 @@ export default defineConfig({
       "/ai": { target: "http://127.0.0.1:5000", changeOrigin: true },
       "/auth": { target: "http://127.0.0.1:5000", changeOrigin: true },
       "/notes": { target: "http://127.0.0.1:5000", changeOrigin: true },
+      "/memories": { target: "http://127.0.0.1:5000", changeOrigin: true },
       "/files": { target: "http://127.0.0.1:5000", changeOrigin: true },
       "/settings": { target: "http://127.0.0.1:5000", changeOrigin: true },
     },

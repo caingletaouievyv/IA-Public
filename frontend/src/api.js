@@ -4,17 +4,40 @@
 const BASE = (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "");
 const TOKEN_KEY = "ia_token";
 const UNAUTH_EVENT = "ia:unauthorized";
+const settingsCache = new Map();
+const pendingSettingsWrites = new Map();
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+export function getTokenUserId(token = getToken()) {
+  if (!token) return null;
+  try {
+    const payloadSegment = token.split(".")[1];
+    if (!payloadSegment) return null;
+    const base64 = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")));
+    return typeof payload.sub === "string" && payload.sub ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export function setToken(token) {
+  const previousUserId = getTokenUserId();
+  const nextUserId = getTokenUserId(token);
+  if (previousUserId !== nextUserId) {
+    if (previousUserId) settingsCache.delete(previousUserId);
+    if (nextUserId) settingsCache.delete(nextUserId);
+  }
   if (token) localStorage.setItem(TOKEN_KEY, token);
   else localStorage.removeItem(TOKEN_KEY);
 }
 
 export function clearToken() {
+  const userId = getTokenUserId();
+  if (userId) settingsCache.delete(userId);
   localStorage.removeItem(TOKEN_KEY);
   window.dispatchEvent(new Event(UNAUTH_EVENT));
 }
@@ -41,6 +64,15 @@ function handleResponse(res, data) {
   return data;
 }
 
+async function readJsonResponse(res) {
+  try {
+    return await res.json();
+  } catch {
+    if (res.status === 401 && getToken()) clearToken();
+    throw new Error(`Server error ${res.status}: response was not JSON`);
+  }
+}
+
 export async function login(username, password) {
   const res = await fetch(`${BASE}/auth/login`, {
     method: "POST",
@@ -64,7 +96,10 @@ export async function register(username, password) {
 }
 
 export async function ask(question, noteIds = null, messages = null, noteContextMode = "off") {
-  const body = { question: (question || "hello").trim(), note_context_mode: noteContextMode };
+  const body = {
+    question: (question || "hello").trim(),
+    note_context_mode: noteContextMode,
+  };
   if (Array.isArray(noteIds) && noteIds.length) body.note_ids = noteIds;
   if (Array.isArray(messages) && messages.length) body.messages = messages;
   const res = await fetch(`${BASE}/ai/ask`, {
@@ -73,6 +108,40 @@ export async function ask(question, noteIds = null, messages = null, noteContext
     body: JSON.stringify(body),
   });
   const data = await res.json();
+  return handleResponse(res, data);
+}
+
+export async function listMemories() {
+  const res = await fetch(`${BASE}/memories/`, { headers: { Authorization: `Bearer ${requireToken()}` } });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function updateMemory(memoryId, text) {
+  const res = await fetch(`${BASE}/memories/${encodeURIComponent(memoryId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${requireToken()}` },
+    body: JSON.stringify({ text }),
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function deleteMemory(memoryId) {
+  const res = await fetch(`${BASE}/memories/${encodeURIComponent(memoryId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${requireToken()}` },
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function clearMemories() {
+  const res = await fetch(`${BASE}/memories/clear`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${requireToken()}` },
+  });
+  const data = await readJsonResponse(res);
   return handleResponse(res, data);
 }
 
@@ -139,19 +208,69 @@ export async function debugContext(question, noteIds = null) {
 }
 
 export async function getSettings() {
+  const token = getToken();
+  const userId = getTokenUserId(token);
+  let waitedForWrite = false;
+  if (userId) {
+    while (pendingSettingsWrites.has(userId)) {
+      waitedForWrite = true;
+      await Promise.allSettled([...pendingSettingsWrites.get(userId)]);
+    }
+    if (getToken() !== token) return getSettings();
+    const cached = settingsCache.get(userId);
+    if (waitedForWrite && cached) return cached;
+  }
+
   const res = await fetch(`${BASE}/settings/`, { headers: authHeaders() });
   const data = await res.json();
-  return handleResponse(res, data);
+  if (getToken() !== token) {
+    if (!res.ok) throw new Error(data?.error || data?.message || res.statusText);
+    return data;
+  }
+  const settings = handleResponse(res, data);
+  if (userId && settings && typeof settings === "object" && !Array.isArray(settings)) {
+    settingsCache.set(userId, settings);
+  }
+  return settings;
+}
+
+export function getCachedSettings() {
+  const userId = getTokenUserId();
+  if (!userId || pendingSettingsWrites.has(userId)) return null;
+  return settingsCache.get(userId) || null;
 }
 
 export async function putSettings(data) {
-  const res = await fetch(`${BASE}/settings/`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(data),
-  });
-  const out = await res.json();
-  return handleResponse(res, out);
+  const userId = getTokenUserId();
+  const request = (async () => {
+    const res = await fetch(`${BASE}/settings/`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(data),
+    });
+    const out = await res.json();
+    const settings = handleResponse(res, out);
+    if (userId && settings && typeof settings === "object" && !Array.isArray(settings)) {
+      settingsCache.set(userId, { ...settingsCache.get(userId), ...settings });
+    }
+    return settings;
+  })();
+
+  if (userId) {
+    let writes = pendingSettingsWrites.get(userId);
+    if (!writes) {
+      writes = new Set();
+      pendingSettingsWrites.set(userId, writes);
+    }
+    writes.add(request);
+    const cleanup = () => {
+      writes.delete(request);
+      if (writes.size === 0) pendingSettingsWrites.delete(userId);
+    };
+    request.then(cleanup, cleanup);
+  }
+
+  return request;
 }
 
 export async function createNoteFromImages(formData) {

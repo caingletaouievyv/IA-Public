@@ -1,19 +1,16 @@
 // IA/frontend/src/components/Login.jsx
-// Login/register page. On success stores token and calls onLogin(token).
+// Login/register page. On success stores token and calls onLogin(token, userId).
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { login, register } from "../api";
 
 export default function Login({ onLogin, initialIsRegister = false, onModeChange = null }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [isRegister, setIsRegister] = useState(initialIsRegister);
+  const [localIsRegister, setLocalIsRegister] = useState(initialIsRegister);
+  const isRegister = onModeChange ? initialIsRegister : localIsRegister;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    setIsRegister(initialIsRegister);
-  }, [initialIsRegister]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,7 +27,7 @@ export default function Login({ onLogin, initialIsRegister = false, onModeChange
         await register(u, p);
       }
       const data = await login(u, p);
-      onLogin(data.token);
+      onLogin(data.token, data.user_id);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -81,7 +78,7 @@ export default function Login({ onLogin, initialIsRegister = false, onModeChange
             className="auth-switch__action"
             onClick={() => {
               const nextIsRegister = !isRegister;
-              setIsRegister(nextIsRegister);
+              if (!onModeChange) setLocalIsRegister(nextIsRegister);
               setError(null);
               onModeChange?.(nextIsRegister);
             }}

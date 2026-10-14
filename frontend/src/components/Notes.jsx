@@ -24,7 +24,7 @@ function resolveTagToAdd(inputVal, suggestions) {
 
 export default function Notes({ isSelectionMode = false, selectedIds = [], onSelect = null, onCloseSelection = null }) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [addFormMode, setAddFormMode] = useState(null);
   const [noteTitle, setNoteTitle] = useState("");

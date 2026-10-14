@@ -18,23 +18,34 @@ from app.credits.manager import (
     reserve_credits,
 )
 from app.memory.manager import build_context
+from app.settings.manager import get_settings
 
 bp = Blueprint("ai", __name__)
 
 
 def _parse_note_ids(data: dict) -> list | None:
-    """Extract and normalize note_ids from request data; None if missing or not a list."""
+    """Extract note IDs from request data and reject malformed selections."""
     note_ids = data.get("note_ids")
-    if note_ids is None or not isinstance(note_ids, list):
+    if note_ids is None:
         return None
-    return [str(x) for x in note_ids]
+    if not isinstance(note_ids, list) or any(not isinstance(note_id, str) or not note_id for note_id in note_ids):
+        raise ValueError("Invalid 'note_ids'; expected an array of non-empty strings")
+    return note_ids
 
 
 def _parse_note_context_mode(data: dict) -> str:
     """Return the requested note context mode, defaulting legacy requests to automatic."""
     mode = data.get("note_context_mode", "automatic")
-    if mode not in ("off", "automatic", "focused"):
+    if not isinstance(mode, str) or mode not in ("off", "automatic", "focused"):
         raise ValueError("Invalid 'note_context_mode'; expected 'off', 'automatic', or 'focused'")
+    return mode
+
+
+def _parse_memory_context_mode(data: dict) -> str:
+    """Return the requested Memory mode, defaulting legacy requests to off."""
+    mode = data.get("memory_context_mode", "off")
+    if not isinstance(mode, str) or mode not in ("off", "selected", "automatic"):
+        raise ValueError("Invalid 'memory_context_mode'; expected 'off', 'selected', or 'automatic'")
     return mode
 
 
@@ -76,12 +87,18 @@ def ask_ai():
         bool(raw_data),
         parsed_data is not None,
     )
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
     question = data.get("question")
     if not question:
         return jsonify({"error": "Missing 'question' field"}), 400
     try:
         note_context_mode = _parse_note_context_mode(data)
+        _parse_memory_context_mode(data)
+        note_ids = _parse_note_ids(data)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     operation_id = _operation_id(data)
@@ -110,15 +127,17 @@ def ask_ai():
     try:
         ask_started_at = time.perf_counter()
         logger.info("ai_ask ask_start")
-        answer, tokens = ask(
+        memory_enabled = get_settings(user_id).get("memory_enabled") is True
+        answer, tokens, memory_status = ask(
             question,
-            note_ids=_parse_note_ids(data),
+            note_ids=note_ids,
             note_context_mode=note_context_mode,
             user_id=user_id,
             history_messages=_parse_history_messages(data),
+            memory_enabled=memory_enabled,
         )
         logger.info("ai_ask ask_complete elapsed_seconds=%.3f", time.perf_counter() - ask_started_at)
-        result = {"answer": answer, "tokens_estimated": tokens}
+        result = {"answer": answer, "tokens_estimated": tokens, "memory_status": memory_status}
         complete_operation(user_id, operation_id, result)
         return jsonify(result), 200
     except Exception as e:
@@ -131,13 +150,19 @@ def ask_ai():
 def estimate_tokens_route():
     user_id, auth_err = require_auth()
     if auth_err: return auth_err
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
     question = data.get("question")
     if not question:
         return jsonify({"error": "Missing 'question' field"}), 400
     try:
         result = get_token_estimate(question, note_ids=_parse_note_ids(data), user_id=user_id)
         return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -145,11 +170,19 @@ def estimate_tokens_route():
 def debug_context():
     user_id, auth_err = require_auth()
     if auth_err: return auth_err
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
     question = data.get("question")
     if not question:
         return jsonify({"error": "Missing 'question'"}), 400
-    result = build_context(question, note_ids=_parse_note_ids(data), user_id=user_id)
+    try:
+        note_ids = _parse_note_ids(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    result = build_context(question, note_ids=note_ids, user_id=user_id)
     return jsonify({
         "question": question,
         "context": result["context"],

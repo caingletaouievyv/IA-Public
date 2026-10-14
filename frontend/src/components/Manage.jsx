@@ -1,8 +1,9 @@
 // IA/frontend/src/components/Manage.jsx
-// Organize saved notes and conversation histories; retrieval memory is notes-backed.
+// Organize saved notes, conversation histories, and independent user Memory.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import History from "./History";
+import MemoryManager from "./MemoryManager";
 import Notes from "./Notes";
 
 const SECTIONS = [
@@ -11,8 +12,12 @@ const SECTIONS = [
   { id: "memory", label: "Memory" },
 ];
 
-export default function Manage() {
-  const [activeSection, setActiveSection] = useState("notes");
+export default function Manage({ initialSection = "notes" }) {
+  const [activeSection, setActiveSection] = useState(initialSection);
+
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
 
   return (
     <section className="section section--manage">
@@ -37,16 +42,7 @@ export default function Manage() {
 
       {activeSection === "notes" && <Notes />}
       {activeSection === "conversations" && <History />}
-      {activeSection === "memory" && (
-        <section className="card app-panel manage-memory" aria-labelledby="manage-memory-title">
-          <h3 className="manage-memory__title" id="manage-memory-title">Memory comes from your notes</h3>
-          <p>
-            IA currently retrieves relevant information from your saved notes when answering questions.
-            There is no separate memory collection to manage. Create, edit, or remove source material
-            in Notes; retrieval behavior is controlled by the Notes context mode in Ask.
-          </p>
-        </section>
-      )}
+      {activeSection === "memory" && <MemoryManager />}
     </section>
   );
 }

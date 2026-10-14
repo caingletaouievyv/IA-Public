@@ -1,12 +1,19 @@
 // IA/frontend/src/components/Ask.jsx
-// Ask: question → POST /ai/ask; optional note context; optional conversation history (same notes table).
+// Ask: question → POST /ai/ask; optional Notes/Memory context and conversation history.
 // No authenticated API calls without token; surface auth errors in UI.
 
 import { useState, useEffect, useLayoutEffect, useRef, useId } from "react";
-import { ask, getNote, createHistory, updateNote, getToken, getSettings, putSettings } from "../api";
+import { ask, getNote, createHistory, updateNote, getToken, getSettings, getCachedSettings, putSettings } from "../api";
+import {
+  getActiveConversation,
+  getSelectedNoteIds,
+  setActiveConversation,
+  setSelectedNoteIds,
+} from "../activeConversation";
 import AskContextIcon from "./AskContextIcon";
 import {
   DEFAULT_CONTEXT_MODES,
+  DEFAULT_SHOW_CONTEXT_SOURCE_LABELS,
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
   getVisibleContextSources,
   normalizeContextModes,
@@ -14,8 +21,8 @@ import {
 
 const CONTEXT_MODES = ["off", "selected", "automatic"];
 
-function nextContextMode(mode) {
-  return CONTEXT_MODES[(CONTEXT_MODES.indexOf(mode) + 1) % CONTEXT_MODES.length];
+function nextContextMode(mode, options = CONTEXT_MODES) {
+  return options[(options.indexOf(mode) + 1) % options.length];
 }
 
 function parseMessages(content) {
@@ -42,7 +49,19 @@ function markdownToPlainText(content) {
     .replace(/~~(.*?)~~/g, "$1");
 }
 
-function AskContextControl({ label, icon, details, mode, status, onModeChange, onOpen, modeDisabled = false }) {
+function AskContextControl({
+  label,
+  icon,
+  details,
+  mode,
+  modeLabel,
+  modeOptions,
+  status,
+  stateLabel,
+  onModeChange,
+  onOpen,
+  modeDisabled = false,
+}) {
   const [longPressOpen, setLongPressOpen] = useState(false);
   const [detailsPinned, setDetailsPinned] = useState(false);
   const [detailsPosition, setDetailsPosition] = useState({ left: 8, top: 8 });
@@ -159,6 +178,7 @@ function AskContextControl({ label, icon, details, mode, status, onModeChange, o
       setDetailsPinned((open) => !open);
     }
   };
+  const shownMode = modeLabel || mode?.toUpperCase();
 
   return (
     <div className={`ask-context-control${mode === null ? " ask-context-control--source-only" : ""}`}>
@@ -178,10 +198,12 @@ function AskContextControl({ label, icon, details, mode, status, onModeChange, o
           className="button-subtle ask-shortcut ask-context-source"
           onClick={handleClick}
           aria-describedby={detailsId}
+          aria-label={`${label}: ${stateLabel}`}
+          title={`${label}: ${stateLabel}`}
         >
           <span className="ask-shortcut-icon" aria-hidden="true"><AskContextIcon name={icon} /></span>
-          <span>{label}</span>
-          {status !== null && status !== undefined && (
+          <span className="ask-context-source__label">{label}</span>
+          {label === "Notes" && status !== null && status !== undefined && (
             <span className="ask-context-count" aria-hidden="true">{status}</span>
           )}
         </button>
@@ -197,38 +219,58 @@ function AskContextControl({ label, icon, details, mode, status, onModeChange, o
           }}
         >
           <strong>{label}</strong>
+          <span className="ask-context-details__state">{stateLabel}</span>
           {details.split("\n").map((line) => <span key={line}>{line}</span>)}
         </span>
       </div>
       {mode !== null && (
         <button
           type="button"
-          className={`button-subtle button-toggle ask-shortcut ask-context-mode${mode !== "off" ? " ask-shortcut--active" : ""}`}
-          onClick={() => onModeChange(nextContextMode(mode))}
+          onClick={() => onModeChange(nextContextMode(mode, modeOptions))}
           disabled={modeDisabled}
-          aria-label={`${label} context mode: ${mode.toUpperCase()}. Activate to change mode.`}
+          aria-label={label === "Memory"
+            ? `Memory is ${shownMode}. Activate to turn Memory ${mode === "off" ? "on" : "off"}.`
+            : `${label} context mode: ${shownMode}. Activate to change mode.`}
+          title={label === "Memory"
+            ? `${stateLabel}. Activate to turn Memory ${mode === "off" ? "on" : "off"}.`
+            : `${label} context mode: ${shownMode}`}
           aria-pressed={mode !== "off"}
+          className={`button-subtle button-toggle ask-shortcut ask-context-mode${mode !== "off" ? " ask-shortcut--active" : ""}`}
         >
-          [{mode.toUpperCase()}]
+          <span className="ask-context-mode__label">{shownMode}</span>
         </button>
       )}
     </div>
   );
 }
 
-export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetail, onHistoryFocusChange }) {
+export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMessageDetail, onHistoryFocusChange, onMemoryManage }) {
+  const [initialContextSettings] = useState(() => getCachedSettings());
+  const [initialContextModes] = useState(() => {
+    const savedModes = normalizeContextModes(initialContextSettings?.ask_context_modes);
+    savedModes.memory = initialContextSettings?.memory_enabled === true ? "automatic" : "off";
+    return savedModes;
+  });
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [notes, setNotes] = useState([]);
-  const [selectedIds, setSelectedIds] = useState(new Set());
-  const [visibleContextSources, setVisibleContextSources] = useState(DEFAULT_VISIBLE_CONTEXT_SOURCES);
-  const [contextModes, setContextModes] = useState(DEFAULT_CONTEXT_MODES);
-  const [contextSettingsLoaded, setContextSettingsLoaded] = useState(false);
-  const [currentHistoryId, setCurrentHistoryId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set(getSelectedNoteIds(userId)));
+  const [visibleContextSources, setVisibleContextSources] = useState(() => initialContextSettings
+    ? getVisibleContextSources(initialContextSettings.ask_context_sources).map((source) => source.id)
+    : DEFAULT_VISIBLE_CONTEXT_SOURCES);
+  const [showContextSourceLabels, setShowContextSourceLabels] = useState(() => initialContextSettings
+    ? initialContextSettings.show_context_source_labels !== false
+    : DEFAULT_SHOW_CONTEXT_SOURCE_LABELS);
+  const [contextModes, setContextModes] = useState(initialContextModes);
+  const [contextSettingsLoaded, setContextSettingsLoaded] = useState(() => initialContextSettings !== null);
+  const [memoryEnabled, setMemoryEnabled] = useState(() => initialContextSettings?.memory_enabled === true);
+  const [memorySettingSaving, setMemorySettingSaving] = useState(false);
+  const [currentHistoryId, setCurrentHistoryId] = useState(() => getActiveConversation(userId));
   const [currentHistoryTitle, setCurrentHistoryTitle] = useState("");
   const [currentHistoryUpdatedAt, setCurrentHistoryUpdatedAt] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(() => Boolean(getActiveConversation(userId)));
   const [historyFocused, setHistoryFocused] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(null);
   const [activeHistoryUserIndex, setActiveHistoryUserIndex] = useState(null);
@@ -237,28 +279,32 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
   const copyFeedbackTimerRef = useRef(null);
   const submissionInFlightRef = useRef(false);
   const skipNextHistoryLoadRef = useRef(null);
-  const contextModesRef = useRef(DEFAULT_CONTEXT_MODES);
+  const currentHistoryIdRef = useRef(currentHistoryId);
+  const contextModesRef = useRef(initialContextModes);
   const modeSaveQueueRef = useRef(Promise.resolve());
 
   useEffect(() => {
+    if (initialContextSettings) return undefined;
     let cancelled = false;
     getSettings()
       .then((settings) => {
         if (!cancelled) {
           setVisibleContextSources(getVisibleContextSources(settings?.ask_context_sources).map((source) => source.id));
+          setShowContextSourceLabels(settings?.show_context_source_labels !== false);
           const savedModes = normalizeContextModes(settings?.ask_context_modes);
+          const enabled = settings?.memory_enabled === true;
+          savedModes.memory = enabled ? "automatic" : "off";
+          setMemoryEnabled(enabled);
           contextModesRef.current = savedModes;
           setContextModes(savedModes);
+          setContextSettingsLoaded(true);
         }
       })
       .catch((settingsError) => {
         if (!cancelled) setError(`Could not load Ask context source preferences: ${settingsError.message}`);
-      })
-      .finally(() => {
-        if (!cancelled) setContextSettingsLoaded(true);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [initialContextSettings]);
 
   useEffect(() => () => window.clearTimeout(copyFeedbackTimerRef.current), []);
 
@@ -274,10 +320,29 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
       setError(`Could not save context mode preference: ${settingsError.message}`);
     });
   };
+  const toggleMemory = async () => {
+    if (memorySettingSaving || !contextSettingsLoaded) return;
+    const nextEnabled = !memoryEnabled;
+    setError(null);
+    setMemorySettingSaving(true);
+    try {
+      await putSettings({ memory_enabled: nextEnabled });
+      setMemoryEnabled(nextEnabled);
+      const nextModes = { ...contextModesRef.current, memory: nextEnabled ? "automatic" : "off" };
+      contextModesRef.current = nextModes;
+      setContextModes(nextModes);
+    } catch (settingsError) {
+      setError(`Could not save Memory setting: ${settingsError.message}`);
+    } finally {
+      setMemorySettingSaving(false);
+    }
+  };
   const handleNoteSelection = (selectedNotes) => {
     const nextNotes = Array.isArray(selectedNotes) ? selectedNotes.filter((note) => note?.id) : [];
+    const nextIds = nextNotes.map((note) => note.id);
     setNotes(nextNotes);
-    setSelectedIds(new Set(nextNotes.map((note) => note.id)));
+    setSelectedIds(new Set(nextIds));
+    setSelectedNoteIds(userId, nextIds);
   };
 
   const openNotesPicker = () => onNotesPicker?.(handleNoteSelection, Array.from(selectedIds));
@@ -322,31 +387,53 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
       setCurrentHistoryTitle("");
       setCurrentHistoryUpdatedAt(null);
       setMessages([]);
+      setHistoryLoading(false);
       return;
     }
     if (skipNextHistoryLoadRef.current === currentHistoryId) {
       skipNextHistoryLoadRef.current = null;
+      setHistoryLoading(false);
       return;
     }
     let cancelled = false;
+    setHistoryLoading(true);
     getNote(currentHistoryId)
       .then((n) => {
-        if (!cancelled && n) {
-          const nextMessages = parseMessages(n.content || "");
-          setCurrentHistoryTitle(n.title || "Untitled");
-          setCurrentHistoryUpdatedAt(n.updated_at || null);
-          setMessages(nextMessages);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
+        if (cancelled) return;
+        if (!n || n.category !== "_history") {
+          currentHistoryIdRef.current = null;
+          setActiveConversation(userId, null);
+          setCurrentHistoryId(null);
           setCurrentHistoryTitle("");
           setCurrentHistoryUpdatedAt(null);
           setMessages([]);
+          setError("This conversation is unavailable. Choose another conversation or start a new one.");
+          return;
         }
+        const nextMessages = parseMessages(n.content || "");
+        setCurrentHistoryTitle(n.title || "Untitled");
+        setCurrentHistoryUpdatedAt(n.updated_at || null);
+        setMessages(nextMessages);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        if (/not found|404/i.test(loadError.message || "")) {
+          currentHistoryIdRef.current = null;
+          setActiveConversation(userId, null);
+          setCurrentHistoryId(null);
+          setCurrentHistoryTitle("");
+          setCurrentHistoryUpdatedAt(null);
+          setMessages([]);
+          setError("This conversation is unavailable. Choose another conversation or start a new one.");
+        } else {
+          setError(`Could not load conversation: ${loadError.message}`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
       });
     return () => { cancelled = true; };
-  }, [currentHistoryId]);
+  }, [currentHistoryId, userId]);
 
   useEffect(() => {
     setActiveHistoryUserIndex(historyUserIndices.length ? historyUserIndices[historyUserIndices.length - 1] : null);
@@ -359,7 +446,15 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
   }, [currentHistoryId, messages]);
 
   const handleHistorySelection = (id) => {
+    setActiveConversation(userId, id);
+    if (id === currentHistoryId) return;
+    currentHistoryIdRef.current = id;
     setCurrentHistoryId(id);
+    setCurrentHistoryTitle("");
+    setCurrentHistoryUpdatedAt(null);
+    setMessages([]);
+    setHistoryLoading(Boolean(id));
+    setError(null);
   };
 
   const openHistoryPicker = () => onHistoryPicker?.(handleHistorySelection, currentHistoryId);
@@ -387,6 +482,8 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
       throw new Error("Failed to create conversation");
     }
     skipNextHistoryLoadRef.current = created.id;
+    setActiveConversation(userId, created.id);
+    currentHistoryIdRef.current = created.id;
     setCurrentHistoryId(created.id);
     setCurrentHistoryTitle(created.title || "New conversation");
     setCurrentHistoryUpdatedAt(created.updated_at || new Date().toISOString());
@@ -406,7 +503,9 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
   const sendQuestion = async (prompt, previousMessages) => {
     const historyId = currentHistoryId || (await createNewConversation()).id;
     const activeMessages = currentHistoryId ? previousMessages : [];
-    const noteIds = contextModes.notes !== "off" && selectedIds.size ? Array.from(selectedIds) : null;
+    const noteIds = contextModes.notes !== "off" && selectedIds.size
+      ? Array.from(selectedIds)
+      : null;
     const historyMessages = activeMessages.length > 0 ? activeMessages : null;
     const noteApiMode = contextModes.notes === "selected" ? "focused" : contextModes.notes;
     const data = await ask(prompt, noteIds, historyMessages, noteApiMode);
@@ -414,8 +513,12 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
     const assistantContent = (data.answer || "").trim();
     if (historyId && (userContent || assistantContent)) {
       const nextMessages = [...activeMessages, { role: "user", content: userContent }, { role: "assistant", content: assistantContent }];
-      setMessages(nextMessages);
-      await updateNote(historyId, { content: JSON.stringify(nextMessages) });
+      const updatedHistory = await updateNote(historyId, { content: JSON.stringify(nextMessages) });
+      if (currentHistoryIdRef.current === historyId) {
+        setMessages(nextMessages);
+        setCurrentHistoryTitle(updatedHistory.title || "Untitled");
+        setCurrentHistoryUpdatedAt(updatedHistory.updated_at || null);
+      }
     }
   };
 
@@ -425,7 +528,7 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
     if (!targetMessage || targetMessage.role !== "user" || !editedContent) {
       return { success: false, error: "Enter a message before saving." };
     }
-    if (loading || submissionInFlightRef.current) {
+    if (loading || historyLoading || submissionInFlightRef.current) {
       return { success: false, error: "A request is already in progress." };
     }
     submissionInFlightRef.current = true;
@@ -445,7 +548,7 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (loading || submissionInFlightRef.current) return;
+    if (loading || historyLoading || submissionInFlightRef.current) return;
     submissionInFlightRef.current = true;
     setError(null);
     setLoading(true);
@@ -487,9 +590,9 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
   return (
     <section className={`section section--ask${historyFocused ? " section--ask-history-focused" : ""}`}>
       <form onSubmit={handleSubmit} className={`card app-panel form--compact ask-form ${loading ? "loading" : ""}`}>
-        {!historyFocused && (
+        {!historyFocused && contextSettingsLoaded && (
           <header className="ask-header">
-            <div className="ask-shortcuts" aria-label="Ask shortcuts">
+            <div className={`ask-shortcuts${showContextSourceLabels ? " ask-shortcuts--labels-visible" : " ask-shortcuts--labels-hidden"}`} aria-label="Ask shortcuts">
               {getVisibleContextSources(visibleContextSources).map((source) => (
                 <AskContextControl
                   key={source.id}
@@ -499,16 +602,26 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
                     ? conversationDetails
                     : source.id === "notes" ? notesDetails : source.details}
                   mode={source.id === "conversation" ? null : contextModes[source.id]}
+                  modeLabel={source.id === "memory" ? memoryEnabled ? "ON" : "OFF" : undefined}
+                  modeOptions={source.id === "memory" ? ["off", "automatic"] : undefined}
                   status={source.id === "conversation"
-                    ? currentHistoryId ? messages.length : null
+                    ? null
                     : source.id === "notes" ? selectedIds.size || null : null}
+                  stateLabel={source.id === "conversation"
+                    ? currentHistoryId ? "Active conversation" : "No active conversation"
+                    : source.id === "memory"
+                      ? `Memory is ${memoryEnabled ? "on" : "off"}`
+                      : `${contextModes[source.id]?.toUpperCase()}${source.id === "notes" && selectedIds.size
+                        ? `, ${selectedIds.size} selected`
+                        : ""}`}
                   onModeChange={source.id === "conversation"
                     ? undefined
-                    : (mode) => setContextMode(source.id, mode)}
-                  modeDisabled={!contextSettingsLoaded}
+                    : source.id === "memory" ? toggleMemory : (mode) => setContextMode(source.id, mode)}
+                  modeDisabled={!contextSettingsLoaded || (source.id === "memory" && memorySettingSaving)}
                   onOpen={source.id === "conversation"
                     ? openHistoryPicker
-                    : source.id === "notes" ? openNotesPicker : undefined}
+                    : source.id === "notes" ? openNotesPicker
+                      : source.id === "memory" ? onMemoryManage : undefined}
                 />
               ))}
             </div>
@@ -570,6 +683,7 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
               </div>
             </h3>
             <div id="ask-history-content" ref={historyRef} className="ask-history-scroll">
+              {historyLoading && <p className="notes-list-empty">Loading conversation…</p>}
               {messages.map((message, index) => {
                 const isUserMessage = message.role === "user";
                 const isActiveMessage = isUserMessage && activeHistoryUserIndex === index;
@@ -649,9 +763,9 @@ export default function Ask({ onHistoryPicker, onNotesPicker, onUserMessageDetai
               e.currentTarget.form?.requestSubmit();
             }
           }}
-          disabled={loading}
+          disabled={loading || historyLoading}
         />
-        <button type="submit" className="button-primary ask-submit" aria-label={loading ? "Sending question" : "Ask"} disabled={loading}>
+        <button type="submit" className="button-primary ask-submit" aria-label={loading ? "Sending question" : "Ask"} disabled={loading || historyLoading}>
           {loading ? "…" : "Ask"}
         </button>
         </section>

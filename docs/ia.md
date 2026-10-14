@@ -9,7 +9,7 @@ This document defines the lightweight engineering conventions for IA. The produc
 - Prefer the existing feature structure and helpers over duplicate implementations.
 - Validate external request data at the API boundary. Keep route handlers thin and return deliberate HTTP status codes.
 - Frontend components own presentation and interaction state; use the existing API client for backend requests and existing shared controls/styles where practical.
-- Reuse Notes and History interfaces for saved-content management. Memory currently retrieves relevant saved notes; it is not a separate editable store.
+- Keep Notes, Conversation History, and persistent Memory distinct. Memory uses per-user records in its own store, with settings and authenticated CRUD; it must not use Notes or history as a backing store.
 
 ## Code conventions
 
@@ -28,6 +28,7 @@ This document defines the lightweight engineering conventions for IA. The produc
 - The Flask app requires a strong configured `JWT_SECRET` at startup.
 - Demo seeding is limited to explicit development/test environments and requires a configured `SEED_USER_PASSWORD`. Never use the seed utility in production.
 - Protected API routes must use the existing authentication boundary and derive per-user data access from the authenticated user identity.
+- Treat model-produced Memory candidates as untrusted: require bounded schema-valid records grounded in user-message evidence, reject credentials/secrets, scope IDs to the authenticated user's records, and label saved memories as untrusted background context in prompts.
 - Development/test rewarded-ad grants are not proof of ad completion; production credit grants require server-side provider verification.
 
 ## Documentation and testing
