@@ -50,7 +50,6 @@ Run from `backend/`:
 
 ```bash
 python -m compileall -q app scripts
-python -m scripts.test.test_process_lock
 python -m scripts.test.test_ai_context_modes
 python -m scripts.test.test_ai_credits
 python -m scripts.test.test_memories
@@ -62,8 +61,6 @@ python -m scripts.test.test_settings_preferences
 ```
 
 `test_seed_user.py` checks the environment/password safety guard, idempotence, and preservation of existing demo data. `test_ai_credits.py` uses temporary credit storage and mocks AI execution. It covers missing/unsafe JWT-secret startup rejection, initial balances, per-user isolation, idempotent grants, rejection of unverified rewarded-ad grants outside dev/test, Ask spending, insufficient-credit rejection, unlimited-role behavior, refunds, JWT authentication, and rate limiting. It also verifies that completed Ask retries return the saved result without another provider call or debit, distinct IDs create distinct operations, and the same ID is isolated between users. It does not currently assert the active-pending 409 response. `test_ai_context_modes.py` covers all modes, selected IDs, missing-mode compatibility, and invalid modes. `test_text_retrieval.py` covers deterministic lexical scoring, filtering, thresholds, and token packing. `test_lazy_embeddings.py` verifies model initialization is deferred and supplies a test-only JWT secret for app startup.
-
-`test_process_lock.py` uses temporary directories and subprocesses to check cross-process lock contention, explicit release, and recovery after forced process termination. Unit checks validate the Gunicorn worker/preload hook. Linux CI additionally runs real Gunicorn startup attempts to verify that both a `-w 2` CLI override and `GUNICORN_CMD_ARGS="-w 2"` are rejected. This verifies local process exclusion and effective Gunicorn configuration, not shared-filesystem lock behavior across hosts or transactional JSON operations.
 
 `test_selected_notes_context.py` is pytest-style and can be run with `python -m pytest scripts/test/test_selected_notes_context.py` if pytest is installed; pytest is not listed in `requirements.txt`.
 
