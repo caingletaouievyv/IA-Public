@@ -159,6 +159,29 @@ class MemoryFeatureTests(unittest.TestCase):
         self.assertEqual(malformed.status_code, 400)
         self.assertEqual(manager.list_memories(user_id)[0]["text"], "The user prefers clear explanations.")
 
+    def test_user_initiated_sensitive_edit_is_allowed_but_secrets_are_rejected(self):
+        user_id = self.user_id()
+        self.add_memory(user_id, "The user prefers clear explanations.")
+        memory = manager.list_memories(user_id)[0]
+
+        sensitive_update = self.client.put(
+            f"/memories/{memory['id']}",
+            json={"text": "The user's religion is Buddhism."},
+            headers=self.headers(user_id),
+        )
+
+        self.assertEqual(sensitive_update.status_code, 200)
+        self.assertEqual(sensitive_update.get_json()["text"], "The user's religion is Buddhism.")
+
+        secret_update = self.client.put(
+            f"/memories/{memory['id']}",
+            json={"text": "The user's API key is sk-1234567890abcdef."},
+            headers=self.headers(user_id),
+        )
+
+        self.assertEqual(secret_update.status_code, 400)
+        self.assertEqual(manager.list_memories(user_id)[0]["text"], "The user's religion is Buddhism.")
+
     def test_extraction_saves_explicit_remember_request_with_grounded_evidence(self):
         user_id = self.user_id()
         provider_output = {
@@ -270,6 +293,50 @@ class MemoryFeatureTests(unittest.TestCase):
             ["The user's medical condition is long-term asthma."],
         )
 
+    def test_sensitive_candidate_without_explicit_remember_request_is_skipped(self):
+        for current_message in (
+            "I was diagnosed with asthma.",
+            "I remember my religion is Buddhism.",
+        ):
+            with self.subTest(current_message=current_message):
+                user_id = self.user_id()
+                if "religion" in current_message:
+                    memory_text = "The user's religion is Buddhism."
+                else:
+                    memory_text = "The user's diagnosis is asthma."
+                provider_output = {
+                    "upserts": [{
+                        "id": None,
+                        "text": memory_text,
+                        "evidence": current_message,
+                    }],
+                    "delete_ids": [],
+                }
+
+                with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+                    status = extraction.best_effort_extract(user_id, current_message)
+
+                self.assertEqual(status, "unchanged")
+                self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_explicit_request_does_not_authorize_a_negated_sensitive_claim(self):
+        user_id = self.user_id()
+        current_message = "Please remember that I do not have asthma."
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's diagnosis is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
     def test_paraphrased_sensitive_candidate_is_allowed_when_fact_is_supported(self):
         user_id = self.user_id()
         current_message = "Please remember that I've been diagnosed with asthma."
@@ -289,6 +356,346 @@ class MemoryFeatureTests(unittest.TestCase):
         self.assertEqual(
             [item["text"] for item in manager.list_memories(user_id)],
             ["The user's diagnosis is asthma."],
+        )
+
+    def test_uncertain_sensitive_diagnosis_is_not_saved_as_established(self):
+        user_id = self.user_id()
+        current_message = "Please remember that I might have asthma."
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_retracted_sensitive_diagnosis_is_not_saved_as_confirmed(self):
+        user_id = self.user_id()
+        current_message = (
+            "Please remember that I was diagnosed with asthma, "
+            "but that diagnosis was incorrect."
+        )
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's diagnosis is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_later_consent_revocation_rejects_sensitive_candidate(self):
+        cases = (
+            (
+                "Please remember my medical condition is asthma, "
+                "but I do not want this remembered.",
+                "The user's medical condition is asthma.",
+            ),
+            (
+                "Please remember my medical condition is asthma; "
+                "actually, do not remember it.",
+                "The user's medical condition is asthma.",
+            ),
+        )
+        for current_message, memory_text in cases:
+            with self.subTest(current_message=current_message):
+                user_id = self.user_id()
+                provider_output = {
+                    "upserts": [{
+                        "id": None,
+                        "text": memory_text,
+                        "evidence": current_message,
+                    }],
+                    "delete_ids": [],
+                }
+                with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+                    status = extraction.best_effort_extract(user_id, current_message)
+
+                self.assertNotEqual(status, "saved")
+                self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_explicit_sensitive_revocation_deletes_only_matching_existing_memory(self):
+        cases = (
+            "I do not want you to remember my asthma diagnosis anymore.",
+            "Please don't remember my diagnosis is asthma.",
+            "Please forget my medical condition is asthma.",
+            "Stop remembering my asthma diagnosis.",
+        )
+        for current_message in cases:
+            with self.subTest(current_message=current_message):
+                user_id = self.user_id()
+                self.add_memory(user_id, "The user's diagnosis is asthma.")
+                self.add_memory(user_id, "The user's religion is Buddhism.")
+
+                with patch.object(extraction, "call_ai") as provider:
+                    status = extraction.extract_and_save(user_id, current_message)
+
+                provider.assert_not_called()
+                self.assertEqual(status, "removed")
+                self.assertEqual(
+                    [item["text"] for item in manager.list_memories(user_id)],
+                    ["The user's religion is Buddhism."],
+                )
+
+    def test_sensitive_revocation_fails_closed_for_compound_memory(self):
+        user_id = self.user_id()
+        compound_memory = (
+            "The user's diagnosis is asthma; the user's religion is Buddhism."
+        )
+        self.add_memory(user_id, compound_memory)
+
+        with patch.object(extraction, "call_ai") as provider:
+            status = extraction.extract_and_save(
+                user_id,
+                "Please forget my asthma diagnosis.",
+            )
+
+        provider.assert_not_called()
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            [compound_memory],
+        )
+
+    def test_sensitive_revocation_rechecks_record_before_atomic_delete(self):
+        user_id = self.user_id()
+        self.add_memory(user_id, "The user's diagnosis is asthma.")
+        standalone_record = manager.list_memories(user_id)[0]
+        original_delete = manager.delete_memory_if_unchanged
+
+        def edit_to_compound_then_delete(owner_id, memory_id, expected_text):
+            manager.update_memory(
+                owner_id,
+                memory_id,
+                "The user's diagnosis is asthma; the user's religion is Buddhism.",
+            )
+            return original_delete(owner_id, memory_id, expected_text)
+
+        with patch.object(
+            extraction,
+            "delete_memory_if_unchanged",
+            side_effect=edit_to_compound_then_delete,
+        ):
+            status = extraction.extract_and_save(
+                user_id,
+                "Please forget my asthma diagnosis.",
+            )
+
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(
+            [
+                (item["id"], item["text"])
+                for item in manager.list_memories(user_id)
+            ],
+            [(
+                standalone_record["id"],
+                "The user's diagnosis is asthma; the user's religion is Buddhism.",
+            )],
+        )
+
+    def test_atomic_sensitive_delete_is_scoped_to_the_requested_user(self):
+        owner_id, other_user_id = self.user_id(), self.user_id()
+        self.add_memory(owner_id, "The user's diagnosis is asthma.")
+        owner_record = manager.list_memories(owner_id)[0]
+
+        deleted = manager.delete_memory_if_unchanged(
+            other_user_id,
+            owner_record["id"],
+            owner_record["text"],
+        )
+
+        self.assertFalse(deleted)
+        self.assertEqual(manager.list_memories(owner_id), [owner_record])
+        self.assertEqual(manager.list_memories(other_user_id), [])
+
+    def test_sensitive_revocation_with_ambiguous_matches_deletes_nothing(self):
+        user_id = self.user_id()
+        self.add_memory(user_id, "The user's diagnosis is asthma.")
+        self.add_memory(user_id, "Diagnosis: asthma")
+        original_records = manager.list_memories(user_id)
+
+        with patch.object(extraction, "call_ai") as provider:
+            status = extraction.extract_and_save(
+                user_id,
+                "Please forget my asthma diagnosis.",
+            )
+
+        provider.assert_not_called()
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(manager.list_memories(user_id), original_records)
+
+    def test_later_correction_or_retraction_rejects_sensitive_candidate(self):
+        cases = (
+            (
+                "Please remember my medical condition is asthma, but I was misdiagnosed.",
+                "The user's medical condition is asthma.",
+            ),
+            (
+                "Please remember my diagnosis is asthma; "
+                "I was diagnosed and later it was corrected.",
+                "The user's diagnosis is asthma.",
+            ),
+            (
+                "Please remember my diagnosis is asthma; revise it to epilepsy.",
+                "The user's diagnosis is asthma.",
+            ),
+            (
+                "Please remember my diagnosis is asthma, but I have epilepsy instead.",
+                "The user's diagnosis is asthma.",
+            ),
+            (
+                "Please remember my diagnosis is asthma; "
+                "later doctors changed the diagnosis to epilepsy.",
+                "The user's diagnosis is asthma.",
+            ),
+        )
+        for current_message, memory_text in cases:
+            with self.subTest(current_message=current_message):
+                user_id = self.user_id()
+                provider_output = {
+                    "upserts": [{
+                        "id": None,
+                        "text": memory_text,
+                        "evidence": current_message,
+                    }],
+                    "delete_ids": [],
+                }
+                with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+                    status = extraction.best_effort_extract(user_id, current_message)
+
+                self.assertNotEqual(status, "saved")
+                self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_another_persons_misdiagnosis_does_not_reject_users_diagnosis(self):
+        user_id = self.user_id()
+        current_messages = (
+            "Please remember my diagnosis is asthma, but my sister was misdiagnosed.",
+            "Please remember my diagnosis is asthma, but my sister's asthma was misdiagnosed.",
+            "Please remember my diagnosis is asthma, but my sister's diagnosis was incorrect.",
+            "Please remember my diagnosis is asthma, but my sister's diagnosis changed to epilepsy.",
+            "Please remember my diagnosis is asthma, but my sister's asthma diagnosis changed to epilepsy.",
+        )
+        for current_message in current_messages:
+            with self.subTest(current_message=current_message):
+                user_id = self.user_id()
+                provider_output = {
+                    "upserts": [{
+                        "id": None,
+                        "text": "The user's diagnosis is asthma.",
+                        "evidence": current_message,
+                    }],
+                    "delete_ids": [],
+                }
+
+                with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+                    status = extraction.best_effort_extract(user_id, current_message)
+
+                self.assertEqual(status, "saved")
+                self.assertEqual(
+                    [item["text"] for item in manager.list_memories(user_id)],
+                    ["The user's diagnosis is asthma."],
+                )
+
+    def test_multiple_independent_sensitive_requests_are_checked_individually(self):
+        user_id = self.user_id()
+        current_message = (
+            "Please remember my religion is Buddhism. "
+            "Also, remember that I have asthma."
+        )
+        provider_output = {
+            "upserts": [
+                {
+                    "id": None,
+                    "text": "The user's religion is Buddhism.",
+                    "evidence": "Please remember my religion is Buddhism.",
+                },
+                {
+                    "id": None,
+                    "text": "The user's medical condition is asthma.",
+                    "evidence": "remember that I have asthma.",
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "saved")
+        self.assertCountEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            [
+                "The user's religion is Buddhism.",
+                "The user's medical condition is asthma.",
+            ],
+        )
+
+    def test_retracted_second_request_does_not_invalidate_first_candidate(self):
+        user_id = self.user_id()
+        current_message = (
+            "Please remember my religion is Buddhism. "
+            "Also, remember that I have asthma, but I was misdiagnosed."
+        )
+        provider_output = {
+            "upserts": [
+                {
+                    "id": None,
+                    "text": "The user's religion is Buddhism.",
+                    "evidence": current_message,
+                },
+                {
+                    "id": None,
+                    "text": "The user's medical condition is asthma.",
+                    "evidence": current_message,
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            ["The user's religion is Buddhism."],
+        )
+
+    def test_unrelated_contrast_does_not_reject_sensitive_candidate(self):
+        user_id = self.user_id()
+        current_message = (
+            "Please remember that my medical condition is asthma, "
+            "but I prefer concise answers."
+        )
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            ["The user's medical condition is asthma."],
         )
 
     def test_sensitive_category_request_does_not_authorize_invented_details(self):

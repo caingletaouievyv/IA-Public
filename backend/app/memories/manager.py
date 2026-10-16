@@ -218,6 +218,17 @@ def delete_memory(user_id: str, memory_id: str) -> bool:
         return True
 
 
+def delete_memory_if_unchanged(user_id: str, memory_id: str, expected_text: str) -> bool:
+    with _STORE_LOCK:
+        memories = load_memories(user_id)
+        target = next((item for item in memories if item.get("id") == memory_id), None)
+        if target is None or target.get("text") != expected_text:
+            return False
+        memories.remove(target)
+        _save_memories(user_id, memories)
+        return True
+
+
 def clear_memories(user_id: str) -> int:
     with _STORE_LOCK:
         memories = load_memories(user_id)
