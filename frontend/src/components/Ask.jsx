@@ -60,6 +60,7 @@ function AskContextControl({
   stateLabel,
   onModeChange,
   onOpen,
+  active = false,
   modeDisabled = false,
 }) {
   const [longPressOpen, setLongPressOpen] = useState(false);
@@ -181,7 +182,7 @@ function AskContextControl({
   const shownMode = modeLabel || mode?.toUpperCase();
 
   return (
-    <div className={`ask-context-control${mode === null ? " ask-context-control--source-only" : ""}`}>
+    <div className={`ask-context-control${mode === null ? " ask-context-control--source-only" : ""}${active ? " ask-context-control--active" : ""}`}>
       <div
         ref={sourceRef}
         className={`ask-context-source-wrap${longPressOpen ? " ask-context-source-wrap--pressed" : ""}${detailsPinned ? " ask-context-source-wrap--pinned" : ""}`}
@@ -614,6 +615,9 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
                       : `${contextModes[source.id]?.toUpperCase()}${source.id === "notes" && selectedIds.size
                         ? `, ${selectedIds.size} selected`
                         : ""}`}
+                  active={source.id === "conversation"
+                    ? Boolean(currentHistoryId)
+                    : contextModes[source.id] !== "off"}
                   onModeChange={source.id === "conversation"
                     ? undefined
                     : source.id === "memory" ? toggleMemory : (mode) => setContextMode(source.id, mode)}

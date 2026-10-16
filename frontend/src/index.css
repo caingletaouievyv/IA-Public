@@ -1288,8 +1288,15 @@ button.secondary:focus-visible,
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0;
   flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  transition: border-color var(--transition), background var(--transition);
+}
+.ask-context-control--active {
+  border-color: var(--accent);
 }
 .ask-context-source-wrap {
   position: relative;
@@ -1312,10 +1319,16 @@ button.secondary:focus-visible,
 .ask-context-source,
 .ask-context-mode {
   min-height: 2.5rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.ask-context-control .ask-context-source {
+  padding: 0.45rem 0.72rem;
+  color: var(--text);
 }
 .ask-context-source {
   position: relative;
-  color: var(--text);
 }
 .ask-context-count {
   display: inline-flex;
@@ -1331,18 +1344,17 @@ button.secondary:focus-visible,
 }
 .ask-context-mode {
   flex: 0 0 auto;
-  padding-right: 0.65rem;
-  padding-left: 0.65rem;
+  padding: 0.42rem 0.62rem;
+  border-left: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.035em;
   white-space: nowrap;
 }
-.ask-context-mode[aria-pressed="true"] {
-  border-color: var(--accent);
+.ask-context-control .ask-context-mode[aria-pressed="true"] {
   background: var(--surface-hover);
-  color: var(--text);
+  color: var(--accent);
 }
 .ask-context-mode__indicator {
   display: none;
@@ -1352,6 +1364,14 @@ button.secondary:focus-visible,
 .ask-context-mode:hover {
   background: var(--surface-hover);
   color: var(--text);
+}
+.ask-context-control .ask-context-source:hover,
+.ask-context-control .ask-context-mode:hover {
+  background: var(--surface-hover);
+}
+.ask-context-control .ask-context-mode[aria-pressed="true"]:hover {
+  background: var(--surface);
+  color: var(--accent-hover);
 }
 .ask-context-source:focus-visible,
 .ask-context-mode:focus-visible {
@@ -1446,8 +1466,8 @@ button.secondary:focus-visible,
   }
   .ask-context-mode {
     min-height: 2.75rem;
-    padding-right: 0.65rem;
-    padding-left: 0.65rem;
+    padding-right: 0.62rem;
+    padding-left: 0.62rem;
   }
   .ask-context-count {
     min-width: 1rem;

@@ -157,6 +157,12 @@ async function navigateBetweenPages(user) {
   await user.click(screen.getByRole("link", { name: "Ask" }));
 }
 
+function getNotesModeButton(mode) {
+  return screen.getByRole("button", {
+    name: new RegExp(`^Notes context mode: ${mode}\\. Activate to change mode\\.$`),
+  });
+}
+
 beforeEach(() => {
   cleanup();
   localStorage.clear();
@@ -343,6 +349,57 @@ describe("active conversation restoration", () => {
     expect(memoryToggle.getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("cycles Notes modes and preserves a hidden source's saved mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await screen.findByRole("button", {
+      name: /^Notes context mode: OFF\. Activate to change mode\.$/,
+    });
+    const notesControl = getNotesModeButton("OFF");
+    const notesGroup = notesControl.closest(".ask-context-control");
+    expect(notesGroup.className).not.toContain("--active");
+    await user.click(notesControl);
+
+    const selectedMode = getNotesModeButton("SELECTED");
+    expect(selectedMode.getAttribute("aria-pressed")).toBe("true");
+    expect(selectedMode.closest(".ask-context-control").className).toContain("--active");
+    await waitFor(() => expect(settings.ask_context_modes.notes).toBe("selected"));
+
+    await user.click(selectedMode);
+    expect(getNotesModeButton("AUTOMATIC")).toBeTruthy();
+    await user.click(getNotesModeButton("AUTOMATIC"));
+    const offMode = getNotesModeButton("OFF");
+    expect(offMode.getAttribute("aria-pressed")).toBe("false");
+    expect(offMode.closest(".ask-context-control").className).not.toContain("--active");
+    await waitFor(() => expect(settings.ask_context_modes.notes).toBe("off"));
+
+    await user.click(offMode);
+    await waitFor(() => expect(settings.ask_context_modes.notes).toBe("selected"));
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    const notesVisibility = await screen.findByRole("checkbox", {
+      name: /^Notes Select saved notes to provide as AI context\./,
+    });
+    expect(notesVisibility.checked).toBe(true);
+    await user.click(notesVisibility);
+    await waitFor(() => expect(settings.ask_context_sources).not.toContain("notes"));
+
+    await user.click(screen.getByRole("link", { name: "Ask" }));
+    await screen.findByLabelText("Ask shortcuts");
+    expect(screen.queryByRole("button", { name: /^Notes:/ })).toBeNull();
+    expect(settings.ask_context_modes.notes).toBe("selected");
+
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    await user.click(await screen.findByRole("checkbox", {
+      name: /^Notes Select saved notes to provide as AI context\./,
+    }));
+    await waitFor(() => expect(settings.ask_context_sources).toContain("notes"));
+    await user.click(screen.getByRole("link", { name: "Ask" }));
+    expect(await screen.findByRole("button", {
+      name: /^Notes context mode: SELECTED\. Activate to change mode\.$/,
+    })).toBeTruthy();
+  });
+
   it("shows Memory status on hover or long press and preserves tap-to-toggle", async () => {
     const user = userEvent.setup();
     renderApp();
@@ -384,9 +441,11 @@ describe("active conversation restoration", () => {
     expect(enabledToggle.querySelector(".ask-context-status-dot")).toBeNull();
     expect(enabledToggle.getAttribute("aria-pressed")).toBe("true");
     expect(enabledToggle.title).toContain("Memory is on");
+    expect(enabledToggle.closest(".ask-context-control").className).toContain("--active");
     await user.click(enabledToggle);
     await waitFor(() => expect(settings.memory_enabled).toBe(false));
     expect(screen.getByRole("button", { name: "Memory is OFF. Activate to turn Memory on." }).textContent).toContain("OFF");
+    expect(screen.getByRole("button", { name: "Memory is OFF. Activate to turn Memory on." }).closest(".ask-context-control").className).not.toContain("--active");
   });
 
   it("persists the source-label preference and applies it consistently at every viewport width", async () => {
@@ -501,6 +560,8 @@ describe("active conversation restoration", () => {
     renderApp();
     await selectConversation(user, "First conversation");
     expect(await screen.findByText("First saved question")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Conversation: Active conversation" })
+      .closest(".ask-context-control").className).toContain("--active");
     expect(sessionStorage.getItem(STORAGE_KEY)).toBe("first");
 
     await user.type(screen.getByRole("textbox", { name: "Question" }), "Latest turn");
