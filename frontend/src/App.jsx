@@ -35,7 +35,6 @@ function Header({ onLogout, activePath, onNavigate }) {
           {[
             ["/ask", "Ask"],
             ["/manage", "Manage"],
-            ["/debug", "Debug"],
             ["/settings", "Settings"],
           ].map(([href, label]) => (
             <a

@@ -135,8 +135,8 @@ function installApiMock() {
   vi.stubGlobal("fetch", fetchMock);
 }
 
-function renderApp(userId = USER_ID) {
-  window.history.replaceState(null, "", "/ask");
+function renderApp(userId = USER_ID, path = "/ask") {
+  window.history.replaceState(null, "", path);
   setToken(tokenFor(userId));
   return render(<App />);
 }
@@ -228,12 +228,12 @@ describe("active conversation restoration", () => {
     settingsGetGate = gate;
     await user.click(screen.getByRole("link", { name: "Settings" }));
     expect(await screen.findByText("Loading saved sources…")).toBeTruthy();
-    expect(screen.queryByRole("checkbox", { name: /Show context source labels/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Show Ask labels/ })).toBeNull();
     expect(screen.queryByLabelText("prefTheme")).toBeNull();
 
     settingsGetGate = null;
     gate.resolve();
-    expect((await screen.findByRole("checkbox", { name: /Show context source labels/ })).checked).toBe(true);
+    expect((await screen.findByRole("checkbox", { name: /Show Ask labels/ })).checked).toBe(true);
     expect(document.getElementById("prefTheme").value).toBe("dark");
   });
 
@@ -448,7 +448,7 @@ describe("active conversation restoration", () => {
     expect(screen.getByRole("button", { name: "Memory is OFF. Activate to turn Memory on." }).closest(".ask-context-control").className).not.toContain("--active");
   });
 
-  it("persists the source-label preference and applies it consistently at every viewport width", async () => {
+  it("persists the Show Ask labels preference through Settings and applies it in Ask", async () => {
     const user = userEvent.setup();
     renderApp();
 
@@ -457,8 +457,9 @@ describe("active conversation restoration", () => {
     expect(screen.getByText("Conversation", { selector: ".ask-context-source__label" })).toBeTruthy();
     expect(settings.show_context_source_labels).toBeUndefined();
 
+    expect(screen.queryByRole("checkbox", { name: "Show Ask labels" })).toBeNull();
     await user.click(screen.getByRole("link", { name: "Settings" }));
-    const preference = await screen.findByRole("checkbox", { name: /Show context source labels/ });
+    const preference = await screen.findByRole("checkbox", { name: /Show Ask labels/ });
     expect(preference.checked).toBe(true);
     await user.click(preference);
     await waitFor(() => expect(settings.show_context_source_labels).toBe(false));
@@ -475,7 +476,7 @@ describe("active conversation restoration", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
     expect(controls.className).toContain("ask-shortcuts--labels-hidden");
     await user.click(screen.getByRole("link", { name: "Settings" }));
-    const hiddenPreference = await screen.findByRole("checkbox", { name: /Show context source labels/ });
+    const hiddenPreference = await screen.findByRole("checkbox", { name: /Show Ask labels/ });
     expect(hiddenPreference.checked).toBe(false);
     await user.click(hiddenPreference);
     await waitFor(() => expect(settings.show_context_source_labels).toBe(true));
@@ -493,7 +494,8 @@ describe("active conversation restoration", () => {
 
     await screen.findByLabelText("Ask shortcuts");
     await user.click(screen.getByRole("link", { name: "Settings" }));
-    expect(await screen.findByRole("checkbox", { name: /Show context source labels/ })).toBeTruthy();
+    const preference = await screen.findByRole("checkbox", { name: /Show Ask labels/ });
+    expect(preference.checked).toBe(false);
 
     const settingsRequestCount = fetchMock.mock.calls.filter(([input]) =>
       new URL(input, window.location.origin).pathname === "/settings/",
@@ -517,7 +519,7 @@ describe("active conversation restoration", () => {
     await screen.findByLabelText("Ask shortcuts");
 
     await user.click(screen.getByRole("link", { name: "Settings" }));
-    const preference = await screen.findByRole("checkbox", { name: /Show context source labels/ });
+    const preference = screen.getByRole("checkbox", { name: /Show Ask labels/ });
     const saveGate = deferred();
     settingsPutGate = saveGate;
     await user.click(preference);
@@ -533,6 +535,42 @@ describe("active conversation restoration", () => {
     expect(toolbar.className).toContain("ask-shortcuts--labels-hidden");
     expect(toolbar.className).not.toContain("ask-shortcuts--labels-visible");
     expect(await screen.findByRole("button", { name: "Conversation: No active conversation" })).toBeTruthy();
+  });
+
+  it("keeps the saved label preference unchanged when using Focus", async () => {
+    const user = userEvent.setup();
+    settings.show_context_source_labels = false;
+    renderApp();
+    await selectConversation(user, "First conversation");
+
+    const toolbar = await screen.findByLabelText("Ask shortcuts");
+    expect(toolbar.className).toContain("ask-shortcuts--labels-hidden");
+    const conversationButton = screen.getByRole("button", { name: "Conversation: Active conversation" });
+    expect(conversationButton).toBeTruthy();
+    expect(conversationButton.querySelector(".ask-context-source__label").textContent).toBe("Conversation");
+
+    const settingsWritesBeforeFocus = fetchMock.mock.calls.filter(([input, options]) =>
+      new URL(input, window.location.origin).pathname === "/settings/" && options?.method === "PUT",
+    ).length;
+    await user.click(screen.getByRole("button", { name: "Focus Conversation History" }));
+    expect(screen.queryByLabelText("Ask shortcuts")).toBeNull();
+    expect(settings.show_context_source_labels).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Exit Conversation History focus" }));
+
+    const restoredToolbar = screen.getByLabelText("Ask shortcuts");
+    expect(restoredToolbar.className).toContain("ask-shortcuts--labels-hidden");
+    expect(restoredToolbar.className).not.toContain("ask-shortcuts--labels-visible");
+    expect(fetchMock.mock.calls.filter(([input, options]) =>
+      new URL(input, window.location.origin).pathname === "/settings/" && options?.method === "PUT",
+    )).toHaveLength(settingsWritesBeforeFocus);
+  });
+
+  it("hides Debug from navigation while keeping its authenticated route available", async () => {
+    renderApp(USER_ID, "/debug");
+
+    expect(screen.queryByRole("link", { name: "Debug" })).toBeNull();
+    expect(screen.getByLabelText("Question")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Get context" })).toBeTruthy();
   });
 
   it("does not cache a pending Settings read under a different account after an account switch", async () => {

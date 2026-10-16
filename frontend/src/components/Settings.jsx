@@ -117,28 +117,29 @@ export default function Settings() {
     <section className="section section--settings">
       <p className="card-desc">Per-user preferences. Stored with your account.</p>
       <div className="card app-panel ask-context-settings">
-        <p className="card-title" id="ask-context-sources-title">Ask Context Sources</p>
-        <p className="card-desc">Choose which source controls appear in the Ask toolbar and whether their labels are shown. Changes save automatically.</p>
+        <p className="card-title" id="ask-context-sources-title">Ask</p>
+        <p className="card-desc">Choose which context sources appear in Ask and whether their labels are shown.</p>
         {settings === null ? (
           <p className="ask-context-settings__status" role="status">
             {loading ? "Loading saved sources…" : "Saved source preferences are unavailable."}
           </p>
         ) : (
           <>
-            <label className="ask-context-settings__option" htmlFor="show-context-source-labels">
+            <label className="ask-context-settings__option" htmlFor="show-ask-labels">
               <input
-                id="show-context-source-labels"
+                id="show-ask-labels"
                 type="checkbox"
                 checked={showContextSourceLabels}
                 disabled={loading || sourceSaving || labelSaving || saving}
                 onChange={(event) => changeContextSourceLabels(event.target.checked)}
               />
               <span className="ask-context-settings__copy">
-                <span className="ask-context-settings__name">Show context source labels</span>
-                <span className="ask-context-settings__description">Show text labels beside context source icons.</span>
+                <span className="ask-context-settings__name">Show Ask labels</span>
+                <span className="ask-context-settings__description">Show text labels beside Ask context-source icons.</span>
               </span>
             </label>
-            <div className="ask-context-settings__list" role="group" aria-labelledby="ask-context-sources-title">
+            <p className="card-title" id="ask-context-sources-subtitle">Ask Context Sources</p>
+            <div className="ask-context-settings__list" role="group" aria-labelledby="ask-context-sources-subtitle">
               {ASK_CONTEXT_SOURCES.map((source) => {
                 const alwaysVisible = source.id === "conversation";
                 return (

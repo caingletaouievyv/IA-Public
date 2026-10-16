@@ -123,8 +123,8 @@ npm --prefix .\frontend run build
 
 - Logged out: direct-load `/login` and `/register`; verify register switching follows the route, registration/login still works, and success lands on `/ask`.
 - Verify `/` remains public, and `/privacy`, `/terms`, and `/contact` load directly.
-- Verify `/ask` is the authenticated default; navigation order is Ask, Manage, Debug, Settings, Sign out.
-- Navigate Ask → Manage → Debug → Settings → Ask; verify browser Back and Forward update the visible page and URL.
+- Verify `/ask` is the authenticated default; navigation order is Ask, Manage, Settings, Sign out. Signed-in users can still open `/debug` directly; the debug API requires authentication.
+- Navigate Ask → Manage → Settings → Ask; verify browser Back and Forward update the visible page and URL. Confirm Debug is absent from navigation but remains available to signed-in users at `/debug`.
 - Select a conversation in Ask, save a new turn, navigate to Manage, then return to Ask; verify the same conversation title and latest saved turns load. Start a new conversation and repeat the navigation; verify the new empty conversation stays active instead of reopening the previous one.
 - Select Notes for context and set Notes mode to Selected or Automatic. Navigate to Manage and back; verify the mode and selected Note count remain, then submit a question and verify it uses the intended Notes. Log out or switch accounts and verify the previous account's selected IDs are not applied.
 - Direct-load and refresh `/ask`, `/manage`, `/debug`, and `/settings`; verify each returns the SPA and renders the correct page.
@@ -136,7 +136,7 @@ npm --prefix .\frontend run build
 - Verify the Notes selector is selection-only: no Add note or Add from images shortcuts appear there. Confirm selected notes update Ask context, and verify Manage retains note creation and image import.
 - Verify Manage → Conversations retains title editing and single/bulk delete. In the Ask selector, start a new conversation and select an existing conversation.
 - Verify a new or unset Ask context-source preference shows Conversation, Notes, and Memory only. In Settings → Ask Context Sources, verify all seven entries have their existing icons and descriptions, Conversation stays checked/disabled, and toggling another source immediately saves.
-- In Settings → Ask Context Sources, turn **Show context source labels** off and immediately navigate to Ask, including while the checkbox shows Saving; confirm labels never appear in the initial toolbar. Repeat with labels enabled and navigate away/back to confirm the saved preference is honored.
+- In Settings → Ask, turn **Show Ask labels** off and immediately navigate to Ask, including while the checkbox shows Saving; confirm labels never appear in the initial toolbar. Repeat with labels enabled and navigate away/back to confirm the saved preference is honored. Using Focus must not change this setting.
 - Navigate back to Ask and verify only enabled source/mode controls appear, with no gaps. Refresh or sign out/in and verify visibility persists for that user; malformed or outdated visibility settings fall back to Conversation, Notes, and Memory.
 - Verify Conversation has no mode button and opens the existing History UI. Visible Notes, Files, GitHub, Memory, Drive, and Web have separate source and mode buttons; each mode cycles `Off → Selected → Automatic → Off` without opening a menu. Notes Selected still uses the API's `focused` mode; Notes Off excludes note context and Automatic retains current note retrieval. Hiding and showing a source does not reset its mode or change its data or retrieval behavior.
 - Verify active conversation turns continue to be sent as before. Placeholder source modes do not affect AI requests. Files remains an unavailable Ask context source while its backend file-tree listing remains intact.
