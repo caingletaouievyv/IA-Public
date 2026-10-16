@@ -64,7 +64,7 @@ python -m scripts.test.test_settings_preferences
 
 `test_selected_notes_context.py` is pytest-style and can be run with `python -m pytest scripts/test/test_selected_notes_context.py` if pytest is installed; pytest is not listed in `requirements.txt`.
 
-`test_memories.py` uses temporary storage and mocked provider output. It covers the default-off persistent setting, user isolation, authenticated CRUD and clear-all, bounds/secrets, grounded explicit extraction, update/deduplication, forget requests, and relevance. `test_ai_context_modes.py` verifies Memory and Notes are independent, Off skips retrieval/extraction, enabled Memory is injected as untrusted background data, and extraction failures do not fail an AI response. `test_ai_credits.py` verifies the server-side setting controls Memory and that a successful Ask with Memory still reserves only one credit.
+`test_memories.py` uses temporary storage and mocked provider output. It covers the default-off persistent setting, user isolation, authenticated CRUD and clear-all, bounds/secrets, grounded explicit extraction, candidate-scoped sensitive consent (including unrelated history, invented details, quoted requests, and missing/fabricated/assistant-only evidence), update/deduplication, forget requests, and relevance. `test_ai_context_modes.py` verifies Memory and Notes are independent, Off skips retrieval/extraction, enabled Memory is injected as untrusted background data, and extraction failures do not fail an AI response. `test_ai_credits.py` verifies the server-side setting controls Memory and that a successful Ask with Memory still reserves only one credit.
 
 ### Live API smoke (optional)
 

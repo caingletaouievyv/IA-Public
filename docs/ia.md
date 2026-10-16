@@ -28,7 +28,7 @@ This document defines the lightweight engineering conventions for IA. The produc
 - The Flask app requires a strong configured `JWT_SECRET` at startup.
 - Demo seeding is limited to explicit development/test environments and requires a configured `SEED_USER_PASSWORD`. Never use the seed utility in production.
 - Protected API routes must use the existing authentication boundary and derive per-user data access from the authenticated user identity.
-- Treat model-produced Memory candidates as untrusted: require bounded schema-valid records grounded in user-message evidence, reject credentials/secrets, scope IDs to the authenticated user's records, and label saved memories as untrusted background context in prompts.
+- Treat model-produced Memory candidates as untrusted: require bounded schema-valid records grounded in non-empty user-message evidence; sensitive candidates need a targeted remember request in the current user message that names the same sensitive category, with candidate-specific factual terms present in both the request and supporting quote. Do not let consent for one candidate authorize another. Reject credentials/secrets regardless of consent, scope IDs to the authenticated user's records, and label saved memories as untrusted background context in prompts.
 - Development/test rewarded-ad grants are not proof of ad completion; production credit grants require server-side provider verification.
 
 ## Documentation and testing

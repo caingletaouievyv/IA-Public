@@ -178,6 +178,323 @@ class MemoryFeatureTests(unittest.TestCase):
         self.assertEqual(status, "saved")
         self.assertEqual(manager.list_memories(user_id)[0]["text"], provider_output["upserts"][0]["text"])
 
+    def test_current_harmless_remember_request_does_not_consent_to_sensitive_history(self):
+        user_id = self.user_id()
+        current_message = "Please remember that I prefer concise answers."
+        sensitive_history = "I have a medical condition."
+        provider_output = {
+            "upserts": [
+                {
+                    "id": None,
+                    "text": "The user prefers concise answers.",
+                    "evidence": current_message,
+                },
+                {
+                    "id": None,
+                    "text": "The user has a medical condition.",
+                    "evidence": sensitive_history,
+                },
+                {
+                    "id": None,
+                    "text": "The user has a medical condition.",
+                    "evidence": current_message,
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.extract_and_save(
+                user_id,
+                current_message,
+                [{"role": "user", "content": sensitive_history}],
+            )
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            ["The user prefers concise answers."],
+        )
+
+    def test_specific_sensitive_request_does_not_consent_to_another_history_fact(self):
+        user_id = self.user_id()
+        current_message = "Please remember my religion is Buddhism."
+        unrelated_sensitive_history = "I have a medical condition."
+        provider_output = {
+            "upserts": [
+                {
+                    "id": None,
+                    "text": "The user's religion is Buddhism.",
+                    "evidence": current_message,
+                },
+                {
+                    "id": None,
+                    "text": "The user has a medical condition.",
+                    "evidence": unrelated_sensitive_history,
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.extract_and_save(
+                user_id,
+                current_message,
+                [{"role": "user", "content": unrelated_sensitive_history}],
+            )
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            ["The user's religion is Buddhism."],
+        )
+
+    def test_targeted_sensitive_remember_request_is_allowed(self):
+        user_id = self.user_id()
+        current_message = "Please remember that my medical condition is long-term asthma."
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is long-term asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.extract_and_save(user_id, current_message)
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            ["The user's medical condition is long-term asthma."],
+        )
+
+    def test_paraphrased_sensitive_candidate_is_allowed_when_fact_is_supported(self):
+        user_id = self.user_id()
+        current_message = "Please remember that I've been diagnosed with asthma."
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's diagnosis is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            ["The user's diagnosis is asthma."],
+        )
+
+    def test_sensitive_category_request_does_not_authorize_invented_details(self):
+        user_id = self.user_id()
+        current_message = "Please remember my medical condition."
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_quoted_remember_instruction_is_not_sensitive_consent(self):
+        user_id = self.user_id()
+        current_message = 'Please explain this quote: "Remember my religion is Buddhism."'
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's religion is Buddhism.",
+                "evidence": "Remember my religion is Buddhism.",
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_quoted_sensitive_detail_is_not_consent(self):
+        user_id = self.user_id()
+        current_message = 'Please remember "my religion is Buddhism".'
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's religion is Buddhism.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_negative_remember_request_is_not_sensitive_consent(self):
+        for current_message in (
+            "Please remember not to save my medical condition.",
+            "Please remember: don't save my medical condition.",
+        ):
+            with self.subTest(current_message=current_message):
+                user_id = self.user_id()
+                provider_output = {
+                    "upserts": [{
+                        "id": None,
+                        "text": "The user has a medical condition.",
+                        "evidence": current_message,
+                    }],
+                    "delete_ids": [],
+                }
+
+                with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+                    status = extraction.best_effort_extract(user_id, current_message)
+
+                self.assertEqual(status, "unchanged")
+                self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_contradictory_sensitive_evidence_is_rejected(self):
+        user_id = self.user_id()
+        current_message = (
+            "Please remember my medical condition is asthma, "
+            "but I do not have asthma."
+        )
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_contrasting_sensitive_fact_is_rejected(self):
+        user_id = self.user_id()
+        current_message = (
+            "Please remember my medical condition is asthma, "
+            "but it is actually epilepsy."
+        )
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_unrelated_contrast_does_not_block_supported_sensitive_fact(self):
+        user_id = self.user_id()
+        current_message = (
+            "Please remember my medical condition is asthma, "
+            "but I prefer concise answers."
+        )
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is asthma.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [item["text"] for item in manager.list_memories(user_id)],
+            ["The user's medical condition is asthma."],
+        )
+
+    def test_sensitive_candidate_requires_its_own_nonempty_evidence(self):
+        user_id = self.user_id()
+        current_message = "Please remember my medical condition is asthma."
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's medical condition is asthma.",
+                "evidence": "",
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_missing_fabricated_and_assistant_only_evidence_are_rejected(self):
+        cases = (
+            ("", []),
+            ("I said this but did not.", []),
+            (
+                "Please remember I have a medical condition.",
+                [{"role": "assistant", "content": "Please remember I have a medical condition."}],
+            ),
+        )
+        for evidence, history in cases:
+            with self.subTest(evidence=evidence, history=history):
+                user_id = self.user_id()
+                provider_output = {
+                    "upserts": [{
+                        "id": None,
+                        "text": "The user prefers concise answers.",
+                        "evidence": evidence,
+                    }],
+                    "delete_ids": [],
+                }
+                with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+                    status = extraction.best_effort_extract(user_id, "Tell me a joke.", history)
+
+                self.assertEqual(status, "unavailable")
+                self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_secrets_remain_rejected_when_explicitly_requested(self):
+        user_id = self.user_id()
+        current_message = "Please remember my API key sk-1234567890abcdef."
+        provider_output = {
+            "upserts": [{
+                "id": None,
+                "text": "The user's API key is sk-1234567890abcdef.",
+                "evidence": current_message,
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(provider_output)):
+            status = extraction.best_effort_extract(user_id, current_message)
+
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(manager.list_memories(user_id), [])
+
     def test_ask_saves_assistant_name_memory_independently_of_history_note(self):
         user_id = self.user_id()
         headers = self.headers(user_id)

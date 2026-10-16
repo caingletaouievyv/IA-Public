@@ -52,6 +52,10 @@ def contains_secret(text: str) -> bool:
     return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
 
 
+def sensitive_personal_terms(text: str) -> set[str]:
+    return {match.group(0).casefold() for match in _SENSITIVE_TERMS.finditer(text)}
+
+
 def validate_memory_text(value: object, *, explicit_remember: bool = False) -> str:
     if not isinstance(value, str):
         raise ValueError("Memory text must be a string")
@@ -62,7 +66,7 @@ def validate_memory_text(value: object, *, explicit_remember: bool = False) -> s
         raise ValueError("Memory text contains unsupported control characters")
     if contains_secret(text):
         raise ValueError("Memory cannot contain passwords, credentials, tokens, or private keys")
-    if _SENSITIVE_TERMS.search(text) and not explicit_remember:
+    if sensitive_personal_terms(text) and not explicit_remember:
         raise ValueError("Sensitive personal information requires an explicit remember request")
     return text
 
