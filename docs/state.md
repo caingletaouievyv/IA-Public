@@ -24,7 +24,7 @@ For backup or restore, stop the backend and copy/restore the entire `backend/dat
 
 ## Seed safety
 
-`backend/scripts/seed_user.py` is a development/test utility. It refuses to run unless `APP_ENV=development` or `APP_ENV=test` and `SEED_USER_PASSWORD` is configured with at least 12 characters. The script does not change an existing account's password and only adds missing demo notes. Do not run demo seeding in production or commit local credentials.
+`backend/scripts/seed_user.py` is restricted to `APP_ENV=development` or `APP_ENV=test`. Production demo seeding uses the separate, explicitly enabled `backend/scripts/seed_render_demo.py` command and a password-manager-generated password provided through protected environment configuration. It refuses to adopt an existing `demo` account unless its instance-local marker matches the stored user ID; the marker is ephemeral on Render Free. Neither seeder changes an existing account's password, role, settings, or credit balance. Never commit local credentials.
 
 ## Current verification surface
 

@@ -6,6 +6,8 @@ Run backend checks from `backend/`; live API smoke tests require the app running
 
 The seed command is for development/test only. Set `APP_ENV=development` (or `test`) and `SEED_USER_PASSWORD` with at least 12 characters in the ignored root `.env` before running `python -m scripts.seed_user`. It refuses other environments or missing/short passwords, does not change an existing `demo` account's password or notes/settings/credits, adds missing demo notes, and initializes a missing credit account only. Any existing `ayi` account is left untouched.
 
+The separate `python -m scripts.seed_render_demo` command requires explicit production environment, `RENDER_DEMO_SEED_ENABLED=true`, and a cryptographically random, password-manager-generated `SEED_USER_PASSWORD`. It enforces at least 32 characters and 12 distinct characters as minimum policy checks, not as proof of entropy. It is intended only in the Render Start Command, never the Build Command. A pre-existing `demo` username is refused unless the instance-local marker matches the account ID created by this seeder.
+
 ---
 
 ## Prerequisites
@@ -57,10 +59,13 @@ python -m scripts.test.test_ai_response_style
 python -m scripts.test.test_lazy_embeddings
 python -m scripts.test.test_text_retrieval
 python -m scripts.test.test_seed_user
+python -m scripts.test.test_seed_render_demo
 python -m scripts.test.test_settings_preferences
 ```
 
 `test_seed_user.py` checks the environment/password safety guard, repeated execution, and preservation of existing demo notes, settings, and credit balances using temporary JSON stores. `test_ai_credits.py` uses temporary account storage and mocks AI execution. It covers registration and lazy initialization at the configured starting balance, existing-account preservation when the initial-balance setting changes, per-user isolation, idempotent grants and ledger entries, rejection of unverified rewarded-ad grants outside dev/test, Ask spending, insufficient-credit rejection, unlimited-role behavior, refunds, JWT authentication, and rate limiting. It also verifies that completed Ask retries return the saved result without another provider call or debit, distinct IDs create distinct operations, and the same ID is isolated between users. It does not currently assert the active-pending 409 response. `test_ai_context_modes.py` covers all modes, selected IDs, missing-mode compatibility, and invalid modes. `test_text_retrieval.py` covers deterministic lexical scoring, filtering, thresholds, and token packing. `test_lazy_embeddings.py` verifies model initialization is deferred and supplies a test-only JWT secret for app startup.
+
+`test_seed_render_demo.py` uses isolated temporary JSON stores to verify production environment and enable-flag rejection, missing/weak password rejection, refusal and non-modification of a pre-claimed `demo` account, marked-account rerun idempotence, sample-note creation, and preservation of the seeded account's password, role, settings, credit balance, and customized notes.
 
 `test_selected_notes_context.py` is pytest-style and can be run with `python -m pytest scripts/test/test_selected_notes_context.py` if pytest is installed; pytest is not listed in `requirements.txt`.
 

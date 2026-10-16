@@ -74,19 +74,21 @@ def validate_seed_configuration():
         raise RuntimeError("Set SEED_USER_PASSWORD to a unique password of at least 12 characters.")
 
 
-def seed_user():
-    validate_seed_configuration()
-    user = find_user_by_username(SEED_USERNAME)
-    created = False
+def seed_demo_data(username: str, password: str, *, created: bool = False):
+    """Create missing demo data without changing an existing account or its data."""
+    user = find_user_by_username(username)
     if not user:
-        created = create_user(SEED_USERNAME, SEED_PASSWORD)
+        created = create_user(username, password)
         if not created:
-            print("Failed to create user", SEED_USERNAME, file=sys.stderr)
+            print("Failed to create user", username, file=sys.stderr)
             sys.exit(1)
         user = created
-        print(f"Created user {SEED_USERNAME} (user_id={user['user_id']})")
+        print(f"Created user {username} (user_id={user['user_id']})")
+        created = True
+    elif created:
+        print(f"Created user {username} (user_id={user['user_id']})")
     else:
-        print(f"User {SEED_USERNAME} already exists (user_id={user['user_id']})")
+        print(f"User {username} already exists (user_id={user['user_id']})")
 
     user_id = user["user_id"]
     get_credit_account(user_id)
@@ -105,6 +107,11 @@ def seed_user():
         added += 1
     print(f"Notes: {len(existing)} -> {len(existing) + added} (+{added} seed notes)")
     return {"user_id": user_id, "created": bool(created), "added_notes": added}
+
+
+def seed_user():
+    validate_seed_configuration()
+    return seed_demo_data(SEED_USERNAME, SEED_PASSWORD)
 
 
 def main():
