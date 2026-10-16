@@ -6,7 +6,7 @@ Run backend checks from `backend/`; live API smoke tests require the app running
 
 The seed command is for development/test only. Set `APP_ENV=development` (or `test`) and `SEED_USER_PASSWORD` with at least 12 characters in the ignored root `.env` before running `python -m scripts.seed_user`. It refuses other environments or missing/short passwords, does not change an existing `demo` account's password or notes/settings/credits, adds missing demo notes, and initializes a missing credit account only. Any existing `ayi` account is left untouched.
 
-The separate `python -m scripts.seed_render_demo` command requires explicit production environment, `RENDER_DEMO_SEED_ENABLED=true`, and a cryptographically random, password-manager-generated `SEED_USER_PASSWORD`. It enforces at least 32 characters and 12 distinct characters as minimum policy checks, not as proof of entropy. It is intended only in the Render Start Command, never the Build Command. A pre-existing `demo` username is refused unless the instance-local marker matches the account ID created by this seeder.
+The separate `python -m scripts.seed_render_demo` command requires explicit production environment, `RENDER_DEMO_SEED_ENABLED=true`, and a password-manager-generated `SEED_USER_PASSWORD` of at least 12 characters. Length alone does not guarantee entropy. It is intended only in the Render Start Command, never the Build Command. A pre-existing `demo` username is refused unless the instance-local marker matches the account ID created by this seeder.
 
 ---
 

@@ -52,23 +52,28 @@ def test_render_seed_requires_explicit_enable_flag():
     _assert_configuration_refused(env, "RENDER_DEMO_SEED_ENABLED=true")
 
 
-def test_render_seed_rejects_missing_or_weak_password():
+def test_render_seed_rejects_missing_empty_or_short_password():
+    missing_password = VALID_ENV.copy()
+    missing_password.pop("SEED_USER_PASSWORD")
+    _assert_configuration_refused(
+        missing_password,
+        "SEED_USER_PASSWORD",
+    )
     _assert_configuration_refused(
         VALID_ENV | {"SEED_USER_PASSWORD": ""},
         "SEED_USER_PASSWORD",
     )
     _assert_configuration_refused(
-        VALID_ENV | {"SEED_USER_PASSWORD": "short"},
+        VALID_ENV | {"SEED_USER_PASSWORD": "a" * 11},
         "SEED_USER_PASSWORD",
     )
-    _assert_configuration_refused(
-        VALID_ENV | {"SEED_USER_PASSWORD": "aaaaaaaaaaaaaaaa"},
-        "SEED_USER_PASSWORD",
-    )
-    _assert_configuration_refused(
-        VALID_ENV | {"SEED_USER_PASSWORD": "A-secure-demo-password-2026!"},
-        "SEED_USER_PASSWORD",
-    )
+
+
+def test_render_seed_accepts_password_of_exactly_12_characters():
+    password = "a" * 12
+    env = VALID_ENV | {"SEED_USER_PASSWORD": password}
+
+    assert seed_render_demo.validate_render_seed_configuration(env) == password
 
 
 def test_render_seed_creates_user_and_sample_data_idempotently():
@@ -188,7 +193,8 @@ def test_render_seed_rerun_preserves_seeder_owned_account_data():
 if __name__ == "__main__":
     test_render_seed_rejects_non_production_environment()
     test_render_seed_requires_explicit_enable_flag()
-    test_render_seed_rejects_missing_or_weak_password()
+    test_render_seed_rejects_missing_empty_or_short_password()
+    test_render_seed_accepts_password_of_exactly_12_characters()
     test_render_seed_creates_user_and_sample_data_idempotently()
     test_render_seed_refuses_preclaimed_demo_username_without_changing_data()
     test_render_seed_rerun_preserves_seeder_owned_account_data()

@@ -20,8 +20,7 @@ from app.auth.manager import create_user, find_user_by_username
 SEED_ENABLED_ENV = "RENDER_DEMO_SEED_ENABLED"
 SEED_PASSWORD_ENV = "SEED_USER_PASSWORD"
 DEMO_USERNAME = "demo"
-MIN_PASSWORD_LENGTH = 32
-MIN_UNIQUE_PASSWORD_CHARACTERS = 12
+MIN_PASSWORD_LENGTH = 12
 SEED_MARKER_FILENAME = ".render_demo_seed.json"
 
 
@@ -34,11 +33,10 @@ def validate_render_seed_configuration(environ: dict[str, str] | None = None) ->
         raise RuntimeError(f"Set {SEED_ENABLED_ENV}=true to explicitly enable Render demo seeding.")
 
     password = (env.get(SEED_PASSWORD_ENV) or "").strip()
-    if len(password) < MIN_PASSWORD_LENGTH or len(set(password)) < MIN_UNIQUE_PASSWORD_CHARACTERS:
+    if len(password) < MIN_PASSWORD_LENGTH:
         raise RuntimeError(
-            f"Set {SEED_PASSWORD_ENV} to a unique password of at least "
-            f"{MIN_PASSWORD_LENGTH} characters with at least "
-            f"{MIN_UNIQUE_PASSWORD_CHARACTERS} distinct characters."
+            f"Set {SEED_PASSWORD_ENV} to a password of at least "
+            f"{MIN_PASSWORD_LENGTH} characters."
         )
     return password
 
