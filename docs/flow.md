@@ -84,7 +84,7 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `backend/app/auth/routes.py` | POST `/auth/register`: create user (username, password) → JWT. POST `/auth/login`: validate credentials → JWT. |
+| 1 | `backend/app/auth/routes.py` | POST `/auth/register`: create user (username, password), initialize its credit account from `AI_CREDIT_INITIAL_BALANCE` (default 100), then issue JWT. POST `/auth/login`: validate credentials → JWT. |
 | 2 | `backend/app/common/auth.py` → `require_auth()` | Bearer token = JWT; decode with JWT_SECRET; user_id from `sub`. No API_SECRET. |
 | 3 | GET `/notes/auth-check` | `auth_debug()`: returns auth_ok, header_received, header_length (no secret). |
 

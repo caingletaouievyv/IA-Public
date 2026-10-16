@@ -34,7 +34,7 @@ AI_ENSEMBLE_PROVIDERS = [p.strip() for p in os.getenv("AI_ENSEMBLE_PROVIDERS", "
 AI_KEY = os.getenv("AI_KEY", "")
 
 # Internal product currency. These are AI Credits, not provider tokens.
-AI_CREDIT_INITIAL_BALANCE = int(os.getenv("AI_CREDIT_INITIAL_BALANCE", "10"))
+AI_CREDIT_INITIAL_BALANCE = int(os.getenv("AI_CREDIT_INITIAL_BALANCE", "100"))
 AI_ASK_CREDIT_COST = int(os.getenv("AI_ASK_CREDIT_COST", "1"))
 REWARDED_AD_CREDIT_AMOUNT = int(os.getenv("REWARDED_AD_CREDIT_AMOUNT", "10"))
 AI_UNLIMITED_ROLE = os.getenv("AI_UNLIMITED_ROLE", "admin").strip()

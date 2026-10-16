@@ -13,6 +13,7 @@ if dotenv.exists():
 
 from app.config import APP_ENV
 from app.auth.manager import find_user_by_username, create_user
+from app.credits.manager import get_credit_account
 from app.notes.manager import load_notes, add_note
 
 SEED_USERNAME = (os.getenv("SEED_USERNAME") or "demo").strip()
@@ -88,6 +89,7 @@ def seed_user():
         print(f"User {SEED_USERNAME} already exists (user_id={user['user_id']})")
 
     user_id = user["user_id"]
+    get_credit_account(user_id)
     existing = load_notes(user_id)
     existing_keys = {
         ((note.get("title") or "").strip(), (note.get("category") or "").strip())

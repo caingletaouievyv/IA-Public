@@ -18,6 +18,7 @@ import jwt
 from app import create_app, limiter
 from app import config
 from app.ai import routes as ai_routes
+from app.auth import manager as auth_manager
 from app.credits import manager as credit_manager
 from app.credits import routes as credit_routes
 from app.settings import manager as settings_manager
@@ -31,6 +32,14 @@ class AICreditTests(unittest.TestCase):
         cls.data_dir_patch.start()
         cls.settings_dir_patch = patch.object(settings_manager, "DATA_DIR", cls.temp_dir.name)
         cls.settings_dir_patch.start()
+        cls.auth_dir_patch = patch.object(auth_manager, "DATA_DIR", cls.temp_dir.name)
+        cls.auth_dir_patch.start()
+        cls.users_file_patch = patch.object(
+            auth_manager,
+            "USERS_FILE",
+            os.path.join(cls.temp_dir.name, "users.json"),
+        )
+        cls.users_file_patch.start()
         cls.reward_env_patch = patch.object(credit_routes, "APP_ENV", "test")
         cls.reward_env_patch.start()
         cls.app = create_app()
@@ -40,6 +49,8 @@ class AICreditTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.reward_env_patch.stop()
+        cls.users_file_patch.stop()
+        cls.auth_dir_patch.stop()
         cls.settings_dir_patch.stop()
         cls.data_dir_patch.stop()
         cls.temp_dir.cleanup()
@@ -79,6 +90,70 @@ class AICreditTests(unittest.TestCase):
         account = credit_manager.get_credit_account(self.user_id())
         self.assertEqual(account["credit_balance"], max(0, config.AI_CREDIT_INITIAL_BALANCE))
         self.assertEqual(account["ledger"][0]["reason"], "initial_balance")
+
+    def test_registration_defers_credit_initialization_until_first_credit_access(self):
+        username = f"new-{uuid.uuid4()}"
+        response = self.client.post(
+            "/auth/register",
+            json={"username": username, "password": "test-password"},
+        )
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+
+        user_id = response.get_json()["user_id"]
+        account_path = credit_manager._credits_path(user_id)
+        self.assertFalse(os.path.exists(account_path))
+
+        account = credit_manager.get_credit_account(user_id)
+        self.assertTrue(os.path.exists(account_path))
+        self.assertEqual(account["credit_balance"], max(0, config.AI_CREDIT_INITIAL_BALANCE))
+        self.assertEqual(account["ledger"][0]["reason"], "initial_balance")
+
+    def test_registration_succeeds_when_credit_store_initialization_would_fail(self):
+        username = f"credit-store-failure-{uuid.uuid4()}"
+        with patch.object(
+            credit_manager,
+            "_save_account",
+            side_effect=OSError("credit store unavailable"),
+        ):
+            response = self.client.post(
+                "/auth/register",
+                json={"username": username, "password": "test-password"},
+            )
+
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        user_id = response.get_json()["user_id"]
+        self.assertFalse(os.path.exists(credit_manager._credits_path(user_id)))
+        self.assertIsNotNone(auth_manager.find_user_by_id(user_id))
+
+        login = self.client.post(
+            "/auth/login",
+            json={"username": username, "password": "test-password"},
+        )
+        self.assertEqual(login.status_code, 200, login.get_data(as_text=True))
+
+        account = credit_manager.get_credit_account(user_id)
+        self.assertEqual(account["credit_balance"], max(0, config.AI_CREDIT_INITIAL_BALANCE))
+
+    def test_configured_initial_balance_applies_to_uninitialized_accounts(self):
+        user_id = self.user_id()
+        with patch.object(credit_manager, "AI_CREDIT_INITIAL_BALANCE", 137):
+            account = credit_manager.get_credit_account(user_id)
+
+        self.assertEqual(account["credit_balance"], 137)
+        self.assertEqual(account["ledger"][0]["amount"], 137)
+
+    def test_existing_credit_account_is_not_changed_by_initial_balance_setting(self):
+        user_id = self.user_id()
+        with patch.object(credit_manager, "AI_CREDIT_INITIAL_BALANCE", 41):
+            credit_manager.get_credit_account(user_id)
+        credit_manager.reserve_credits(user_id, 7, "test_spend", "existing-account")
+        before = credit_manager.get_credit_account(user_id)
+
+        with patch.object(credit_manager, "AI_CREDIT_INITIAL_BALANCE", 100):
+            after = credit_manager.get_credit_account(user_id)
+
+        self.assertEqual(after, before)
+        self.assertEqual(after["credit_balance"], 34)
 
     def test_app_startup_rejects_missing_or_unsafe_jwt_secret(self):
         for secret in ("", "change-me-in-production", "a" * 32):
