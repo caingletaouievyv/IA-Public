@@ -115,12 +115,12 @@ Production must not grant credits from this unverified callback. A future produc
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `backend/run.py` | Run from repo root: `cd backend && python run.py`. Loads `.env` from repo root and acquires the local data-directory process lock before creating the Flask app. Gunicorn's supported `run:app` target imports the same guarded module. |
+| 1 | `backend/run.py` | Run from repo root: `cd backend && python run.py`. Loads `.env` from the repository root and creates the Flask app; direct execution starts Flask's development server. |
 | 2 | `backend/app/__init__.py` → `create_app()` | Serves from `frontend/dist/` if built, else `frontend/`. Route `/` → `index.html`. |
 | 3 | `frontend/` | React SPA. Public pages at `/`, `/privacy`, `/terms`, `/contact`; auth at `/login` and `/register`; authenticated pages at `/ask`, `/manage`, `/debug`, `/settings`. Manage reuses Notes and History for organization; Ask retains their selection workflows. Auth: JWT in localStorage; 401 → clear token and show login. Proxy: /ai, /auth, /notes, /files, /settings → backend. |
 | 4 | `frontend/src/api.js` | `login()`, `register()`, `ask()`, `listNotes()`, `checkNotesAuth()`, `debugContext()`, `getSettings()`, `putSettings()`. Token from localStorage; no API secret. |
 
-The supported Gunicorn command is `gunicorn --config gunicorn.conf.py run:app` from `backend/`. Its configuration requires one worker and preload so the Gunicorn master imports `run:app` and owns the same process-lifetime lock. Do not point multiple instances at the same data directory; filesystem and same-process JSON transaction/thread-safety limitations remain.
+The repository currently has no `gunicorn.conf.py`, guarded WSGI entrypoint, or cross-process lock. `backend/data/` is local JSON persistence with in-process safeguards only; it is not transactional across multiple workers or instances. Treat the documented `python run.py` command as local development, not proof of production multi-worker safety.
 
 ---
 
