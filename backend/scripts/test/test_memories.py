@@ -1027,6 +1027,22 @@ class MemoryFeatureTests(unittest.TestCase):
                 self.assertEqual(memories[0]["text"], "The user wants the assistant to be called 8:38.")
                 self.assertEqual(memories[0]["key"], "assistant.name")
 
+    def test_standalone_temporary_name_instructions_skip_extraction_provider(self):
+        messages = (
+            "For this conversation, call yourself Temporary.",
+            "Use Temporary as your name for this answer.",
+            "Let's try calling you Temporary just for now.",
+        )
+        for message in messages:
+            with self.subTest(message=message):
+                user_id = self.user_id()
+                with patch.object(extraction, "call_ai") as provider:
+                    status = extraction.extract_and_save(user_id, message)
+
+                self.assertEqual(status, "unchanged")
+                provider.assert_not_called()
+                self.assertEqual(manager.list_memories(user_id), [])
+
     def test_assistant_name_change_updates_legacy_record_without_touching_other_memories(self):
         user_id = self.user_id()
         legacy_name = {
@@ -1136,23 +1152,13 @@ class MemoryFeatureTests(unittest.TestCase):
             "Let's try calling you Temporary just for now.",
         )
         for message in guarded_temporary_messages:
-            output = {
-                "upserts": [{
-                    "id": current["id"],
-                    "text": "The user wants the assistant to be called Temporary.",
-                    "evidence": message,
-                    "intent": "persistent_preference",
-                    "key": "assistant.name",
-                }],
-                "delete_ids": [],
-            }
             with self.subTest(message=message), patch.object(
-                extraction, "call_ai", return_value=json.dumps(output)
+                extraction, "call_ai"
             ) as provider:
                 status = extraction.extract_and_save(user_id, message)
 
             self.assertEqual(status, "unchanged")
-            provider.assert_called_once()
+            provider.assert_not_called()
             self.assertEqual(manager.list_memories(user_id), [current])
 
         cases = (
@@ -1257,7 +1263,7 @@ class MemoryFeatureTests(unittest.TestCase):
                 {
                     "id": None,
                     "text": "The user prefers concise answers.",
-                    "evidence": "I prefer concise answers.",
+                    "evidence": "I prefer concise answers",
                     "intent": "persistent_preference",
                 },
             ],
@@ -1273,6 +1279,39 @@ class MemoryFeatureTests(unittest.TestCase):
         self.assertEqual(
             [memory["text"] for memory in manager.list_memories(user_id)],
             ["The user prefers concise answers."],
+        )
+
+    def test_compound_durable_facts_are_extracted_independently_with_one_provider_call(self):
+        user_id = self.user_id()
+        message = "I prefer concise answers, and I like examples."
+        output = {
+            "upserts": [
+                {
+                    "id": None,
+                    "text": "The user prefers concise answers.",
+                    "evidence": "I prefer concise answers",
+                    "intent": "persistent_preference",
+                },
+                {
+                    "id": None,
+                    "text": "The user likes examples.",
+                    "evidence": "I like examples.",
+                    "intent": "persistent_preference",
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(
+            extraction, "call_ai", return_value=json.dumps(output)
+        ) as provider:
+            status = extraction.extract_and_save(user_id, message)
+
+        self.assertEqual(status, "saved")
+        provider.assert_called_once()
+        self.assertEqual(
+            {memory["text"] for memory in manager.list_memories(user_id)},
+            {"The user prefers concise answers.", "The user likes examples."},
         )
 
     def test_model_classified_quoted_or_hypothetical_name_mentions_do_not_update(self):
@@ -1369,7 +1408,7 @@ class MemoryFeatureTests(unittest.TestCase):
                 extraction.extract_and_save(user_id, temporary_message),
                 "unchanged",
             )
-        provider.assert_called_once()
+        provider.assert_not_called()
         self.assertEqual(manager.list_memories(user_id), [updated])
 
     def test_name_guard_distinguishes_reported_instruction_from_direct_request(self):
@@ -1485,7 +1524,7 @@ class MemoryFeatureTests(unittest.TestCase):
                     status = extraction.extract_and_save(user_id, message)
 
                 self.assertEqual(status, "unchanged")
-                self.assertEqual(provider.called, message.startswith("For this conversation"))
+                provider.assert_not_called()
                 self.assertEqual(manager.list_memories(user_id), [])
 
     def test_compound_message_saves_durable_fact_but_not_temporary_name(self):

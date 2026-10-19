@@ -58,6 +58,8 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 `backend/app/memories/extraction.py` uses the existing AI provider client. Its system prompt treats conversation/memory fields as untrusted data, while the parser independently checks JSON shape, record length, exact evidence excerpts, known user-owned IDs, and explicit current-message forget intent. It caps input/output and returns statuses without text contents. Recognized credentials/tokens/private keys are rejected regardless of user intent; selected sensitive categories are skipped unless explicitly requested. Extraction errors are logged without record contents and converted to an unavailable status so the already-generated answer succeeds.
 
+Supported standalone persistent assistant-name updates and recognized standalone temporary name commands take deterministic fast paths. Questions and ordinary requests that are confidently non-memory also exit without extraction. Ambiguous or compound messages use one structured extraction request; returned candidates are checked independently so temporary name instructions do not block unrelated durable candidates. These fast paths are limited to clear cases; non-obvious intent depends on model output and the existing evidence and intent validation.
+
 ---
 
 ## 6. POST /ai/debug/context (inspect Notes context for a question)

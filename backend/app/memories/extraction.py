@@ -150,6 +150,12 @@ _ASSISTANT_NAME_REFERENCE = re.compile(
     r"go\s+by|use\s+.{1,80}\s+as\s+your\s+name)\b",
     re.IGNORECASE,
 )
+_TEMPORARY_NAME_COMMAND = re.compile(
+    r"^(?:please\s+)?(?:(?:call\s+(?:yourself|you)|"
+    r"let's\s+try\s+calling\s+you)\s+[\w][\w .'-]*|"
+    r"use\s+[\w][\w .'-]*\s+as\s+your\s+name)[.!?]*$",
+    re.IGNORECASE,
+)
 _NAME_SCOPE_CLAUSE_BOUNDARY = re.compile(
     r"[.!?;\n]|\b(?:but|however|although|whereas)\b|"
     r"\b(?:and|but|however|although|whereas)\b",
@@ -211,6 +217,17 @@ def _is_temporary_scope(message: str) -> bool:
         _TEMPORARY_SCOPE.search(clause) and _ASSISTANT_NAME_REFERENCE.search(clause)
         for clause in clauses
     )
+
+
+def _is_obvious_temporary_name_instruction(message: str) -> bool:
+    scopes = list(_TEMPORARY_SCOPE.finditer(message))
+    if len(scopes) != 1:
+        return False
+    scope = scopes[0]
+    instruction = message[:scope.start()] + message[scope.end():]
+    instruction = instruction.strip(" \t,;:-.!?")
+    instruction = re.sub(r"\b(?:just|only)\s*$", "", instruction, flags=re.IGNORECASE)
+    return bool(_TEMPORARY_NAME_COMMAND.fullmatch(instruction.strip()))
 
 
 def _is_nonassertive_name_discussion(message: str) -> bool:
@@ -563,9 +580,18 @@ def extract_and_save(user_id: str, current_message: str, history_messages: list 
         return "unchanged"
 
     assistant_name = _assistant_name_preference(current_message)
-    if assistant_name and not _is_temporary_scope(current_message):
-        if _is_nonassertive_name_discussion(current_message):
-            return "unchanged"
+    if (
+        assistant_name
+        and len(
+            [
+                clause
+                for clause in _NAME_SCOPE_CLAUSE_BOUNDARY.split(current_message)
+                if clause.strip()
+            ]
+        ) == 1
+        and not _is_temporary_scope(current_message)
+        and not _is_nonassertive_name_discussion(current_message)
+    ):
         text = validate_memory_text(
             f"The user wants the assistant to be called {assistant_name}.",
         )
@@ -574,6 +600,9 @@ def extract_and_save(user_id: str, current_message: str, history_messages: list 
             [{"text": text, "key": "assistant.name"}],
         )
         return _change_status(changes)
+
+    if _is_obvious_temporary_name_instruction(current_message):
+        return "unchanged"
 
     memories = list_memories(user_id)
     revocation_target = _revocation_target(current_message)
@@ -656,7 +685,7 @@ def extract_and_save(user_id: str, current_message: str, history_messages: list 
         if is_assistant_name and (
             not _contains_evidence(evidence, [current_message])
             or intent not in {"persistent_preference", "preference_update", "explicit_remember"}
-            or _is_temporary_scope(current_message)
+            or _is_temporary_scope(evidence)
             or _is_nonassertive_name_discussion(current_message)
         ):
             continue
