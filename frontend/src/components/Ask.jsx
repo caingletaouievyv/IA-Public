@@ -789,7 +789,7 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
               onClick={() => setFlashcardsOpen(true)}
             >
               <strong>Flashcards</strong>
-              <span>Make editable cards from selected notes.</span>
+              <span>Browse saved decks or create cards from notes.</span>
             </button>
           </div>
         </details>

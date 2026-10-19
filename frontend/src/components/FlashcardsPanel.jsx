@@ -216,11 +216,9 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
   };
 
   const removeCard = (cardId) => {
-    setDraft((cards) => {
-      const next = cards.filter((card) => card.id !== cardId);
-      setCurrentCardIndex((index) => Math.min(index, Math.max(0, next.length - 1)));
-      return next;
-    });
+    const next = draft.filter((card) => card.id !== cardId);
+    setDraft(next);
+    setCurrentCardIndex((index) => Math.min(index, Math.max(0, next.length - 1)));
     setSuccess(null);
   };
 
