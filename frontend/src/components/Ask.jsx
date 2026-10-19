@@ -11,6 +11,8 @@ import {
   setSelectedNoteIds,
 } from "../activeConversation";
 import AskContextIcon from "./AskContextIcon";
+import AskOverlay from "./AskOverlay";
+import FlashcardsPanel from "./FlashcardsPanel";
 import {
   DEFAULT_CONTEXT_MODES,
   DEFAULT_SHOW_CONTEXT_SOURCE_LABELS,
@@ -253,6 +255,8 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
     return savedModes;
   });
   const [question, setQuestion] = useState("");
+  const [flashcardsOpen, setFlashcardsOpen] = useState(false);
+  const [flashcardsBusy, setFlashcardsBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [notes, setNotes] = useState([]);
@@ -775,7 +779,35 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
         </section>
 
       </form>
+      {!historyFocused && (
+        <details className="ask-shortcuts-section">
+          <summary>Shortcuts</summary>
+          <div className="ask-shortcuts-section__content">
+            <button
+              type="button"
+              className="button-subtle flashcards-shortcut"
+              onClick={() => setFlashcardsOpen(true)}
+            >
+              <strong>Flashcards</strong>
+              <span>Make editable cards from selected notes.</span>
+            </button>
+          </div>
+        </details>
+      )}
       {error && <div className="out err">{error}</div>}
+      {flashcardsOpen && (
+        <AskOverlay
+          title="Flashcards"
+          onClose={() => setFlashcardsOpen(false)}
+          showManage={false}
+          canClose={!flashcardsBusy}
+        >
+          <FlashcardsPanel
+            onClose={() => setFlashcardsOpen(false)}
+            onBusyChange={setFlashcardsBusy}
+          />
+        </AskOverlay>
+      )}
     </section>
   );
 }

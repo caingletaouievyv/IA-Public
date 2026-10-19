@@ -1196,6 +1196,200 @@ button.secondary:focus-visible,
   gap: 0.35rem;
   margin-bottom: 0.65rem;
 }
+.ask-shortcuts-section {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.ask-shortcuts-section > summary {
+  padding: 0.65rem 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+.ask-shortcuts-section > summary:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.ask-shortcuts-section__content {
+  padding: 0 0.65rem 0.65rem;
+}
+.flashcards-shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+}
+.flashcards-shortcut span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.flashcards-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.flashcards-panel h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.flashcards-panel h4 {
+  margin: 0.75rem 0 0.4rem;
+  font-size: 0.9rem;
+}
+.flashcards-panel label {
+  display: block;
+  margin: 0.35rem 0 0.25rem;
+}
+.flashcards-panel input:not([type="checkbox"]),
+.flashcards-panel select,
+.flashcards-panel textarea {
+  width: 100%;
+}
+.flashcards-panel textarea {
+  min-height: 5rem;
+}
+.flashcards-stage-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.flashcards-help {
+  margin: 0.2rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.flashcards-deck-list,
+.flashcards-note-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 15rem;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.flashcards-deck-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.flashcards-deck-row:last-child,
+.flashcards-note-list li:last-child {
+  border-bottom: 0;
+}
+.flashcards-deck-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.flashcards-deck-info strong {
+  overflow-wrap: anywhere;
+}
+.flashcards-deck-info span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.flashcards-deck-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.flashcards-delete-prompt {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.flashcards-note-list li {
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+.flashcards-note-row {
+  display: flex !important;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.4rem;
+  margin: 0 !important;
+  padding: 0.35rem 0.45rem;
+  cursor: pointer;
+}
+.flashcards-note-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.flashcards-note-row__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flashcards-note-row .badge {
+  margin-left: auto;
+}
+.flashcards-search {
+  margin-bottom: 0.45rem;
+}
+.flashcards-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.55rem 0.75rem;
+}
+.flashcards-options__instructions {
+  grid-column: 1 / -1;
+}
+.flashcards-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.flashcards-actions--footer {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+.flashcards-actions__right {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+.flashcards-review {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.flashcards-review__navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+.flashcards-review__navigation span {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+.flashcards-review__card {
+  padding: 0.75rem;
+}
+.flashcards-review__card textarea {
+  min-height: 6rem;
+}
 .ask-overlay {
   position: fixed;
   inset: 0;
@@ -2436,6 +2630,33 @@ button.secondary:focus-visible,
 
   .ask-overlay__body {
     padding: 0.65rem;
+  }
+
+  .flashcards-stage-heading,
+  .flashcards-deck-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .flashcards-deck-actions {
+    justify-content: flex-start;
+  }
+
+  .flashcards-options {
+    grid-template-columns: 1fr;
+  }
+
+  .flashcards-options__instructions {
+    grid-column: auto;
+  }
+
+  .flashcards-actions--footer {
+    align-items: stretch;
+  }
+
+  .flashcards-actions__right {
+    width: 100%;
+    margin-left: 0;
   }
 
   .app-fullpage {

@@ -24,6 +24,16 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 ---
 
+## Flashcards shortcut and generation
+
+The Ask page's collapsible Shortcuts section opens a centered accessible overlay without navigation. The initial view lists saved deck Notes from the authenticated user's existing Notes store. **New Flashcards** opens the first step, where the user can search and select up to 20 non-history, non-deck Notes; the second step collects generation options, and the third presents one editable card at a time with navigation and removal controls. Back navigation retains the current selections, options, and draft edits.
+
+Generation sends only explicitly selected note IDs with validated options to `POST /ai/flashcards/generate`. The backend resolves every note ID using the authenticated user's identity, rejects unavailable/history notes, treats notes and extra instructions as untrusted prompt data, and validates the provider's JSON and exact requested card count. The endpoint uses the configured AI provider and reserves the normal configured AI Credit cost; provider failures or malformed output refund the reservation.
+
+Generated cards remain an editable client-side draft. Only **Save approved deck** creates a regular Note in the user's existing Notes store (category and tag `flashcards`, JSON card content). Editing a saved deck updates that selected Note only after explicit **Save changes**; deleting requires confirmation and calls the existing user-scoped Notes delete API for that deck ID. Saving or deleting prevents the overlay from closing while the request is in progress. No separate deck store is used.
+
+---
+
 ## 2. POST /notes (create note)
 
 | Step | Where | What to look at |

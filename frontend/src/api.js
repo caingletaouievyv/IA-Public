@@ -111,6 +111,20 @@ export async function ask(question, noteIds = null, messages = null, noteContext
   return handleResponse(res, data);
 }
 
+export async function generateFlashcards(options) {
+  const body = {
+    ...options,
+    request_id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+  };
+  const res = await fetch(`${BASE}/ai/flashcards/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
 export async function listMemories() {
   const res = await fetch(`${BASE}/memories/`, { headers: { Authorization: `Bearer ${requireToken()}` } });
   const data = await readJsonResponse(res);

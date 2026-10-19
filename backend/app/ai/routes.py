@@ -1,5 +1,5 @@
 # IA/backend/app/ai/routes.py
-# AI routes: /ask, /estimate_tokens, /debug/context. Auth required (Phase 8); user_id scopes notes.
+# AI routes: Ask, flashcard generation, estimates, and context debugging. Auth required; user_id scopes notes.
 
 import time
 import uuid
@@ -8,6 +8,10 @@ from app import limiter, logger
 from app.common.auth import require_auth
 from app.auth.manager import get_user_role
 from app.ai.engine import ask, get_token_estimate
+from app.ai.flashcards import (
+    generate_flashcards,
+    validate_flashcard_request,
+)
 from app.config import AI_ASK_CREDIT_COST, AI_UNLIMITED_ROLE
 from app.credits.manager import (
     InsufficientCreditsError,
@@ -145,6 +149,62 @@ def ask_ai():
             refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_ask_refund", operation_id)
         release_operation(user_id, operation_id)
         return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/flashcards/generate", methods=["POST"])
+@limiter.limit("10 per minute")
+def generate_flashcards_route():
+    user_id, auth_err = require_auth()
+    if auth_err:
+        return auth_err
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
+    try:
+        validate_flashcard_request(data)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    operation_id = _operation_id(data)
+    operation = claim_operation(user_id, operation_id)
+    if operation["status"] == "completed":
+        return jsonify(operation["result"]), 200
+    if operation["status"] == "pending":
+        return jsonify({"error": "operation_in_progress"}), 409
+
+    reservation = None
+    if get_user_role(user_id) != AI_UNLIMITED_ROLE:
+        try:
+            reservation = reserve_credits(
+                user_id,
+                AI_ASK_CREDIT_COST,
+                "ai_flashcards",
+                operation_id,
+            )
+        except InsufficientCreditsError as error:
+            release_operation(user_id, operation_id)
+            return jsonify({
+                "error": "insufficient_ai_credits",
+                "message": "Not enough AI Credits",
+                "credit_balance": error.balance,
+                "credits_required": error.required,
+            }), 402
+
+    try:
+        result = {"cards": generate_flashcards(user_id, data)}
+        complete_operation(user_id, operation_id, result)
+        return jsonify(result), 200
+    except ValueError as error:
+        if reservation and reservation["charged"]:
+            refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_flashcards_refund", operation_id)
+        release_operation(user_id, operation_id)
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        if reservation and reservation["charged"]:
+            refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_flashcards_refund", operation_id)
+        release_operation(user_id, operation_id)
+        logger.warning("Flashcard generation failed (error_type=%s)", type(error).__name__)
+        return jsonify({"error": "Flashcard generation failed"}), 502
+
 
 @bp.route("/estimate_tokens", methods=["POST"])
 def estimate_tokens_route():

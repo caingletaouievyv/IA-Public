@@ -69,6 +69,8 @@ python -m scripts.test.test_settings_preferences
 
 `test_seed_render_demo.py` uses isolated temporary JSON stores to verify production environment and enable-flag rejection, missing/weak password rejection, refusal and non-modification of a pre-claimed `demo` account, marked-account rerun idempotence, sample-note creation, and preservation of the seeded account's password, role, settings, credit balance, and customized notes.
 
+`python -m scripts.test.test_flashcards` verifies authenticated generation, selected-note ownership, request/card validation, provider grounding input, and credit refund on malformed provider output. Frontend component tests cover the Ask Shortcuts placement/toggle, saved deck listing/open/edit/delete confirmation, the complete new-deck flow, searchable source selection and the 20-note limit, back-navigation state retention, one-card review/edit/navigation/removal, generation without automatic persistence, explicit create/update, and close prevention while saving.
+
 `test_memories.py` also verifies extraction routing with mocked provider calls: supported standalone persistent assistant-name updates and recognized standalone temporary name commands skip extraction, while ambiguous and compound messages use the structured extraction request. Compound durable candidates are checked independently, and temporary, quoted, hypothetical, reported, and negated assistant-name candidates are rejected. These tests establish deterministic routing and validation behavior, not semantic accuracy from a live provider.
 
 `test_selected_notes_context.py` is pytest-style and can be run with `python -m pytest scripts/test/test_selected_notes_context.py` if pytest is installed; pytest is not listed in `requirements.txt`.

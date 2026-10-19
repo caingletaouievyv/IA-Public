@@ -1,5 +1,5 @@
 // IA/frontend/src/components/AskOverlay.jsx
-// Accessible modal shell for Ask's conversation and note selectors.
+// Accessible modal shell for Ask and Flashcards overlays.
 
 import { useEffect, useId, useRef } from "react";
 
@@ -10,6 +10,7 @@ export default function AskOverlay({
   isManaging,
   onManage,
   showManage = true,
+  canClose = true,
   closeText = "Close",
   children,
 }) {
@@ -28,7 +29,7 @@ export default function AskOverlay({
       if (event.key === "Escape") {
         event.preventDefault();
         if (onEscapeRef.current?.()) return;
-        onClose();
+        if (canClose) onClose();
         return;
       }
 
@@ -58,11 +59,15 @@ export default function AskOverlay({
         previouslyFocused.focus();
       }
     };
-  }, [onClose]);
+  }, [canClose, onClose]);
+
+  const requestClose = () => {
+    if (canClose) onClose();
+  };
 
   return (
     <div className="ask-overlay">
-      <div className="ask-overlay__backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="ask-overlay__backdrop" onClick={requestClose} aria-hidden="true" />
       <section
         ref={panelRef}
         className="ask-overlay__panel"
@@ -82,7 +87,8 @@ export default function AskOverlay({
             <button
               type="button"
               className="button-subtle ask-overlay__close"
-              onClick={onClose}
+              onClick={requestClose}
+              disabled={!canClose}
               aria-label={`Close ${title}`}
             >
               {closeText}

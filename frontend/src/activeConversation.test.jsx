@@ -62,6 +62,12 @@ let noteGetDelays;
 let delayedNoteResolves;
 let nextId;
 let aiRequests;
+let flashcardRequests;
+let flashcardResponse;
+let flashcardRequestGate;
+let flashcardRequestError;
+let noteSaveGate;
+let createdNotes;
 
 function installApiMock() {
   fetchMock = vi.fn(async (input, options = {}) => {
@@ -95,8 +101,10 @@ function installApiMock() {
       return jsonResponse([]);
     }
     if (url.pathname === "/notes/" && method === "POST") {
+      if (noteSaveGate) await noteSaveGate.promise;
       const note = { ...JSON.parse(options.body), id: `new-${nextId++}` };
       notes.set(note.id, note);
+      createdNotes.push(note);
       return jsonResponse(note, 201);
     }
     if (url.pathname.startsWith("/notes/")) {
@@ -127,6 +135,14 @@ function installApiMock() {
       aiRequests.push(request);
       return jsonResponse({ answer: `Answer to ${request.question}`, memory_status: "disabled" });
     }
+    if (url.pathname === "/ai/flashcards/generate" && method === "POST") {
+      flashcardRequests.push(JSON.parse(options.body));
+      if (flashcardRequestGate) await flashcardRequestGate.promise;
+      if (flashcardRequestError) {
+        return jsonResponse({ error: "Flashcard generation failed" }, 502);
+      }
+      return jsonResponse(flashcardResponse);
+    }
     if (url.pathname === "/auth/login" && method === "POST") {
       return jsonResponse({ token: tokenFor("user-2"), user_id: "user-2" });
     }
@@ -155,6 +171,17 @@ async function navigateBetweenPages(user) {
   await user.click(screen.getByRole("link", { name: "Manage" }));
   expect(await screen.findByRole("heading", { name: "Manage saved content" })).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Ask" }));
+}
+
+async function openFlashcards(user) {
+  await user.click(screen.getByText("Shortcuts"));
+  await user.click(screen.getByRole("button", { name: /Flashcards/ }));
+  return screen.findByRole("dialog", { name: "Flashcards" });
+}
+
+async function startNewFlashcards(user) {
+  await openFlashcards(user);
+  await user.click(await screen.findByRole("button", { name: "New Flashcards" }));
 }
 
 function getNotesModeButton(mode) {
@@ -199,6 +226,17 @@ beforeEach(() => {
   delayedNoteResolves = new Map();
   nextId = 1;
   aiRequests = [];
+  flashcardRequests = [];
+  flashcardResponse = {
+    cards: [
+      { question: "What is photosynthesis?", answer: "The process plants use to make food." },
+      { question: "What does chlorophyll do?", answer: "It absorbs light for photosynthesis." },
+    ],
+  };
+  flashcardRequestGate = null;
+  flashcardRequestError = false;
+  noteSaveGate = null;
+  createdNotes = [];
   installApiMock();
 });
 
@@ -753,5 +791,284 @@ describe("active conversation restoration", () => {
     expect(await screen.findByRole("textbox", { name: "Question" })).toBeTruthy();
     expect(sessionStorage.getItem("ia:selected-note-ids:user-2")).toBeNull();
     expect(sessionStorage.getItem(NOTE_SELECTION_KEY)).toBe(JSON.stringify(["note-a"]));
+  });
+
+  it("opens saved decks from Shortcuts and creates a deck through explicit review approval", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+
+    const shortcuts = screen.getByText("Shortcuts");
+    const shortcutsSection = shortcuts.closest("details");
+    expect(shortcutsSection.open).toBe(false);
+    expect(shortcutsSection.previousElementSibling).toBe(screen.getByRole("button", { name: "Ask" }).closest("form"));
+    await user.click(shortcuts);
+    expect(shortcutsSection.open).toBe(true);
+    await user.click(screen.getByRole("button", { name: /Flashcards/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Flashcards" });
+    expect(dialog).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Saved decks" })).toBeTruthy();
+    expect(screen.getByText(/No saved flashcard decks yet/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "New Flashcards" }));
+    expect(screen.getByRole("heading", { name: /Step 1 — Select source notes/ })).toBeTruthy();
+
+    const noteCheckbox = await screen.findByRole("checkbox", { name: /Study note/ });
+    await user.click(noteCheckbox);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("heading", { name: /Step 2 — Generation options/ })).toBeTruthy();
+    await user.clear(screen.getByLabelText("Number of cards"));
+    await user.type(screen.getByLabelText("Number of cards"), "2");
+    await user.selectOptions(screen.getByLabelText("Difficulty"), "Hard");
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("checkbox", { name: /Study note/ }).checked).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByLabelText("Number of cards").value).toBe("2");
+    expect(screen.getByLabelText("Difficulty").value).toBe("Hard");
+
+    const generationGate = deferred();
+    flashcardRequestGate = generationGate;
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+    expect(screen.getByRole("button", { name: "Generating…" }).disabled).toBe(true);
+    await act(async () => {
+      generationGate.resolve();
+    });
+
+    expect(await screen.findByRole("heading", { name: /Step 3 — Review generated cards/ })).toBeTruthy();
+    expect(screen.getByText("Card 1 of 2")).toBeTruthy();
+    expect(flashcardRequests).toHaveLength(1);
+    expect(flashcardRequests[0].note_ids).toEqual(["note-a"]);
+    expect(flashcardRequests[0].card_count).toBe(2);
+    expect(flashcardRequests[0].difficulty).toBe("Hard");
+    expect(createdNotes).toHaveLength(0);
+
+    await user.clear(screen.getByLabelText("Question / front"));
+    await user.type(screen.getByLabelText("Question / front"), "Edited question");
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByLabelText("Number of cards").value).toBe("2");
+    expect(screen.getByLabelText("Difficulty").value).toBe("Hard");
+    await user.click(screen.getByRole("button", { name: "Review draft" }));
+    expect(screen.getByLabelText("Question / front").value).toBe("Edited question");
+    await user.click(screen.getByRole("button", { name: "Next card" }));
+    expect(screen.getByText("Card 2 of 2")).toBeTruthy();
+    await user.clear(screen.getByLabelText("Answer / back"));
+    await user.type(screen.getByLabelText("Answer / back"), "Edited answer");
+    await user.click(screen.getByRole("button", { name: "Previous card" }));
+    expect(screen.getByLabelText("Question / front").value).toBe("Edited question");
+    await user.click(screen.getByRole("button", { name: "Next card" }));
+    await user.click(screen.getByRole("button", { name: "Remove this card" }));
+    expect(screen.getByText("Card 1 of 1")).toBeTruthy();
+    expect(screen.getByLabelText("Question / front").value).toBe("Edited question");
+    expect(createdNotes).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Save approved deck" }));
+    await screen.findByText("Approved deck saved to Notes.");
+    expect(createdNotes).toHaveLength(1);
+    expect(createdNotes[0].category).toBe("flashcards");
+    expect(JSON.parse(createdNotes[0].content).cards).toEqual([
+      {
+        question: "Edited question",
+        answer: "The process plants use to make food.",
+      },
+    ]);
+    expect(screen.getByText("Approved deck saved to Notes.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+
+  it("searches source notes and enforces the 20-note selection limit", async () => {
+    const user = userEvent.setup();
+    for (let index = 1; index <= 21; index += 1) {
+      const id = `limit-note-${index}`;
+      notes.set(id, {
+        id,
+        title: `Limit note ${index}`,
+        category: "study",
+        content: `Source ${index}`,
+        tags: [],
+      });
+    }
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+    await startNewFlashcards(user);
+
+    await user.type(screen.getByRole("searchbox", { name: "Search notes" }), "Limit note");
+    for (let index = 1; index <= 20; index += 1) {
+      await user.click(await screen.findByRole("checkbox", {
+        name: new RegExp(`^Limit note ${index}(?:$|\\s)`),
+      }));
+    }
+
+    expect(screen.getByRole("status").textContent).toMatch(/select up to 20 notes/i);
+    const twentyFirst = screen.getByRole("checkbox", { name: /Limit note 21/ });
+    expect(twentyFirst.disabled).toBe(true);
+    await user.click(twentyFirst);
+    expect(twentyFirst.checked).toBe(false);
+
+    await user.click(screen.getByRole("checkbox", { name: /^Limit note 1(?:$|\s)/ }));
+    expect(screen.getByRole("checkbox", { name: /Limit note 21/ }).disabled).toBe(false);
+    expect(screen.getByRole("checkbox", { name: /^Limit note 2(?:$|\s)/ }).checked).toBe(true);
+  });
+
+  it("opens, edits, and deletes only the selected saved flashcard deck", async () => {
+    const user = userEvent.setup();
+    const deckA = {
+      id: "deck-a",
+      title: "Biology cards",
+      category: "flashcards",
+      tags: ["flashcards"],
+      content: JSON.stringify({ version: 1, cards: [{ question: "Q1", answer: "A1" }] }),
+    };
+    const deckB = {
+      id: "deck-b",
+      title: "History cards",
+      category: "flashcards",
+      tags: ["flashcards"],
+      content: JSON.stringify({ version: 1, cards: [{ question: "Q2", answer: "A2" }] }),
+    };
+    const taggedNote = {
+      id: "ordinary-tagged-note",
+      title: "Ordinary tagged note",
+      category: "study",
+      tags: ["flashcards"],
+      content: "This is a regular note, not a deck.",
+    };
+    notes.set(deckA.id, deckA);
+    notes.set(deckB.id, deckB);
+    notes.set(taggedNote.id, taggedNote);
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+    await openFlashcards(user);
+
+    expect(screen.queryByText("Ordinary tagged note")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit deck: Ordinary tagged note" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete deck: Ordinary tagged note" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Open deck: Biology cards" }));
+    expect(screen.getByRole("heading", { name: "Saved deck" })).toBeTruthy();
+    expect(screen.getByLabelText("Question / front").value).toBe("Q1");
+    expect(screen.getByLabelText("Question / front").readOnly).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Edit deck" }));
+    await user.clear(screen.getByLabelText("Deck title"));
+    await user.type(screen.getByLabelText("Deck title"), "Biology review");
+    await user.clear(screen.getByLabelText("Question / front"));
+    await user.type(screen.getByLabelText("Question / front"), "Updated question");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Deck changes saved.")).toBeTruthy();
+    expect(notes.get("deck-a").title).toBe("Biology review");
+    expect(JSON.parse(notes.get("deck-a").content).cards[0].question).toBe("Updated question");
+
+    await user.click(screen.getByRole("button", { name: "Back to decks" }));
+    await user.click(screen.getByRole("button", { name: "Delete deck: Biology review" }));
+    expect(screen.getByText("Delete this deck?")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() => expect(notes.has("deck-a")).toBe(false));
+    expect(notes.has("deck-b")).toBe(true);
+    expect(notes.has(taggedNote.id)).toBe(true);
+  });
+
+  it("blocks every panel close path while saving, then permits closing after save completes", async () => {
+    const user = userEvent.setup();
+    const saveGate = deferred();
+    noteSaveGate = saveGate;
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+    await startNewFlashcards(user);
+    await user.click(await screen.findByRole("checkbox", { name: /Study note/ }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.clear(screen.getByLabelText("Number of cards"));
+    await user.type(screen.getByLabelText("Number of cards"), "2");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+    await screen.findByText("Card 1 of 2");
+
+    await user.click(screen.getByRole("button", { name: "Save approved deck" }));
+    expect(screen.getByRole("button", { name: "Saving…" }).disabled).toBe(true);
+    const closeButton = screen.getByRole("button", { name: "Close Flashcards" });
+    expect(closeButton.disabled).toBe(true);
+    await user.click(closeButton);
+    await user.click(document.querySelector(".ask-overlay__backdrop"));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Flashcards" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel" }).disabled).toBe(true);
+    expect(createdNotes).toHaveLength(0);
+
+    await act(async () => {
+      saveGate.resolve();
+    });
+    expect(await screen.findByText("Approved deck saved to Notes.")).toBeTruthy();
+    expect(createdNotes).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Close Flashcards" }).disabled).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Back to decks" }));
+    await user.click(screen.getByRole("button", { name: "Close Flashcards" }));
+    expect(screen.queryByRole("dialog", { name: "Flashcards" })).toBeNull();
+  });
+
+  it("shows an empty saved-deck state and permits canceling source selection", async () => {
+    const user = userEvent.setup();
+    notes = new Map([...notes].filter(([, note]) => note.category === "_history"));
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+    await openFlashcards(user);
+    expect(await screen.findByText(/No saved flashcard decks yet/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "New Flashcards" }));
+    expect(await screen.findByText(/No saved notes are available/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next" }).disabled).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("heading", { name: "Saved decks" })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Flashcards" })).toBeNull();
+    expect(createdNotes).toHaveLength(0);
+  });
+
+  it("shows a loading state while saved decks are being fetched", async () => {
+    const user = userEvent.setup();
+    const notesGate = deferred();
+    notesListGate = notesGate;
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+    await openFlashcards(user);
+    expect((await screen.findByRole("status")).textContent).toBe("Loading saved decks…");
+
+    await act(async () => {
+      notesGate.resolve();
+    });
+    expect(await screen.findByRole("button", { name: "New Flashcards" })).toBeTruthy();
+  });
+
+  it("shows generation errors without saving a deck", async () => {
+    const user = userEvent.setup();
+    flashcardRequestError = true;
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+    await startNewFlashcards(user);
+    await user.click(await screen.findByRole("checkbox", { name: /Study note/ }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.clear(screen.getByLabelText("Number of cards"));
+    await user.type(screen.getByLabelText("Number of cards"), "2");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(createdNotes).toHaveLength(0);
+    expect(screen.queryByText(/Unsaved draft/)).toBeNull();
+  });
+
+  it("discards a generated draft when the Flashcards panel is canceled", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByRole("textbox", { name: "Question" });
+    await startNewFlashcards(user);
+    await user.click(await screen.findByRole("checkbox", { name: /Study note/ }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.clear(screen.getByLabelText("Number of cards"));
+    await user.type(screen.getByLabelText("Number of cards"), "2");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+    expect(await screen.findByText("Card 1 of 2")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Flashcards" })).toBeNull();
+    expect(createdNotes).toHaveLength(0);
+
+    await user.click(screen.getByText("Shortcuts"));
+    await user.click(screen.getByRole("button", { name: /Flashcards/ }));
+    expect(await screen.findByRole("dialog", { name: "Flashcards" })).toBeTruthy();
+    expect(screen.queryByText(/Unsaved draft/)).toBeNull();
+    expect(createdNotes).toHaveLength(0);
   });
 });
