@@ -157,8 +157,7 @@ _TEMPORARY_NAME_COMMAND = re.compile(
     re.IGNORECASE,
 )
 _NAME_SCOPE_CLAUSE_BOUNDARY = re.compile(
-    r"[.!?;\n]|\b(?:but|however|although|whereas)\b|"
-    r"\b(?:and|but|however|although|whereas)\b",
+    r"[.!?;\n]|\b(?:and|but|however|although|whereas)\b",
     re.IGNORECASE,
 )
 _HYPOTHETICAL_SCOPE = re.compile(

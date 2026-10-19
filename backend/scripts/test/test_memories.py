@@ -1090,6 +1090,71 @@ class MemoryFeatureTests(unittest.TestCase):
             {memory["text"] for memory in memories},
         )
 
+    def test_other_compound_temporary_name_instructions_use_extraction_provider(self):
+        cases = (
+            (
+                "For this conversation, call yourself Temporary, but keep answers short",
+                [],
+            ),
+            (
+                "For this conversation, call yourself Temporary. I prefer concise answers",
+                [
+                    {
+                        "id": None,
+                        "text": "The user prefers concise answers.",
+                        "evidence": "I prefer concise answers",
+                        "intent": "persistent_preference",
+                    }
+                ],
+            ),
+        )
+        for message, durable_candidates in cases:
+            with self.subTest(message=message):
+                user_id = self.user_id()
+                self.assertEqual(
+                    extraction.extract_and_save(
+                        user_id, "From now on, call yourself Atlas."
+                    ),
+                    "saved",
+                )
+                current_name = manager.list_memories(user_id)[0]
+                temporary_candidate = {
+                    "id": current_name["id"],
+                    "text": "The user wants the assistant to be called Temporary.",
+                    "evidence": "For this conversation, call yourself Temporary",
+                    "intent": "persistent_preference",
+                    "key": "assistant.name",
+                }
+                output = {
+                    "upserts": [temporary_candidate, *durable_candidates],
+                    "delete_ids": [],
+                }
+
+                with patch.object(
+                    extraction, "call_ai", return_value=json.dumps(output)
+                ) as provider:
+                    status = extraction.extract_and_save(user_id, message)
+
+                provider.assert_called_once()
+                memories = manager.list_memories(user_id)
+                self.assertEqual(
+                    [memory["text"] for memory in memories],
+                    [
+                        "The user wants the assistant to be called Atlas.",
+                        *[
+                            candidate["text"]
+                            for candidate in durable_candidates
+                        ],
+                    ],
+                )
+                self.assertNotIn(
+                    "The user wants the assistant to be called Temporary.",
+                    {memory["text"] for memory in memories},
+                )
+                self.assertEqual(
+                    status, "saved" if durable_candidates else "unchanged"
+                )
+
     def test_assistant_name_change_updates_legacy_record_without_touching_other_memories(self):
         user_id = self.user_id()
         legacy_name = {
