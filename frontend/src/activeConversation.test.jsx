@@ -401,6 +401,7 @@ describe("active conversation restoration", () => {
 
     const selectedMode = getNotesModeButton("SELECTED");
     expect(selectedMode.getAttribute("aria-pressed")).toBe("true");
+    expect(selectedMode.className).toContain("ask-shortcut--active");
     expect(selectedMode.closest(".ask-context-control").className).toContain("--active");
     await waitFor(() => expect(settings.ask_context_modes.notes).toBe("selected"));
 
@@ -409,6 +410,7 @@ describe("active conversation restoration", () => {
     await user.click(getNotesModeButton("AUTOMATIC"));
     const offMode = getNotesModeButton("OFF");
     expect(offMode.getAttribute("aria-pressed")).toBe("false");
+    expect(offMode.className).not.toContain("ask-shortcut--active");
     expect(offMode.closest(".ask-context-control").className).not.toContain("--active");
     await waitFor(() => expect(settings.ask_context_modes.notes).toBe("off"));
 
@@ -478,15 +480,18 @@ describe("active conversation restoration", () => {
     expect(enabledToggle.textContent).toContain("ON");
     expect(enabledToggle.querySelector(".ask-context-status-dot")).toBeNull();
     expect(enabledToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(enabledToggle.className).toContain("ask-shortcut--active");
     expect(enabledToggle.title).toContain("Memory is on");
     expect(enabledToggle.closest(".ask-context-control").className).toContain("--active");
     await user.click(enabledToggle);
     await waitFor(() => expect(settings.memory_enabled).toBe(false));
     expect(screen.getByRole("button", { name: "Memory is OFF. Activate to turn Memory on." }).textContent).toContain("OFF");
+    expect(screen.getByRole("button", { name: "Memory is OFF. Activate to turn Memory on." }).className)
+      .not.toContain("ask-shortcut--active");
     expect(screen.getByRole("button", { name: "Memory is OFF. Activate to turn Memory on." }).closest(".ask-context-control").className).not.toContain("--active");
   });
 
-  it("persists the Show Ask labels preference through Settings and applies it in Ask", async () => {
+  it("defaults Show Ask labels on, keeps the checkbox synchronized, and persists user changes", async () => {
     const user = userEvent.setup();
     renderApp();
 
@@ -499,7 +504,9 @@ describe("active conversation restoration", () => {
     await user.click(screen.getByRole("link", { name: "Settings" }));
     const preference = await screen.findByRole("checkbox", { name: /Show Ask labels/ });
     expect(preference.checked).toBe(true);
+    expect(settings.show_context_source_labels).toBeUndefined();
     await user.click(preference);
+    expect(preference.checked).toBe(false);
     await waitFor(() => expect(settings.show_context_source_labels).toBe(false));
 
     await user.click(screen.getByRole("link", { name: "Ask" }));
@@ -517,6 +524,7 @@ describe("active conversation restoration", () => {
     const hiddenPreference = await screen.findByRole("checkbox", { name: /Show Ask labels/ });
     expect(hiddenPreference.checked).toBe(false);
     await user.click(hiddenPreference);
+    expect(hiddenPreference.checked).toBe(true);
     await waitFor(() => expect(settings.show_context_source_labels).toBe(true));
     await user.click(screen.getByRole("link", { name: "Ask" }));
     controls = await screen.findByLabelText("Ask shortcuts");

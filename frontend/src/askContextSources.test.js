@@ -7,6 +7,7 @@ import {
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
   getVisibleContextSources,
   normalizeContextModes,
+  normalizeShowContextSourceLabels,
   normalizeVisibleContextSources,
 } from "./askContextSources.js";
 
@@ -39,4 +40,10 @@ test("source modes remain independent of visibility preferences", () => {
   assert.deepEqual(visible, ["conversation"]);
   assert.deepEqual(modes, { ...DEFAULT_CONTEXT_MODES, notes: "selected", memory: "automatic" });
   assert.deepEqual(normalizeContextModes({ notes: "invalid" }), DEFAULT_CONTEXT_MODES);
+});
+
+test("Ask labels default on while preserving an explicit off preference", () => {
+  assert.equal(normalizeShowContextSourceLabels(undefined), true);
+  assert.equal(normalizeShowContextSourceLabels(false), false);
+  assert.equal(normalizeShowContextSourceLabels(true), true);
 });

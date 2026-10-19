@@ -47,6 +47,9 @@ export const ASK_CONTEXT_SOURCES = [
 
 export const DEFAULT_VISIBLE_CONTEXT_SOURCES = ["conversation", "notes", "memory"];
 export const DEFAULT_SHOW_CONTEXT_SOURCE_LABELS = true;
+export function normalizeShowContextSourceLabels(value) {
+  return value === false ? false : DEFAULT_SHOW_CONTEXT_SOURCE_LABELS;
+}
 export const DEFAULT_CONTEXT_MODES = {
   notes: "off",
   files: "off",

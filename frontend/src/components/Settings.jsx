@@ -6,8 +6,8 @@ import { getSettings, putSettings } from "../api";
 import AskContextIcon from "./AskContextIcon";
 import {
   ASK_CONTEXT_SOURCES,
-  DEFAULT_SHOW_CONTEXT_SOURCE_LABELS,
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
+  normalizeShowContextSourceLabels,
   normalizeVisibleContextSources,
 } from "../askContextSources";
 
@@ -20,7 +20,9 @@ export default function Settings() {
   const [error, setError] = useState(null);
   const [prefs, setPrefs] = useState({ theme: "dark", default_model: "" });
   const [visibleSources, setVisibleSources] = useState(DEFAULT_VISIBLE_CONTEXT_SOURCES);
-  const [showContextSourceLabels, setShowContextSourceLabels] = useState(DEFAULT_SHOW_CONTEXT_SOURCE_LABELS);
+  const [showContextSourceLabels, setShowContextSourceLabels] = useState(
+    normalizeShowContextSourceLabels(undefined),
+  );
 
   const load = async () => {
     setError(null);
@@ -29,7 +31,7 @@ export default function Settings() {
       const data = await getSettings();
       const loaded = data && typeof data === "object" && !Array.isArray(data) ? data : {};
       const sources = normalizeVisibleContextSources(loaded.ask_context_sources);
-      const showLabels = loaded.show_context_source_labels !== false;
+      const showLabels = normalizeShowContextSourceLabels(loaded.show_context_source_labels);
       setSettings(loaded);
       setVisibleSources(sources);
       setShowContextSourceLabels(showLabels);
@@ -104,7 +106,7 @@ export default function Settings() {
       });
       setSettings(updated);
       setVisibleSources(normalizeVisibleContextSources(updated.ask_context_sources));
-      setShowContextSourceLabels(updated.show_context_source_labels !== false);
+      setShowContextSourceLabels(normalizeShowContextSourceLabels(updated.show_context_source_labels));
       setPrefs({ ...updated, ask_context_sources: normalizeVisibleContextSources(updated.ask_context_sources) });
     } catch (e) {
       setError(e.message);

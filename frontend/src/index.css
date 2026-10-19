@@ -1499,7 +1499,8 @@ button.secondary:focus-visible,
   transition: border-color var(--transition), background var(--transition);
 }
 .ask-context-control--active {
-  border-color: var(--accent);
+  border-color: var(--success);
+  background: rgba(52, 199, 89, 0.08);
 }
 .ask-context-control--source-only.ask-context-control--active {
   border-color: var(--border);
@@ -1559,8 +1560,8 @@ button.secondary:focus-visible,
   white-space: nowrap;
 }
 .ask-context-control .ask-context-mode[aria-pressed="true"] {
-  background: var(--surface-hover);
-  color: var(--accent);
+  background: rgba(52, 199, 89, 0.16);
+  color: var(--success);
 }
 .ask-context-mode__indicator {
   display: none;
@@ -1576,15 +1577,15 @@ button.secondary:focus-visible,
   background: var(--surface-hover);
 }
 .ask-context-control .ask-context-mode[aria-pressed="true"]:hover {
-  background: var(--surface);
-  color: var(--accent-hover);
+  background: rgba(52, 199, 89, 0.22);
+  color: var(--success);
 }
 .ask-context-source:focus-visible,
 .ask-context-mode:focus-visible {
   position: relative;
   z-index: 1;
   outline: none;
-  box-shadow: var(--shadow-focus);
+  box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.55);
 }
 .ask-context-details {
   position: fixed;

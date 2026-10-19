@@ -15,10 +15,10 @@ import AskOverlay from "./AskOverlay";
 import FlashcardsPanel from "./FlashcardsPanel";
 import {
   DEFAULT_CONTEXT_MODES,
-  DEFAULT_SHOW_CONTEXT_SOURCE_LABELS,
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
   getVisibleContextSources,
   normalizeContextModes,
+  normalizeShowContextSourceLabels,
 } from "../askContextSources";
 
 const CONTEXT_MODES = ["off", "selected", "automatic"];
@@ -265,8 +265,8 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
     ? getVisibleContextSources(initialContextSettings.ask_context_sources).map((source) => source.id)
     : DEFAULT_VISIBLE_CONTEXT_SOURCES);
   const [showContextSourceLabels, setShowContextSourceLabels] = useState(() => initialContextSettings
-    ? initialContextSettings.show_context_source_labels !== false
-    : DEFAULT_SHOW_CONTEXT_SOURCE_LABELS);
+    ? normalizeShowContextSourceLabels(initialContextSettings.show_context_source_labels)
+    : normalizeShowContextSourceLabels(undefined));
   const [contextModes, setContextModes] = useState(initialContextModes);
   const [contextSettingsLoaded, setContextSettingsLoaded] = useState(() => initialContextSettings !== null);
   const [memoryEnabled, setMemoryEnabled] = useState(() => initialContextSettings?.memory_enabled === true);
@@ -295,7 +295,7 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
       .then((settings) => {
         if (!cancelled) {
           setVisibleContextSources(getVisibleContextSources(settings?.ask_context_sources).map((source) => source.id));
-          setShowContextSourceLabels(settings?.show_context_source_labels !== false);
+          setShowContextSourceLabels(normalizeShowContextSourceLabels(settings?.show_context_source_labels));
           const savedModes = normalizeContextModes(settings?.ask_context_modes);
           const enabled = settings?.memory_enabled === true;
           savedModes.memory = enabled ? "automatic" : "off";
