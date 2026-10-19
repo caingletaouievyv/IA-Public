@@ -227,7 +227,13 @@ def _is_obvious_temporary_name_instruction(message: str) -> bool:
     instruction = message[:scope.start()] + message[scope.end():]
     instruction = instruction.strip(" \t,;:-.!?")
     instruction = re.sub(r"\b(?:just|only)\s*$", "", instruction, flags=re.IGNORECASE)
-    return bool(_TEMPORARY_NAME_COMMAND.fullmatch(instruction.strip()))
+    instruction = instruction.strip()
+    clauses = [
+        clause
+        for clause in _NAME_SCOPE_CLAUSE_BOUNDARY.split(instruction)
+        if clause.strip()
+    ]
+    return len(clauses) == 1 and bool(_TEMPORARY_NAME_COMMAND.fullmatch(instruction))
 
 
 def _is_nonassertive_name_discussion(message: str) -> bool:

@@ -1043,6 +1043,53 @@ class MemoryFeatureTests(unittest.TestCase):
                 provider.assert_not_called()
                 self.assertEqual(manager.list_memories(user_id), [])
 
+    def test_temporary_name_with_durable_preference_uses_extraction_provider(self):
+        user_id = self.user_id()
+        self.assertEqual(
+            extraction.extract_and_save(user_id, "From now on, call yourself Atlas."),
+            "saved",
+        )
+        current_name = manager.list_memories(user_id)[0]
+        message = "For this conversation, call yourself Temporary and I prefer concise answers"
+        output = {
+            "upserts": [
+                {
+                    "id": current_name["id"],
+                    "text": "The user wants the assistant to be called Temporary.",
+                    "evidence": "For this conversation, call yourself Temporary",
+                    "intent": "persistent_preference",
+                    "key": "assistant.name",
+                },
+                {
+                    "id": None,
+                    "text": "The user prefers concise answers.",
+                    "evidence": "I prefer concise answers",
+                    "intent": "persistent_preference",
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(
+            extraction, "call_ai", return_value=json.dumps(output)
+        ) as provider:
+            status = extraction.extract_and_save(user_id, message)
+
+        self.assertEqual(status, "saved")
+        provider.assert_called_once()
+        memories = manager.list_memories(user_id)
+        self.assertEqual(
+            {memory["text"] for memory in memories},
+            {
+                "The user wants the assistant to be called Atlas.",
+                "The user prefers concise answers.",
+            },
+        )
+        self.assertNotIn(
+            "The user wants the assistant to be called Temporary.",
+            {memory["text"] for memory in memories},
+        )
+
     def test_assistant_name_change_updates_legacy_record_without_touching_other_memories(self):
         user_id = self.user_id()
         legacy_name = {
