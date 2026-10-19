@@ -30,6 +30,7 @@ _MEMORY_INTENTS = {
 
 _SYSTEM_PROMPT = """Classify the user's messages before extracting memory. Retain only durable facts about the user, durable user preferences, assistant preferences, and recurring project context. Respect explicit requests to remember or forget.
 Questions, ordinary one-off requests, and temporary instructions are not durable memories. Do not turn a question, command, or short-lived instruction into a lasting preference unless the user clearly makes it durable or explicitly asks to remember a durable fact.
+Evaluate independently stated facts and preferences separately, even when one message also contains a temporary instruction; do not let that temporary scope suppress unrelated durable candidates.
 Return only a JSON object with exactly these arrays: "upserts" and "delete_ids".
 Each upsert has "id" (an existing memory ID to update, or null), "text" (a concise memory of at most 500 characters), "evidence" (an exact quote from a user message), and "intent" (one of "durable_fact", "persistent_preference", "preference_update", "explicit_remember", "temporary_instruction", or "question_or_discussion"). Include "key": "assistant.name" for persistent assistant-name preferences and updates; otherwise omit "key".
 Interpret meaning, not just wording. For example, a user saying they are calling you a name from today onward or naming you permanently is a persistent preference even without saying "remember"; "try this name for this answer" is temporary. Do not save temporary instructions or hypothetical discussions as preferences.
@@ -144,6 +145,16 @@ _TEMPORARY_SCOPE = re.compile(
     r"only\s+for\s+(?:today|now|this\s+time)|today\s+only)\b",
     re.IGNORECASE,
 )
+_ASSISTANT_NAME_REFERENCE = re.compile(
+    r"\b(?:call(?:ing)?\s+(?:yourself|you)|your\s+name|name\s+(?:is|should)|"
+    r"go\s+by|use\s+.{1,80}\s+as\s+your\s+name)\b",
+    re.IGNORECASE,
+)
+_NAME_SCOPE_CLAUSE_BOUNDARY = re.compile(
+    r"[.!?;\n]|\b(?:but|however|although|whereas)\b|"
+    r"\b(?:and|but|however|although|whereas)\b",
+    re.IGNORECASE,
+)
 _HYPOTHETICAL_SCOPE = re.compile(
     r"\b(?:if|suppose|imagine|hypothetically|pretend)\b",
     re.IGNORECASE,
@@ -195,7 +206,11 @@ def _assistant_name_preference(message: str) -> str | None:
 
 
 def _is_temporary_scope(message: str) -> bool:
-    return bool(_TEMPORARY_SCOPE.search(message))
+    clauses = _NAME_SCOPE_CLAUSE_BOUNDARY.split(message)
+    return any(
+        _TEMPORARY_SCOPE.search(clause) and _ASSISTANT_NAME_REFERENCE.search(clause)
+        for clause in clauses
+    )
 
 
 def _is_nonassertive_name_discussion(message: str) -> bool:
@@ -547,11 +562,8 @@ def extract_and_save(user_id: str, current_message: str, history_messages: list 
     if not user_messages:
         return "unchanged"
 
-    if _is_temporary_scope(current_message):
-        return "unchanged"
-
     assistant_name = _assistant_name_preference(current_message)
-    if assistant_name:
+    if assistant_name and not _is_temporary_scope(current_message):
         if _is_nonassertive_name_discussion(current_message):
             return "unchanged"
         text = validate_memory_text(
@@ -644,6 +656,7 @@ def extract_and_save(user_id: str, current_message: str, history_messages: list 
         if is_assistant_name and (
             not _contains_evidence(evidence, [current_message])
             or intent not in {"persistent_preference", "preference_update", "explicit_remember"}
+            or _is_temporary_scope(current_message)
             or _is_nonassertive_name_discussion(current_message)
         ):
             continue

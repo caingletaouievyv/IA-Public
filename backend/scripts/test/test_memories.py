@@ -1136,13 +1136,23 @@ class MemoryFeatureTests(unittest.TestCase):
             "Let's try calling you Temporary just for now.",
         )
         for message in guarded_temporary_messages:
+            output = {
+                "upserts": [{
+                    "id": current["id"],
+                    "text": "The user wants the assistant to be called Temporary.",
+                    "evidence": message,
+                    "intent": "persistent_preference",
+                    "key": "assistant.name",
+                }],
+                "delete_ids": [],
+            }
             with self.subTest(message=message), patch.object(
-                extraction, "call_ai"
+                extraction, "call_ai", return_value=json.dumps(output)
             ) as provider:
                 status = extraction.extract_and_save(user_id, message)
 
             self.assertEqual(status, "unchanged")
-            provider.assert_not_called()
+            provider.assert_called_once()
             self.assertEqual(manager.list_memories(user_id), [current])
 
         cases = (
@@ -1175,6 +1185,95 @@ class MemoryFeatureTests(unittest.TestCase):
 
             self.assertEqual(status, "unchanged")
             self.assertEqual(manager.list_memories(user_id), [current])
+
+    def test_unrelated_temporary_clause_does_not_block_persistent_assistant_name(self):
+        user_id = self.user_id()
+        self.assertEqual(
+            extraction.extract_and_save(user_id, "From now on, call yourself Atlas."),
+            "saved",
+        )
+        current = manager.list_memories(user_id)[0]
+        message = "I'm calling you Nova from today onward and for now, keep this answer brief."
+        output = {
+            "upserts": [{
+                "id": current["id"],
+                "text": "The user wants the assistant to be called Nova.",
+                "evidence": message,
+                "intent": "preference_update",
+                "key": "assistant.name",
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(output)):
+            status = extraction.extract_and_save(user_id, message)
+
+        self.assertEqual(status, "updated")
+        self.assertEqual(
+            manager.list_memories(user_id)[0]["text"],
+            "The user wants the assistant to be called Nova.",
+        )
+
+    def test_temporary_assistant_name_candidate_remains_rejected(self):
+        user_id = self.user_id()
+        self.assertEqual(
+            extraction.extract_and_save(user_id, "From now on, call yourself Atlas."),
+            "saved",
+        )
+        current = manager.list_memories(user_id)[0]
+        message = "For this conversation, call yourself Temporary."
+        output = {
+            "upserts": [{
+                "id": current["id"],
+                "text": "The user wants the assistant to be called Temporary.",
+                "evidence": message,
+                "intent": "persistent_preference",
+                "key": "assistant.name",
+            }],
+            "delete_ids": [],
+        }
+
+        with patch.object(extraction, "call_ai", return_value=json.dumps(output)):
+            status = extraction.extract_and_save(user_id, message)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(manager.list_memories(user_id), [current])
+
+    def test_temporary_name_does_not_block_unrelated_durable_preference(self):
+        user_id = self.user_id()
+        message = (
+            "For this conversation, call yourself Temporary, "
+            "and remember that I prefer concise answers."
+        )
+        output = {
+            "upserts": [
+                {
+                    "id": None,
+                    "text": "The user wants the assistant to be called Temporary.",
+                    "evidence": "For this conversation, call yourself Temporary",
+                    "intent": "persistent_preference",
+                    "key": "assistant.name",
+                },
+                {
+                    "id": None,
+                    "text": "The user prefers concise answers.",
+                    "evidence": "I prefer concise answers.",
+                    "intent": "persistent_preference",
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(
+            extraction, "call_ai", return_value=json.dumps(output)
+        ):
+            status = extraction.extract_and_save(user_id, message)
+
+        self.assertEqual(status, "saved")
+        self.assertEqual(
+            [memory["text"] for memory in manager.list_memories(user_id)],
+            ["The user prefers concise answers."],
+        )
 
     def test_model_classified_quoted_or_hypothetical_name_mentions_do_not_update(self):
         user_id = self.user_id()
@@ -1253,12 +1352,24 @@ class MemoryFeatureTests(unittest.TestCase):
         self.assertEqual(updated["text"], direct_output["upserts"][0]["text"])
 
         temporary_message = "For this conversation, call yourself Temporary."
-        with patch.object(extraction, "call_ai") as provider:
+        temporary_output = {
+            "upserts": [{
+                "id": updated["id"],
+                "text": "The user wants the assistant to be called Temporary.",
+                "evidence": temporary_message,
+                "intent": "persistent_preference",
+                "key": "assistant.name",
+            }],
+            "delete_ids": [],
+        }
+        with patch.object(
+            extraction, "call_ai", return_value=json.dumps(temporary_output)
+        ) as provider:
             self.assertEqual(
                 extraction.extract_and_save(user_id, temporary_message),
                 "unchanged",
             )
-        provider.assert_not_called()
+        provider.assert_called_once()
         self.assertEqual(manager.list_memories(user_id), [updated])
 
     def test_name_guard_distinguishes_reported_instruction_from_direct_request(self):
@@ -1367,12 +1478,53 @@ class MemoryFeatureTests(unittest.TestCase):
         for message in messages:
             with self.subTest(message=message):
                 user_id = self.user_id()
-                with patch.object(extraction, "call_ai") as provider:
+                empty_output = {"upserts": [], "delete_ids": []}
+                with patch.object(
+                    extraction, "call_ai", return_value=json.dumps(empty_output)
+                ) as provider:
                     status = extraction.extract_and_save(user_id, message)
 
                 self.assertEqual(status, "unchanged")
-                provider.assert_not_called()
+                self.assertEqual(provider.called, message.startswith("For this conversation"))
                 self.assertEqual(manager.list_memories(user_id), [])
+
+    def test_compound_message_saves_durable_fact_but_not_temporary_name(self):
+        user_id = self.user_id()
+        message = "Remember that I work at GlobalPort. For now, call yourself Atlas."
+        output = {
+            "upserts": [
+                {
+                    "id": None,
+                    "text": "The user works at GlobalPort.",
+                    "evidence": "Remember that I work at GlobalPort.",
+                    "intent": "explicit_remember",
+                },
+                {
+                    "id": None,
+                    "text": "The user wants the assistant to be called Atlas.",
+                    "evidence": "For now, call yourself Atlas.",
+                    "intent": "persistent_preference",
+                    "key": "assistant.name",
+                },
+            ],
+            "delete_ids": [],
+        }
+
+        with patch.object(
+            extraction, "call_ai", return_value=json.dumps(output)
+        ) as provider:
+            status = extraction.extract_and_save(user_id, message)
+
+        self.assertEqual(status, "saved")
+        provider.assert_called_once()
+        self.assertIn(
+            "Evaluate independently stated facts and preferences separately",
+            provider.call_args.kwargs["messages"][0]["content"],
+        )
+        self.assertEqual(
+            [memory["text"] for memory in manager.list_memories(user_id)],
+            ["The user works at GlobalPort."],
+        )
 
     def test_extraction_updates_and_deduplicates_existing_memories(self):
         user_id = self.user_id()
