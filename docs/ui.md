@@ -21,7 +21,7 @@ React 18 + Vite 5 SPA. Index: [docs.md](docs.md). API contract: [project.md](pro
 frontend/
 ├── index.html              # Root shell, viewport meta, title "IA"
 ├── package.json            # Scripts: dev, build, preview
-├── vite.config.js          # Dev server :5174; proxy /ai, /auth, /notes, /memories, /files, /settings → :5000
+├── vite.config.js          # Dev server :5174; proxy /ai, /auth, /notes, /memories, /activity, /files, /settings → :5000
 └── src/
     ├── main.jsx            # StrictMode; mounts App; imports index.css
     ├── App.jsx             # Route navigation, auth gate, authenticated page shell
@@ -43,8 +43,6 @@ frontend/
 | `src/api.js` | Single API surface; `localStorage` token; custom event `ia:unauthorized` on 401 |
 | `src/index.css` | All styling (CSS variables, app shell, notes/history chrome) |
 | `src/components/*` | Feature panels rendered in the authenticated page shell or full-page `Login` |
-
-The configured Vite proxy currently does not include `/activity/`, which `AISuggestion` requests for internal suggestion context. During Vite development, set `VITE_API_BASE_URL` to the backend origin and configure backend CORS for the frontend origin, or the overlay cannot retrieve activity. This does not affect same-origin deployments that serve the registered backend API.
 
 ---
 
