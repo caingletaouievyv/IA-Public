@@ -24,6 +24,7 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 |-----|--------|------|-------------|----------|
 | **POST /auth/register** | POST | no | `{"username","password"}` | 201 token + user_id or 409 |
 | **POST /auth/login** | POST | no | `{"username","password"}` | 200 token or 401 |
+| **POST /ai/suggestions** | POST | yes | Authenticated; no body required | 200 no suggestion or an allow-listed action suggestion |
 | **POST /ai/ask** | POST | yes | Bearer + `{"question":"..."}`; optional `note_context_mode`, `note_ids`, prior `messages` | 200 `answer`, `tokens_estimated`; 402 for insufficient credits |
 | **POST /ai/estimate_tokens** | POST | yes | Bearer + `{"question":"..."}` | 200 `estimated_tokens`, `context_tokens` |
 | **POST /ai/debug/context** | POST | yes | Bearer + `{"question":"..."}` | 200 context, scores, dropped_notes |
@@ -33,6 +34,7 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 | **GET /notes/<id>** | GET | yes | Bearer | 200 or 404 |
 | **PUT /notes/<id>** | PUT | yes | Bearer + partial JSON | 200 or 404 |
 | **DELETE /notes/<id>** | DELETE | yes | Bearer | 200 or 404 |
+| **GET /activity/** | GET | yes | Bearer; optional `?limit=50` | 200 newest-first events; default 50, maximum 100 |
 | **GET /settings** | GET | yes | Bearer | 200 preferences |
 | **PUT /settings** | PUT | yes | Bearer + JSON merge | 200 settings |
 | **GET /memories/** | GET | yes | Bearer | 200 current user's saved memories |
@@ -54,6 +56,8 @@ Run from `backend/`:
 
 ```bash
 python -m compileall -q app scripts
+python -m scripts.test.test_activity
+python -m scripts.test.test_ai_suggestions
 python -m scripts.test.test_ai_context_modes
 python -m scripts.test.test_ai_credits
 python -m scripts.test.test_memories
@@ -162,6 +166,31 @@ npm --prefix .\frontend run build
 - At desktop, narrow desktop, and mobile widths, verify natural page scrolling, touch-friendly controls, and no horizontal overflow or floating/drag/resize behavior.
 
 Responsive layout and browser-specific UX still require manual verification; the frontend component regressions cover route remounting and conversation behavior.
+
+## Internal suggestion event tracking
+
+`GET /activity/` is an authenticated internal endpoint used by the suggestion overlay to fetch up to 50 newest events by default; `?limit=` accepts positive integers and is capped at 100. Events are scoped to the JWT subject. Note and flashcard-deck create/update/delete actions are recorded after successful mutations; `_history` conversations are excluded. Failed note operations do not create events. Activity JSON replacement retries a permission failure briefly, but recording remains best-effort: persistent file errors can leave a successful Note mutation without an event.
+
+Run the focused backend regressions from `backend/`:
+
+```bash
+python -m scripts.test.test_activity
+```
+
+`test_activity.py` verifies content-free event metadata, Note and flashcard-deck event types, `_history` exclusion, newest-first ordering, bounded limits, authentication, cross-user isolation, failed-mutation behavior, retry after a transient `os.replace` permission failure, and concurrent writes without lost events. Frontend component tests cover authenticated suggestion generation, display, acceptance, and dismissal; there is no Activity History page.
+
+## AI Suggestions
+
+`ai_suggestions_enabled` is stored per authenticated user through `GET/PUT /settings/`, defaults to true when absent, and is validated as a boolean. `POST /ai/suggestions` requires JWT auth and returns no suggestion when disabled or fewer than two tracked actions occurred within the last seven days. When eligible, the configured AI sees only counts of fixed internal event types and must choose an allow-listed action; no Note title/content or credential is sent. Invalid or unavailable provider output falls back to a fixed rule-based action. Suggestions do not debit IA Credits, but the configured provider may have separate usage costs.
+
+Run focused backend regressions from `backend/`:
+
+```bash
+python -m scripts.test.test_settings_preferences
+python -m scripts.test.test_ai_suggestions
+```
+
+These verify the default-on preference, saved OFF/ON behavior, per-user settings and activity isolation, authenticated-only generation, meaningful-activity threshold, metadata-only provider input, allow-listed actions, and provider-failure fallback. Frontend regressions verify authenticated-only display, setting changes, generated suggestion display, per-user dismissal, and the Flashcards/Ask/Manage accept actions.
 
 ## Final repository check
 

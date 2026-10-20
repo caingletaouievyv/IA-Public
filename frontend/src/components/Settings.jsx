@@ -17,9 +17,11 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [sourceSaving, setSourceSaving] = useState(false);
   const [labelSaving, setLabelSaving] = useState(false);
+  const [suggestionSaving, setSuggestionSaving] = useState(false);
   const [error, setError] = useState(null);
   const [prefs, setPrefs] = useState({ theme: "dark", default_model: "" });
   const [visibleSources, setVisibleSources] = useState(DEFAULT_VISIBLE_CONTEXT_SOURCES);
+  const [aiSuggestionsEnabled, setAiSuggestionsEnabled] = useState(true);
   const [showContextSourceLabels, setShowContextSourceLabels] = useState(
     normalizeShowContextSourceLabels(undefined),
   );
@@ -32,14 +34,17 @@ export default function Settings() {
       const loaded = data && typeof data === "object" && !Array.isArray(data) ? data : {};
       const sources = normalizeVisibleContextSources(loaded.ask_context_sources);
       const showLabels = normalizeShowContextSourceLabels(loaded.show_context_source_labels);
+      const suggestionsEnabled = loaded.ai_suggestions_enabled !== false;
       setSettings(loaded);
       setVisibleSources(sources);
       setShowContextSourceLabels(showLabels);
+      setAiSuggestionsEnabled(suggestionsEnabled);
       setPrefs((p) => ({
         ...p,
         ...loaded,
         ask_context_sources: sources,
         show_context_source_labels: showLabels,
+        ai_suggestions_enabled: suggestionsEnabled,
       }));
     } catch (e) {
       setError(e.message);
@@ -94,6 +99,24 @@ export default function Settings() {
     }
   };
 
+  const changeAiSuggestions = async (enabled) => {
+    const previousValue = aiSuggestionsEnabled;
+    setAiSuggestionsEnabled(enabled);
+    setPrefs((current) => ({ ...current, ai_suggestions_enabled: enabled }));
+    setError(null);
+    setSuggestionSaving(true);
+    try {
+      const updated = await putSettings({ ai_suggestions_enabled: enabled });
+      setSettings(updated);
+    } catch (e) {
+      setAiSuggestionsEnabled(previousValue);
+      setPrefs((current) => ({ ...current, ai_suggestions_enabled: previousValue }));
+      setError(e.message);
+    } finally {
+      setSuggestionSaving(false);
+    }
+  };
+
   const save = async (e) => {
     e.preventDefault();
     setError(null);
@@ -103,6 +126,7 @@ export default function Settings() {
         ...prefs,
         ask_context_sources: visibleSources,
         show_context_source_labels: showContextSourceLabels,
+        ai_suggestions_enabled: aiSuggestionsEnabled,
       });
       setSettings(updated);
       setVisibleSources(normalizeVisibleContextSources(updated.ask_context_sources));
@@ -168,9 +192,32 @@ export default function Settings() {
           </>
         )}
         <p className="ask-context-settings__status" role="status">
-          {loading && settings !== null ? "Refreshing saved sources…" : sourceSaving || labelSaving ? "Saving…" : ""}
+          {loading && settings !== null
+            ? "Refreshing saved sources…"
+            : sourceSaving || labelSaving || suggestionSaving
+              ? "Saving…"
+              : ""}
         </p>
       </div>
+      {settings !== null && (
+        <div className="card app-panel ask-context-settings">
+          <p className="card-title">AI Suggestions</p>
+          <p className="card-desc">Show occasional, context-aware suggestions based on your recent note activity.</p>
+          <label className="ask-context-settings__option" htmlFor="ai-suggestions-enabled">
+            <input
+              id="ai-suggestions-enabled"
+              type="checkbox"
+              checked={aiSuggestionsEnabled}
+              disabled={loading || suggestionSaving || saving}
+              onChange={(event) => changeAiSuggestions(event.target.checked)}
+            />
+            <span className="ask-context-settings__copy">
+              <span className="ask-context-settings__name">Enable AI Suggestions</span>
+              <span className="ask-context-settings__description">Turn off to hide suggestions and stop generating new ones.</span>
+            </span>
+          </label>
+        </div>
+      )}
       <div className="card app-panel">
         <button type="button" className="button-secondary" onClick={load} aria-label={loading ? "Loading settings" : "Load settings"} disabled={loading}>
           {loading ? "…" : "Load settings"}

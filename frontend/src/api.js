@@ -64,6 +64,10 @@ function handleResponse(res, data) {
   return data;
 }
 
+function notifyActivityMutation() {
+  window.dispatchEvent(new Event("ia:activity-updated"));
+}
+
 async function readJsonResponse(res) {
   try {
     return await res.json();
@@ -154,6 +158,22 @@ export async function clearMemories() {
   const res = await fetch(`${BASE}/memories/clear`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${requireToken()}` },
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function listActivity(limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`${BASE}/activity/?${params}`, { headers: authHeaders() });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function requestAiSuggestion() {
+  const res = await fetch(`${BASE}/ai/suggestions`, {
+    method: "POST",
+    headers: authHeaders(),
   });
   const data = await readJsonResponse(res);
   return handleResponse(res, data);
@@ -267,6 +287,7 @@ export async function putSettings(data) {
     if (userId && settings && typeof settings === "object" && !Array.isArray(settings)) {
       settingsCache.set(userId, { ...settingsCache.get(userId), ...settings });
     }
+    window.dispatchEvent(new CustomEvent("ia:settings-updated", { detail: settings }));
     return settings;
   })();
 
@@ -294,7 +315,9 @@ export async function createNoteFromImages(formData) {
     body: formData,
   });
   const data = await res.json();
-  return handleResponse(res, data);
+  const result = handleResponse(res, data);
+  notifyActivityMutation();
+  return result;
 }
 
 export async function createNote(note) {
@@ -305,25 +328,32 @@ export async function createNote(note) {
     body: JSON.stringify(note),
   });
   const data = await res.json();
-  return handleResponse(res, data);
+  const result = handleResponse(res, data);
+  if (note?.category !== "_history") notifyActivityMutation();
+  return result;
 }
 
-export async function updateNote(noteId, data) {
+export async function updateNote(noteId, data, { activityRelevant = true } = {}) {
   const res = await fetch(`${BASE}/notes/${noteId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(data),
   });
   const out = await res.json();
-  return handleResponse(res, out);
+  const result = handleResponse(res, out);
+  if (activityRelevant) notifyActivityMutation();
+  return result;
 }
 
-export async function deleteNote(noteId) {
+export async function deleteNote(noteId, { activityRelevant = true } = {}) {
   const res = await fetch(`${BASE}/notes/${noteId}`, {
     method: "DELETE",
     headers: authHeaders(),
   });
-  if (res.status === 204 || res.status === 200) return;
+  if (res.status === 204 || res.status === 200) {
+    if (activityRelevant) notifyActivityMutation();
+    return;
+  }
   const data = await res.json().catch(() => ({}));
   return handleResponse(res, data);
 }

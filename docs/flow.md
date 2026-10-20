@@ -252,4 +252,25 @@ Notes and History selectors are state owned by `Ask.jsx` and rendered in its pag
 
 There is no backend chat-edit endpoint; the frontend uses `POST /ai/ask` and the existing `PUT /notes/<id>` history update.
 
+## 20. Internal suggestion activity events
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `backend/app/notes/routes.py` | After a Note create/update/delete succeeds, record one fixed event. Flashcards are identified by the existing `flashcards` category. `_history` conversation-note operations are excluded. Image imports record once after the image operation succeeds, as a create or update. |
+| 2 | `backend/app/activity/manager.py` | Store only `event_id`, `event_type`, fixed `description`, and UTC `timestamp` in `activity_<user-hash>.json`. Serialize reads/writes with an in-process lock, briefly retry permission failures during atomic replacement, and retain at most 500 events per user. No note title, content, settings, or credentials are written. |
+| 3 | `backend/app/activity/routes.py` → `GET /activity/` | Internal suggestion context endpoint. Require JWT auth and derive ownership from `sub`. Return newest first, default 50 and maximum 100; reject invalid/non-positive limits. File/data failures return a generic error. |
+
+Settings and `_history` updates are not included: these events are internal suggestion context and track saved Notes and flashcard decks only. If event persistence still fails after the bounded permission-error retries, the underlying successful Note action remains successful and the event-write failure is logged, since the two JSON files cannot be committed transactionally; a successful Note action can therefore lack an event. The JSON store is local and process-locked, not a multi-worker transactional database.
+
+## 21. Contextual AI Suggestions
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `backend/app/settings/routes.py` → `GET/PUT /settings/` | `ai_suggestions_enabled` is per-user, defaults to `true` only when no saved value exists, and accepts booleans only. OFF blocks suggestion generation at the API boundary. |
+| 2 | `frontend/src/App.jsx` → `AISuggestion.jsx` | Mount the non-blocking bottom overlay only in the authenticated shell. It reads the authenticated user's internal event metadata and requests a suggestion only when at least two tracked actions occurred within seven days. Dismissal IDs are kept in local storage under the authenticated user ID. |
+| 3 | `backend/app/ai/routes.py` → `POST /ai/suggestions` → `app/ai/suggestions.py` | Derive user identity from JWT `sub`, re-check the saved setting, and use only recent fixed event-type counts. The configured AI chooses one of three allow-listed actions; UI copy and behavior are fixed by the action type. Provider or output failure selects a deterministic fallback. No note text, title, or credential is included. Suggestions do not reserve IA Credits. |
+| 4 | `frontend/src/App.jsx` → `Ask.jsx` / Manage | `prepare_ask` navigates to Ask, fills a draft question, and enables Automatic Notes context; the user must still submit it. `open_flashcards` opens the existing Flashcards panel. `review_activity` opens Manage with Notes selected. Accept and dismiss both suppress that activity-context suggestion for that user. |
+
+The existing configured provider may have its own usage/billing policy even though these requests do not debit IA Credits. Only successful Note/deck API operations trigger a client-side event refresh; `_history` edits are explicitly excluded. If suggestion-event storage fails, the underlying Note mutation remains successful and a corresponding suggestion may not be generated.
+
 **Related docs:** [docs.md](docs.md), [ia.md](ia.md), [project.md](project.md).

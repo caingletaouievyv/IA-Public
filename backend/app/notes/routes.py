@@ -1,19 +1,48 @@
 # IA/backend/app/notes/routes.py
 # Notes CRUD: per-user (Phase 8). Create, list, get, update, delete; create from images.
 
+import logging
+
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from app import limiter
+from app.activity.manager import record_activity
 from app.common.auth import require_auth, auth_debug
 from app.notes.manager import add_note, update_note, get_notes_list, get_note, delete_note, get_categories, get_tags
 from app.notes.schemas import NoteCreate, NoteUpdate
 from app.notes.image_to_note import process_images_to_note
+
+logger = logging.getLogger(__name__)
+
 
 def _model_to_dict(model, exclude_none=False):
     """Pydantic v1 .dict() / v2 .model_dump() compatibility."""
     if hasattr(model, "model_dump"):
         return model.model_dump(exclude_none=exclude_none)
     return model.dict(exclude_none=exclude_none)
+
+
+def _note_activity_type(action: str, note: dict | None, previous_note: dict | None = None) -> str | None:
+    notes = [item for item in (note, previous_note) if item]
+    if not notes or any(item.get("category") == "_history" for item in notes):
+        return None
+    prefix = "flashcard_deck" if any(item.get("category") == "flashcards" for item in notes) else "note"
+    return f"{prefix}.{action}"
+
+
+def _record_note_activity(user_id: str, action: str, note: dict | None, previous_note: dict | None = None):
+    event_type = _note_activity_type(action, note, previous_note)
+    if event_type is None:
+        return
+    try:
+        record_activity(user_id, event_type)
+    except (OSError, ValueError) as error:
+        logger.error(
+            "activity_event_write_failed event_type=%s error_type=%s",
+            event_type,
+            type(error).__name__,
+        )
+
 
 bp = Blueprint("notes", __name__)
 
@@ -43,6 +72,7 @@ def create_note():
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
     new_note = add_note(_model_to_dict(note_in), user_id)
+    _record_note_activity(user_id, "created", new_note)
     return jsonify(new_note), 201
 
 @bp.route("/from-images", methods=["POST"])
@@ -59,6 +89,7 @@ def create_note_from_images():
         return jsonify({"error": "Missing 'files' or 'file' in multipart form"}), 400
     try:
         note, appended = process_images_to_note(files, title=title, category=category, tags=[], user_id=user_id)
+        _record_note_activity(user_id, "updated" if appended else "created", note)
         return jsonify({"note": note, "appended": appended}), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -102,8 +133,10 @@ def edit_note(note_id):
         note_update = NoteUpdate(**data)
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
+    previous_note = get_note(note_id, user_id)
     updated_note = update_note(note_id, _model_to_dict(note_update, exclude_none=True), user_id)
     if updated_note:
+        _record_note_activity(user_id, "updated", updated_note, previous_note)
         return jsonify(updated_note)
     return jsonify({"error": "Note not found"}), 404
 
@@ -111,6 +144,8 @@ def edit_note(note_id):
 def delete_note_route(note_id):
     user_id, auth_err = require_auth()
     if auth_err: return auth_err
+    note = get_note(note_id, user_id)
     if not delete_note(note_id, user_id):
         return jsonify({"error": "Note not found"}), 404
+    _record_note_activity(user_id, "deleted", note)
     return jsonify({"message": "Note deleted"}), 200

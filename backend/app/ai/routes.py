@@ -12,6 +12,7 @@ from app.ai.flashcards import (
     generate_flashcards,
     validate_flashcard_request,
 )
+from app.ai.suggestions import generate_suggestion
 from app.config import AI_ASK_CREDIT_COST, AI_UNLIMITED_ROLE
 from app.credits.manager import (
     InsufficientCreditsError,
@@ -204,6 +205,21 @@ def generate_flashcards_route():
         release_operation(user_id, operation_id)
         logger.warning("Flashcard generation failed (error_type=%s)", type(error).__name__)
         return jsonify({"error": "Flashcard generation failed"}), 502
+
+
+@bp.route("/suggestions", methods=["POST"])
+@limiter.limit("10 per minute")
+def get_ai_suggestion():
+    user_id, auth_err = require_auth()
+    if auth_err:
+        return auth_err
+    if get_settings(user_id).get("ai_suggestions_enabled", True) is not True:
+        return jsonify({"suggestion": None}), 200
+    try:
+        return jsonify({"suggestion": generate_suggestion(user_id)}), 200
+    except (OSError, ValueError):
+        logger.exception("ai_suggestion_context_failed")
+        return jsonify({"error": "Could not load a suggestion"}), 500
 
 
 @bp.route("/estimate_tokens", methods=["POST"])

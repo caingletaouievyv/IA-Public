@@ -964,6 +964,41 @@ button.secondary:focus-visible,
 .manage-page-title {
   margin: 0;
 }
+.ai-suggestion {
+  position: fixed;
+  z-index: 40;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  width: min(24rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+.ai-suggestion__card {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+.ai-suggestion__label,
+.ai-suggestion__text {
+  margin: 0;
+}
+.ai-suggestion__label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.ai-suggestion__text {
+  margin-top: 0.35rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+.ai-suggestion__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
 .manage-tabs {
   display: flex;
   flex-wrap: wrap;

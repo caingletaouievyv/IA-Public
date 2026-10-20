@@ -247,7 +247,16 @@ function AskContextControl({
   );
 }
 
-export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMessageDetail, onHistoryFocusChange, onMemoryManage }) {
+export default function Ask({
+  userId,
+  onHistoryPicker,
+  onNotesPicker,
+  onUserMessageDetail,
+  onHistoryFocusChange,
+  onMemoryManage,
+  suggestionAction,
+  onSuggestionActionConsumed,
+}) {
   const [initialContextSettings] = useState(() => getCachedSettings());
   const [initialContextModes] = useState(() => {
     const savedModes = normalizeContextModes(initialContextSettings?.ask_context_modes);
@@ -342,6 +351,17 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
       setMemorySettingSaving(false);
     }
   };
+  useEffect(() => {
+    if (!suggestionAction || !contextSettingsLoaded) return;
+    if (suggestionAction.action === "open_flashcards") {
+      setFlashcardsOpen(true);
+    } else if (suggestionAction.action === "prepare_ask") {
+      setQuestion("Summarize my recent note changes and suggest practical next steps.");
+      setContextMode("notes", "automatic");
+    }
+    onSuggestionActionConsumed?.();
+  }, [suggestionAction, contextSettingsLoaded, onSuggestionActionConsumed]);
+
   const handleNoteSelection = (selectedNotes) => {
     const nextNotes = Array.isArray(selectedNotes) ? selectedNotes.filter((note) => note?.id) : [];
     const nextIds = nextNotes.map((note) => note.id);
@@ -518,7 +538,11 @@ export default function Ask({ userId, onHistoryPicker, onNotesPicker, onUserMess
     const assistantContent = (data.answer || "").trim();
     if (historyId && (userContent || assistantContent)) {
       const nextMessages = [...activeMessages, { role: "user", content: userContent }, { role: "assistant", content: assistantContent }];
-      const updatedHistory = await updateNote(historyId, { content: JSON.stringify(nextMessages) });
+      const updatedHistory = await updateNote(
+        historyId,
+        { content: JSON.stringify(nextMessages) },
+        { activityRelevant: false },
+      );
       if (currentHistoryIdRef.current === historyId) {
         setMessages(nextMessages);
         setCurrentHistoryTitle(updatedHistory.title || "Untitled");

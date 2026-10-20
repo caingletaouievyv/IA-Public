@@ -11,6 +11,7 @@ This document defines the lightweight engineering conventions for IA. The produc
 - Frontend components own presentation and interaction state; use the existing API client for backend requests and existing shared controls/styles where practical.
 - Keep Notes, Conversation History, and persistent Memory distinct. Memory uses per-user records in its own store, with settings and authenticated CRUD; it must not use Notes or history as a backing store. Mutable preferences use a stable key where available, and legacy records are recognized lazily without destructive migration.
 - For future natural-language operations, use the [AI-assisted decision workflow](architecture/ai-assisted-workflows.md): AI proposes an interpretation; application code remains responsible for validation, authorization, domain operations, and outcome verification.
+- Contextual suggestions may use only fixed, content-free event metadata unless the user has separately consented to sharing Note content. Validate model-selected actions against an application allow-list, and keep the accepted operation under normal application authorization and user confirmation.
 
 ## Code conventions
 

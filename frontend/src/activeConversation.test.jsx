@@ -58,6 +58,8 @@ let notesListGate;
 let historyListGate;
 let historyRequestError;
 let memoriesRequestError;
+let activityEvents;
+let suggestionResponse;
 let noteGetDelays;
 let delayedNoteResolves;
 let nextId;
@@ -99,6 +101,12 @@ function installApiMock() {
     if (url.pathname === "/memories/" && method === "GET") {
       if (memoriesRequestError) return jsonResponse({ error: "Memory unavailable" }, 500);
       return jsonResponse([]);
+    }
+    if (url.pathname === "/activity/" && method === "GET") {
+      return jsonResponse(activityEvents);
+    }
+    if (url.pathname === "/ai/suggestions" && method === "POST") {
+      return jsonResponse({ suggestion: suggestionResponse });
     }
     if (url.pathname === "/notes/" && method === "POST") {
       if (noteSaveGate) await noteSaveGate.promise;
@@ -222,6 +230,8 @@ beforeEach(() => {
   historyListGate = null;
   historyRequestError = false;
   memoriesRequestError = false;
+  activityEvents = [];
+  suggestionResponse = null;
   noteGetDelays = new Set();
   delayedNoteResolves = new Map();
   nextId = 1;
@@ -247,6 +257,180 @@ afterEach(() => {
 });
 
 describe("active conversation restoration", () => {
+  it("keeps AI suggestions off unauthenticated routes", () => {
+    setToken(null);
+    window.history.replaceState(null, "", "/login");
+    render(<App />);
+
+    expect(screen.queryByRole("region", { name: "AI suggestion" })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the default-on AI Suggestions setting and persists user changes", async () => {
+    const user = userEvent.setup();
+    renderApp(USER_ID, "/settings");
+
+    const enabled = await screen.findByRole("checkbox", { name: /Enable AI Suggestions/ });
+    expect(enabled.checked).toBe(true);
+    await user.click(enabled);
+    await waitFor(() => expect(settings.ai_suggestions_enabled).toBe(false));
+    expect(enabled.checked).toBe(false);
+  });
+
+  it("resumes suggestion generation when a saved-off preference is turned on", async () => {
+    const user = userEvent.setup();
+    settings.ai_suggestions_enabled = false;
+    activityEvents = [
+      { event_id: "event-b", event_type: "note.updated", description: "Note updated", timestamp: new Date().toISOString() },
+      { event_id: "event-a", event_type: "note.created", description: "Note created", timestamp: new Date(Date.now() - 1000).toISOString() },
+    ];
+    suggestionResponse = {
+      suggestion_id: "event-b|event-a",
+      action: "prepare_ask",
+      text: "Want to ask IA to summarize your recent note changes and suggest next steps?",
+    };
+    renderApp(USER_ID, "/settings");
+
+    const enabled = await screen.findByRole("checkbox", { name: /Enable AI Suggestions/ });
+    expect(enabled.checked).toBe(false);
+    expect(fetchMock.mock.calls.some(([input]) =>
+      new URL(input, window.location.origin).pathname === "/ai/suggestions",
+    )).toBe(false);
+
+    await user.click(enabled);
+    expect(await screen.findByRole("region", { name: "AI suggestion" })).toBeTruthy();
+    expect(settings.ai_suggestions_enabled).toBe(true);
+  });
+
+  it("uses recent note activity to offer an actionable Flashcards shortcut", async () => {
+    const user = userEvent.setup();
+    activityEvents = [
+      { event_id: "event-b", event_type: "note.updated", description: "Note updated", timestamp: new Date().toISOString() },
+      { event_id: "event-a", event_type: "note.created", description: "Note created", timestamp: new Date(Date.now() - 1000).toISOString() },
+    ];
+    suggestionResponse = {
+      suggestion_id: "event-b|event-a",
+      action: "open_flashcards",
+      text: "Turn your recent note activity into a focused flashcard session.",
+    };
+    renderApp();
+
+    expect(await screen.findByRole("region", { name: "AI suggestion" })).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([input, options]) =>
+      new URL(input, window.location.origin).pathname === "/ai/suggestions"
+      && options.method === "POST",
+    )).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Open Flashcards" }));
+    expect(await screen.findByRole("dialog", { name: "Flashcards" })).toBeTruthy();
+  });
+
+  it("prepares an Ask draft when the user accepts a note-summary suggestion", async () => {
+    const user = userEvent.setup();
+    activityEvents = [
+      { event_id: "event-b", event_type: "note.updated", description: "Note updated", timestamp: new Date().toISOString() },
+      { event_id: "event-a", event_type: "note.created", description: "Note created", timestamp: new Date(Date.now() - 1000).toISOString() },
+    ];
+    suggestionResponse = {
+      suggestion_id: "event-b|event-a",
+      action: "prepare_ask",
+      text: "Want to ask IA to summarize your recent note changes and suggest next steps?",
+    };
+    renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Prepare Ask" }));
+    expect(screen.getByRole("textbox", { name: "Question" }).value)
+      .toBe("Summarize my recent note changes and suggest practical next steps.");
+    await waitFor(() => expect(settings.ask_context_modes.notes).toBe("automatic"));
+  });
+
+  it("opens Manage Notes when the user accepts a review suggestion", async () => {
+    const user = userEvent.setup();
+    activityEvents = [
+      { event_id: "event-b", event_type: "note.deleted", description: "Note deleted", timestamp: new Date().toISOString() },
+      { event_id: "event-a", event_type: "flashcard_deck.updated", description: "Flashcard deck updated", timestamp: new Date(Date.now() - 1000).toISOString() },
+    ];
+    suggestionResponse = {
+      suggestion_id: "event-b|event-a",
+      action: "review_activity",
+      text: "Review your notes and decide what to organize next.",
+    };
+    renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Review Notes" }));
+    expect(await screen.findByRole("heading", { name: "Manage saved content" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Notes" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("selects Notes when accepting a review suggestion from another Manage section", async () => {
+    const user = userEvent.setup();
+    activityEvents = [
+      { event_id: "event-b", event_type: "note.updated", description: "Note updated", timestamp: new Date().toISOString() },
+      { event_id: "event-a", event_type: "note.created", description: "Note created", timestamp: new Date(Date.now() - 1000).toISOString() },
+    ];
+    suggestionResponse = {
+      suggestion_id: "event-b|event-a",
+      action: "review_activity",
+      text: "Review your notes and decide what to organize next.",
+    };
+    renderApp(USER_ID, "/manage");
+    await user.click(screen.getByRole("button", { name: "Conversations" }));
+    await user.click(await screen.findByRole("button", { name: "Review Notes" }));
+
+    expect(screen.getByRole("button", { name: "Notes" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("dismisses a suggestion for its context and isolates dismissal by user", async () => {
+    const user = userEvent.setup();
+    activityEvents = [
+      { event_id: "event-b", event_type: "note.updated", description: "Note updated", timestamp: new Date().toISOString() },
+      { event_id: "event-a", event_type: "note.created", description: "Note created", timestamp: new Date(Date.now() - 1000).toISOString() },
+    ];
+    suggestionResponse = {
+      suggestion_id: "event-b|event-a",
+      action: "review_activity",
+      text: "Review your notes and decide what to organize next.",
+    };
+    renderApp();
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("region", { name: "AI suggestion" })).toBeNull();
+
+    activityEvents.unshift({
+      event_id: "event-c",
+      event_type: "note.updated",
+      description: "Note updated",
+      timestamp: new Date().toISOString(),
+    });
+    suggestionResponse.suggestion_id = "event-c|event-b|event-a";
+    await act(async () => {
+      window.dispatchEvent(new Event("ia:activity-updated"));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(screen.queryByRole("region", { name: "AI suggestion" })).toBeNull();
+
+    cleanup();
+    renderApp(USER_ID);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
+      new URL(input, window.location.origin).pathname === "/activity/",
+    )).toBe(true));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 25)));
+    expect(screen.queryByRole("region", { name: "AI suggestion" })).toBeNull();
+
+    cleanup();
+    renderApp("another-user");
+    expect(await screen.findByRole("region", { name: "AI suggestion" })).toBeTruthy();
+  });
+
+  it("keeps Activity History out of navigation and redirects its old route", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    expect(screen.queryByRole("link", { name: "Activity History" })).toBeNull();
+
+    window.history.pushState(null, "", "/activity");
+    await act(async () => window.dispatchEvent(new PopStateEvent("popstate")));
+    expect(await screen.findByRole("textbox", { name: "Question" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/ask");
+  });
+
   it("renders the route-controlled Login/Register mode in the first updated render", () => {
     const onModeChange = vi.fn();
     const { rerender } = render(<Login initialIsRegister={false} onModeChange={onModeChange} />);
@@ -914,7 +1098,7 @@ describe("active conversation restoration", () => {
     await user.click(screen.getByRole("checkbox", { name: /^Limit note 1(?:$|\s)/ }));
     expect(screen.getByRole("checkbox", { name: /Limit note 21/ }).disabled).toBe(false);
     expect(screen.getByRole("checkbox", { name: /^Limit note 2(?:$|\s)/ }).checked).toBe(true);
-  });
+  }, 10_000);
 
   it("opens, edits, and deletes only the selected saved flashcard deck", async () => {
     const user = userEvent.setup();

@@ -7,6 +7,7 @@ import { clearActiveConversation, clearSelectedNoteIds } from "./activeConversat
 import Login from "./components/Login";
 import Ask from "./components/Ask";
 import AskOverlay from "./components/AskOverlay";
+import AISuggestion from "./components/AISuggestion";
 import DebugContext from "./components/DebugContext";
 import History from "./components/History";
 import Manage from "./components/Manage";
@@ -63,6 +64,8 @@ export default function App() {
   const [askOverlay, setAskOverlay] = useState(null);
   const [askHistoryFocused, setAskHistoryFocused] = useState(false);
   const [manageInitialSection, setManageInitialSection] = useState("notes");
+  const [managePageKey, setManagePageKey] = useState(0);
+  const [suggestionAction, setSuggestionAction] = useState(null);
 
   const navigate = (nextPath, replace = false) => {
     if (window.location.pathname !== nextPath) {
@@ -81,6 +84,7 @@ export default function App() {
     setTokenState(nextToken);
     setUserId(nextToken ? nextUserId : null);
     setToken(nextToken);
+    if (!nextToken) setSuggestionAction(null);
     navigate(nextToken ? "/ask" : "/login", true);
   };
 
@@ -104,6 +108,19 @@ export default function App() {
     });
   }, []);
   const closeAskOverlay = useCallback(() => setAskOverlay(null), []);
+  const consumeSuggestionAction = useCallback(() => setSuggestionAction(null), []);
+  const acceptSuggestion = (action) => {
+    if (action === "review_activity") {
+      setManageInitialSection("notes");
+      setManagePageKey((key) => key + 1);
+      navigate("/manage");
+      return;
+    }
+    if (action === "prepare_ask" || action === "open_flashcards") {
+      setSuggestionAction({ action, requestId: Date.now() });
+      navigate("/ask");
+    }
+  };
   const handleOverlayEscape = useCallback(() => {
     if (askOverlay?.type !== "userMessage" || askOverlay.mode !== "edit") return false;
     if (askOverlay.saving) return true;
@@ -209,15 +226,18 @@ export default function App() {
             onMemoryManage={openMemoryManager}
             onUserMessageDetail={openUserMessageOverlay}
             onHistoryFocusChange={setAskHistoryFocused}
+            suggestionAction={suggestionAction}
+            onSuggestionActionConsumed={consumeSuggestionAction}
           />
         ) : activePath === "/manage" ? (
-          <Manage initialSection={manageInitialSection} />
+          <Manage key={managePageKey} initialSection={manageInitialSection} />
         ) : activePath === "/debug" ? (
           <DebugContext />
         ) : (
           <Settings />
         )}
       </main>
+      <AISuggestion key={userId} userId={userId} onAccept={acceptSuggestion} />
       {activePath === "/ask" && askOverlay && (
         <AskOverlay
           title={

@@ -78,6 +78,7 @@ def create_app():
     from app.auth.routes import bp as auth_bp
     from app.credits.routes import bp as credits_bp
     from app.memories.routes import bp as memories_bp
+    from app.activity.routes import bp as activity_bp
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(notes_bp, url_prefix="/notes")
     app.register_blueprint(ai_bp, url_prefix="/ai")
@@ -85,6 +86,7 @@ def create_app():
     app.register_blueprint(settings_bp, url_prefix="/settings")
     app.register_blueprint(credits_bp, url_prefix="/credits")
     app.register_blueprint(memories_bp, url_prefix="/memories")
+    app.register_blueprint(activity_bp, url_prefix="/activity")
     return app
 
 # single root logger for app (avoid duplicate basicConfig per import)

@@ -98,7 +98,7 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
     setEditResult(null);
     setEditSaving(true);
     try {
-      await updateNote(viewingId, { title: editTitle.trim() });
+      await updateNote(viewingId, { title: editTitle.trim() }, { activityRelevant: false });
       setEditResult({ success: true });
       loadHistoryList(setList, setLoading, setError);
     } catch (err) {
@@ -113,7 +113,7 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
     setDeleteLoading(true);
     setDeleteConfirmId(null);
     try {
-      await deleteNote(id);
+      await deleteNote(id, { activityRelevant: false });
       if (viewingId === id) setViewingId(null);
       setList((prev) => prev.filter((h) => h.id !== id));
     } catch (e) {
@@ -129,7 +129,7 @@ export default function History({ isSelectionMode = false, activeId = null, onSe
     setBulkDeleteConfirm(false);
     try {
       for (const id of selectedIds) {
-        await deleteNote(id);
+        await deleteNote(id, { activityRelevant: false });
       }
       setSelectedIds(new Set());
       if (viewingId && selectedIds.has(viewingId)) setViewingId(null);
