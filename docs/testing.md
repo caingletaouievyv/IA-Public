@@ -177,7 +177,7 @@ Run the focused backend regressions from `backend/`:
 python -m scripts.test.test_activity
 ```
 
-`test_activity.py` verifies content-free event metadata, Note and flashcard-deck event types, `_history` exclusion, newest-first ordering, bounded limits, authentication, cross-user isolation, failed-mutation behavior, retry after a transient `os.replace` permission failure, and concurrent writes without lost events. Frontend component tests cover authenticated suggestion generation, display, acceptance, and dismissal; there is no Activity History page.
+`test_activity.py` verifies content-free event metadata, Note and flashcard-deck event types, `_history` exclusion, newest-first ordering, bounded limits, authentication, cross-user isolation, failed-mutation behavior, retry after a transient `os.replace` permission failure, and concurrent writes without lost events. Frontend component tests cover authenticated suggestion generation, display, acceptance, and dismissal.
 
 ## AI Suggestions
 
