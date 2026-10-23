@@ -2751,3 +2751,61 @@ button.secondary:focus-visible,
     padding: 0.85rem 0.9rem;
   }
 }
+
+/* Admin: user management and diagnostics */
+.section--admin .card-desc {
+  margin-bottom: 0.75rem;
+}
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.admin-users-table th,
+.admin-users-table td {
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.admin-users-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.admin-users-table__muted {
+  color: var(--text-muted);
+}
+.admin-diagnostics-toolbar {
+  margin-bottom: 0.75rem;
+}
+.admin-diagnostics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.admin-diagnostics-event {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.admin-diagnostics-event__meta {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem 1rem;
+  grid-template-columns: minmax(8rem, auto) 1fr;
+  font-size: 0.8125rem;
+}
+.admin-diagnostics-event__row {
+  display: contents;
+}
+.admin-diagnostics-event__row dt {
+  margin: 0;
+  color: var(--text-muted);
+}
+.admin-diagnostics-event__row dd {
+  margin: 0;
+  word-break: break-word;
+}

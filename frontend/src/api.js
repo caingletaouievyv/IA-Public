@@ -88,6 +88,40 @@ export async function login(username, password) {
   return data;
 }
 
+export async function getAuthMe() {
+  const res = await fetch(`${BASE}/auth/me`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function listAdminUsers() {
+  const res = await fetch(`${BASE}/admin/users`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function promoteAdminUser(userId) {
+  const res = await fetch(`${BASE}/admin/users/${encodeURIComponent(userId)}/promote`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
+export async function listDiagnosticEvents(limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`${BASE}/diagnostics/events?${params}`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
 export async function register(username, password) {
   const res = await fetch(`${BASE}/auth/register`, {
     method: "POST",

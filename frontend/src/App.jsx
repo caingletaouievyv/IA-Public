@@ -2,7 +2,13 @@
 // Public routes, auth gate, and lightweight authenticated page navigation.
 
 import { useCallback, useEffect, useState } from "react";
-import { getToken, getTokenUserId, setToken } from "./api";
+import { getAuthMe, getToken, getTokenUserId, setToken } from "./api";
+import {
+  canShowDiagnosticsNav,
+  canShowUserManagementNav,
+} from "./authRoles";
+import AdminDiagnostics from "./components/AdminDiagnostics";
+import AdminUsers from "./components/AdminUsers";
 import { clearActiveConversation, clearSelectedNoteIds } from "./activeConversation";
 import Login from "./components/Login";
 import Ask from "./components/Ask";
@@ -18,13 +24,32 @@ import PublicSite from "./components/PublicSite";
 const UNAUTH_EVENT = "ia:unauthorized";
 const PUBLIC_PATHS = new Set(["/", "/privacy", "/terms", "/contact"]);
 const AUTH_PATHS = new Set(["/login", "/register"]);
-const APP_PATHS = new Set(["/ask", "/manage", "/debug", "/settings"]);
+const APP_PATHS = new Set([
+  "/ask",
+  "/manage",
+  "/debug",
+  "/settings",
+  "/admin/users",
+  "/admin/diagnostics",
+]);
 
 function currentPath() {
   return window.location.pathname.replace(/\/+$/, "") || "/";
 }
 
-function Header({ onLogout, activePath, onNavigate }) {
+function Header({ onLogout, activePath, onNavigate, role }) {
+  const navItems = [
+    ["/ask", "Ask"],
+    ["/manage", "Manage"],
+    ["/settings", "Settings"],
+  ];
+  if (canShowUserManagementNav(role)) {
+    navItems.push(["/admin/users", "Users"]);
+  }
+  if (canShowDiagnosticsNav(role)) {
+    navItems.push(["/admin/diagnostics", "Diagnostics"]);
+  }
+
   return (
     <header className="app-header app-header--main">
       <div className="app-header__brand">
@@ -33,11 +58,7 @@ function Header({ onLogout, activePath, onNavigate }) {
       </div>
       <div className="app-header__actions">
         <nav className="app-navigation" aria-label="Application navigation">
-          {[
-            ["/ask", "Ask"],
-            ["/manage", "Manage"],
-            ["/settings", "Settings"],
-          ].map(([href, label]) => (
+          {navItems.map(([href, label]) => (
             <a
               key={href}
               href={href}
@@ -66,6 +87,8 @@ export default function App() {
   const [manageInitialSection, setManageInitialSection] = useState("notes");
   const [managePageKey, setManagePageKey] = useState(0);
   const [suggestionAction, setSuggestionAction] = useState(null);
+  const [session, setSession] = useState(null);
+  const [sessionLoading, setSessionLoading] = useState(() => Boolean(getToken()));
 
   const navigate = (nextPath, replace = false) => {
     if (window.location.pathname !== nextPath) {
@@ -84,7 +107,13 @@ export default function App() {
     setTokenState(nextToken);
     setUserId(nextToken ? nextUserId : null);
     setToken(nextToken);
-    if (!nextToken) setSuggestionAction(null);
+    if (!nextToken) {
+      setSession(null);
+      setSessionLoading(false);
+      setSuggestionAction(null);
+    } else {
+      setSessionLoading(true);
+    }
     navigate(nextToken ? "/ask" : "/login", true);
   };
 
@@ -172,6 +201,44 @@ export default function App() {
   }, [userId]);
 
   useEffect(() => {
+    if (!token) {
+      setSession(null);
+      setSessionLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setSessionLoading(true);
+    getAuthMe()
+      .then((data) => {
+        if (!cancelled) {
+          setSession({
+            user_id: data.user_id,
+            username: data.username,
+            role: data.role,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSession(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSessionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, userId]);
+
+  useEffect(() => {
+    if (!token || sessionLoading) return;
+    if (path === "/admin/users" && !canShowUserManagementNav(session?.role)) {
+      navigate("/ask", true);
+    } else if (path === "/admin/diagnostics" && !canShowDiagnosticsNav(session?.role)) {
+      navigate("/ask", true);
+    }
+  }, [path, token, sessionLoading, session?.role]);
+
+  useEffect(() => {
     if (path === "/app") {
       navigate(token ? "/ask" : "/login", true);
     } else if (!token && APP_PATHS.has(path)) {
@@ -202,6 +269,7 @@ export default function App() {
   }
 
   const activePath = APP_PATHS.has(path) ? path : "/ask";
+  const adminPathPendingRole = sessionLoading && (activePath === "/admin/users" || activePath === "/admin/diagnostics");
   const handleNavigation = (event, nextPath) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -215,6 +283,7 @@ export default function App() {
         onLogout={() => setAuthToken(null)}
         activePath={activePath}
         onNavigate={handleNavigation}
+        role={session?.role}
       />
       <main className="app-main">
         {activePath === "/ask" ? (
@@ -233,6 +302,12 @@ export default function App() {
           <Manage key={managePageKey} initialSection={manageInitialSection} />
         ) : activePath === "/debug" ? (
           <DebugContext />
+        ) : adminPathPendingRole ? (
+          <p role="status">Loading session…</p>
+        ) : activePath === "/admin/users" ? (
+          <AdminUsers />
+        ) : activePath === "/admin/diagnostics" ? (
+          <AdminDiagnostics />
         ) : (
           <Settings />
         )}

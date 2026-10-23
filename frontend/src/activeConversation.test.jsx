@@ -154,6 +154,9 @@ function installApiMock() {
     if (url.pathname === "/auth/login" && method === "POST") {
       return jsonResponse({ token: tokenFor("user-2"), user_id: "user-2" });
     }
+    if (url.pathname === "/auth/me" && method === "GET") {
+      return jsonResponse({ user_id: USER_ID, username: "testuser", role: "user" });
+    }
     throw new Error(`Unexpected API request: ${method} ${url.pathname}`);
   });
   vi.stubGlobal("fetch", fetchMock);
