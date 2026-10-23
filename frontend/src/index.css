@@ -1539,6 +1539,7 @@ button.secondary:focus-visible,
 }
 .ask-context-control--source-only.ask-context-control--active {
   border-color: var(--border);
+  background: var(--bg-subtle);
 }
 .ask-context-source-wrap {
   position: relative;
@@ -1587,7 +1588,7 @@ button.secondary:focus-visible,
 .ask-context-mode {
   flex: 0 0 auto;
   padding: 0.42rem 0.62rem;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid transparent;
   color: var(--text-muted);
   font-size: 0.7rem;
   font-weight: 700;
@@ -1596,6 +1597,7 @@ button.secondary:focus-visible,
 }
 .ask-context-control .ask-context-mode[aria-pressed="true"] {
   background: rgba(52, 199, 89, 0.16);
+  border-color: transparent;
   color: var(--success);
 }
 .ask-context-mode__indicator {
