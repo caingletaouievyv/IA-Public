@@ -6,11 +6,13 @@ import logging
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from app import limiter
+from app.config import NOTES_MAX_CONTENT_CHARS
 from app.activity.manager import record_activity
 from app.common.auth import require_auth, auth_debug
 from app.notes.manager import add_note, update_note, get_notes_list, get_note, delete_note, get_categories, get_tags
 from app.notes.schemas import NoteCreate, NoteUpdate
 from app.notes.image_to_note import process_images_to_note
+from app.notes.pdf_extract import PdfExtractError, extract_text_from_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +73,43 @@ def create_note():
         note_in = NoteCreate(**data)
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
+    if len(note_in.content) > NOTES_MAX_CONTENT_CHARS:
+        return jsonify({
+            "error": f"Note content exceeds the {NOTES_MAX_CONTENT_CHARS:,} character limit.",
+        }), 400
     new_note = add_note(_model_to_dict(note_in), user_id)
     _record_note_activity(user_id, "created", new_note)
     return jsonify(new_note), 201
+
+@bp.route("/from-pdf/extract", methods=["POST"])
+@limiter.limit("10 per minute")
+def extract_note_text_from_pdf():
+    """Multipart: file (single PDF). Returns extracted text for client review; does not create a note."""
+    user_id, auth_err = require_auth()
+    if auth_err:
+        return auth_err
+    files = request.files.getlist("file") or request.files.getlist("files")
+    if not files:
+        single = request.files.get("file")
+        files = [single] if single and getattr(single, "filename", None) else []
+    file_storage = next((f for f in files if f and getattr(f, "filename", None)), None)
+    if not file_storage:
+        return jsonify({"error": "Missing 'file' in multipart form"}), 400
+    if len([f for f in files if f and getattr(f, "filename", None)]) > 1:
+        return jsonify({"error": "Upload one PDF at a time."}), 400
+    try:
+        result = extract_text_from_pdf(file_storage, user_id=user_id)
+        return jsonify({
+            "text": result.text,
+            "page_count": result.page_count,
+            "char_count": len(result.text),
+        })
+    except PdfExtractError as error:
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        logger.error("pdf_extract_failed error_type=%s", type(error).__name__)
+        return jsonify({"error": "PDF extraction failed."}), 500
+
 
 @bp.route("/from-images", methods=["POST"])
 @limiter.limit("10 per minute")

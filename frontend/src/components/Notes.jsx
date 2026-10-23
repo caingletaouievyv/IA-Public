@@ -2,7 +2,10 @@
 // Notes: list with search; Select All / Unselect All; bulk delete. Click card → view/edit. Add note menu. Excludes _history. Auto-refresh when list visible (visibility + interval).
 
 import { useState, useEffect, useRef } from "react";
-import { listNotes, createNote, createNoteFromImages, updateNote, deleteNote, getNotesMeta } from "../api";
+import { listNotes, createNote, createNoteFromImages, extractPdfText, updateNote, deleteNote, getNotesMeta } from "../api";
+
+/** Must match backend NOTES_MAX_CONTENT_CHARS (POST /notes/ and PDF extract). */
+const NOTE_MAX_CONTENT_CHARS = 512_000;
 
 function loadNotesList(setData, setLoading, setError) {
   setError(null);
@@ -39,6 +42,14 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   const [imgFiles, setImgFiles] = useState([]);
   const [imgLoading, setImgLoading] = useState(false);
   const [imgResult, setImgResult] = useState(null);
+  const [pdfTitle, setPdfTitle] = useState("");
+  const [pdfCategory, setPdfCategory] = useState("");
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfReviewText, setPdfReviewText] = useState("");
+  const [pdfExtracted, setPdfExtracted] = useState(false);
+  const [pdfExtractLoading, setPdfExtractLoading] = useState(false);
+  const [pdfSaveLoading, setPdfSaveLoading] = useState(false);
+  const [pdfResult, setPdfResult] = useState(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [viewingNoteId, setViewingNoteId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -110,6 +121,14 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     setImgResult(null);
     setAddMenuOpen(false);
   };
+  const openFromPdfForm = () => {
+    setAddFormMode("from-pdf");
+    setPdfResult(null);
+    setPdfFile(null);
+    setPdfReviewText("");
+    setPdfExtracted(false);
+    setAddMenuOpen(false);
+  };
 
   const openTagsDropdown = (inputId, value) => {
     const val = inputId === "noteTags" ? noteTagInput : editTagInput;
@@ -168,6 +187,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   const applyCategorySuggestion = (cat) => {
     if (categoryDropdown.inputId === "noteCategory") setNoteCategory(cat);
     else if (categoryDropdown.inputId === "imgCategory") setImgCategory(cat);
+    else if (categoryDropdown.inputId === "pdfCategory") setPdfCategory(cat);
     else if (categoryDropdown.inputId === "editCategory") setEditCategory(cat);
     setCategoryDropdown((p) => ({ ...p, open: false }));
   };
@@ -177,6 +197,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   const filteredCategorySuggestionsImg = (meta.categories || [])
     .filter((c) => c.toLowerCase().startsWith((imgCategory || "").trim().toLowerCase()))
     .slice(0, 10);
+  const filteredCategorySuggestionsPdf = (meta.categories || [])
+    .filter((c) => c.toLowerCase().startsWith((pdfCategory || "").trim().toLowerCase()))
+    .slice(0, 10);
   const filteredCategorySuggestionsEdit = (meta.categories || [])
     .filter((c) => c.toLowerCase().startsWith((editCategory || "").trim().toLowerCase()))
     .slice(0, 10);
@@ -185,7 +208,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
       ? filteredCategorySuggestionsNewNote
       : categoryDropdown.inputId === "imgCategory"
         ? filteredCategorySuggestionsImg
-        : filteredCategorySuggestionsEdit;
+        : categoryDropdown.inputId === "pdfCategory"
+          ? filteredCategorySuggestionsPdf
+          : filteredCategorySuggestionsEdit;
 
   const handleCreateNote = async (e) => {
     e.preventDefault();
@@ -217,6 +242,79 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
       setNoteResult({ error: err.message });
     } finally {
       setNoteLoading(false);
+    }
+  };
+
+  const handleExtractPdf = async (e) => {
+    e.preventDefault();
+    if (!pdfFile) {
+      setPdfResult({ error: "Select a PDF file." });
+      return;
+    }
+    setPdfResult(null);
+    setPdfExtractLoading(true);
+    setPdfExtracted(false);
+    setPdfReviewText("");
+    try {
+      const form = new FormData();
+      form.append("file", pdfFile);
+      const res = await extractPdfText(form);
+      const text = (res.text || "").trim();
+      if (!text) {
+        setPdfResult({ error: "No text was extracted from this PDF." });
+        return;
+      }
+      setPdfReviewText(text);
+      setPdfExtracted(true);
+      setPdfResult({ success: true, detail: `Extracted ${res.char_count ?? text.length} characters from ${res.page_count ?? "?"} page(s). Review below, then save.` });
+    } catch (err) {
+      setPdfResult({ error: err.message });
+    } finally {
+      setPdfExtractLoading(false);
+    }
+  };
+
+  const pdfReviewCharCount = (pdfReviewText || "").length;
+  const pdfReviewOverLimit = pdfReviewCharCount > NOTE_MAX_CONTENT_CHARS;
+
+  const handleSavePdfNote = async (e) => {
+    e.preventDefault();
+    const title = (pdfTitle || "").trim();
+    const category = (pdfCategory || "").trim();
+    const content = (pdfReviewText || "").trim();
+    if (!title || !category) {
+      setPdfResult({ error: "Title and category are required." });
+      return;
+    }
+    if (!pdfExtracted || !content) {
+      setPdfResult({ error: "Extract text from the PDF before saving." });
+      return;
+    }
+    if (content.length > NOTE_MAX_CONTENT_CHARS) {
+      setPdfResult({
+        error: `Note content exceeds the ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit.`,
+      });
+      return;
+    }
+    setPdfResult(null);
+    setPdfSaveLoading(true);
+    try {
+      const created = await createNote({ title, category, content, tags: [] });
+      if (isSelectionMode && created?.id) {
+        setSelectedNoteIds((previous) => new Set([...previous, created.id]));
+        setAddFormMode(null);
+      }
+      setPdfTitle("");
+      setPdfCategory("");
+      setPdfFile(null);
+      setPdfReviewText("");
+      setPdfExtracted(false);
+      setAddFormMode(null);
+      loadNotesList(setData, setLoading, setError);
+    } catch (err) {
+      setPdfResult({ error: err.message });
+    } finally {
+      setPdfSaveLoading(false);
     }
   };
 
@@ -275,7 +373,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
       ? "New note"
       : addFormMode === "from-images"
         ? "Add note from images"
-        : isViewingNote
+        : addFormMode === "from-pdf"
+          ? "Add note from PDF"
+          : isViewingNote
           ? (editTitle || viewingNote?.title || "Untitled")
           : "Your notes";
   const searchLower = (searchQuery || "").trim().toLowerCase();
@@ -290,6 +390,10 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     setViewingNoteId(null);
     setNoteResult(null);
     setImgResult(null);
+    setPdfResult(null);
+    setPdfFile(null);
+    setPdfReviewText("");
+    setPdfExtracted(false);
     if (!isSelectionMode) setSelectedNoteIds(new Set());
   };
 
@@ -411,6 +515,33 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                         {imgLoading ? "…" : "Add from images"}
                       </button>
                     )}
+                    {addFormMode === "from-pdf" && (
+                      pdfExtracted ? (
+                        <button
+                          type="submit"
+                          form="notes-from-pdf-save-form"
+                          className="button-primary"
+                          disabled={
+                            pdfSaveLoading
+                            || !pdfTitle.trim()
+                            || !pdfCategory.trim()
+                            || !pdfReviewText.trim()
+                            || pdfReviewOverLimit
+                          }
+                        >
+                          {pdfSaveLoading ? "…" : "Save note"}
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          form="notes-from-pdf-extract-form"
+                          className="button-primary"
+                          disabled={pdfExtractLoading || !pdfFile}
+                        >
+                          {pdfExtractLoading ? "…" : "Extract text"}
+                        </button>
+                      )
+                    )}
                   </>
                 )}
               </div>
@@ -487,6 +618,37 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                       {imgLoading ? "…" : "Add from images"}
                     </button>
                   )}
+                  {addFormMode === "from-pdf" && (
+                    pdfExtracted ? (
+                      <button
+                        type="submit"
+                        form="notes-from-pdf-save-form"
+                        className="button-primary"
+                        disabled={
+                          pdfSaveLoading
+                          || !pdfTitle.trim()
+                          || !pdfCategory.trim()
+                          || !pdfReviewText.trim()
+                          || pdfReviewOverLimit
+                        }
+                        aria-label="Save note from PDF"
+                        title="Save note"
+                      >
+                        {pdfSaveLoading ? "…" : "Save note"}
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        form="notes-from-pdf-extract-form"
+                        className="button-primary"
+                        disabled={pdfExtractLoading || !pdfFile}
+                        aria-label="Extract text from PDF"
+                        title="Extract text"
+                      >
+                        {pdfExtractLoading ? "…" : "Extract text"}
+                      </button>
+                    )
+                  )}
                 </div>
               ) : showList && selectedNoteIds.size > 0 ? (
                 <button
@@ -530,6 +692,14 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                           onClick={openFromImagesForm}
                         >
                           Add from images
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="button-subtle notes-add-menu__item"
+                          onClick={openFromPdfForm}
+                        >
+                          Add from PDF
                         </button>
                       </div>
                     )}
@@ -782,6 +952,111 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                     (imgResult.appended
                       ? `Added to: ${imgResult.note?.title}`
                       : `Created: ${imgResult.note?.title}`))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {addFormMode === "from-pdf" && (
+          <div className="notes-add-panel">
+            <form id="notes-from-pdf-extract-form" onSubmit={handleExtractPdf} className={`form--compact ${pdfExtractLoading ? "loading" : ""}`}>
+              <label htmlFor="pdfTitle">Title</label>
+              <input
+                id="pdfTitle"
+                type="text"
+                placeholder="e.g. Biology — Unit 3"
+                value={pdfTitle}
+                onChange={(e) => setPdfTitle(e.target.value)}
+                disabled={pdfExtractLoading || pdfSaveLoading}
+              />
+              <label htmlFor="pdfCategory">Category</label>
+              <div className="notes-category-wrap">
+                <input
+                  id="pdfCategory"
+                  type="text"
+                  placeholder="e.g. science"
+                  value={pdfCategory}
+                  onChange={(e) => {
+                    setPdfCategory(e.target.value);
+                    setCategoryDropdown((p) => ({ ...p, open: true, index: 0, inputId: "pdfCategory" }));
+                  }}
+                  onFocus={() => openCategoryDropdown("pdfCategory")}
+                  onBlur={() => setTimeout(() => setCategoryDropdown((p) => ({ ...p, open: false })), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setCategoryDropdown((p) => ({ ...p, open: false }));
+                    if (e.key === "Enter" && categoryDropdown.open && categoryDropdown.inputId === "pdfCategory" && filteredCategorySuggestionsPdf[categoryDropdown.index]) {
+                      e.preventDefault();
+                      applyCategorySuggestion(filteredCategorySuggestionsPdf[categoryDropdown.index]);
+                    }
+                    if (!categoryDropdown.open || categoryDropdown.inputId !== "pdfCategory") return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setCategoryDropdown((p) => ({ ...p, index: Math.min(p.index + 1, filteredCategorySuggestionsPdf.length - 1) }));
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setCategoryDropdown((p) => ({ ...p, index: Math.max(0, p.index - 1) }));
+                    }
+                  }}
+                  disabled={pdfExtractLoading || pdfSaveLoading}
+                  autoComplete="off"
+                />
+                {categoryDropdown.open && categoryDropdown.inputId === "pdfCategory" && filteredCategorySuggestionsPdf.length > 0 && (
+                  <ul className="notes-category-suggestions" role="listbox">
+                    {filteredCategorySuggestionsPdf.map((c, i) => (
+                      <li
+                        key={c}
+                        role="option"
+                        aria-selected={i === categoryDropdown.index}
+                        className={i === categoryDropdown.index ? "notes-category-suggestions__item is-selected" : "notes-category-suggestions__item"}
+                        onMouseDown={(e) => { e.preventDefault(); applyCategorySuggestion(c); }}
+                      >
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <label htmlFor="pdfFile">PDF</label>
+              <input
+                id="pdfFile"
+                type="file"
+                accept="application/pdf,.pdf"
+                onChange={(e) => {
+                  const file = (e.target.files || [])[0] || null;
+                  setPdfFile(file);
+                  setPdfExtracted(false);
+                  setPdfReviewText("");
+                }}
+                disabled={pdfExtractLoading || pdfSaveLoading}
+              />
+            </form>
+            {pdfExtracted && (
+              <form id="notes-from-pdf-save-form" onSubmit={handleSavePdfNote} className={`form--compact ${pdfSaveLoading ? "loading" : ""}`}>
+                <label htmlFor="pdfReviewText">
+                  Extracted text (review and edit)
+                  {" — "}
+                  {pdfReviewCharCount.toLocaleString()} / {NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters
+                </label>
+                <textarea
+                  id="pdfReviewText"
+                  placeholder="Extracted text will appear here…"
+                  value={pdfReviewText}
+                  onChange={(e) => setPdfReviewText(e.target.value)}
+                  disabled={pdfSaveLoading}
+                  rows={12}
+                  aria-invalid={pdfReviewOverLimit || undefined}
+                />
+                {pdfReviewOverLimit && (
+                  <p className="out out--compact err" role="alert">
+                    Note content exceeds the {NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit. Shorten the text before saving.
+                  </p>
+                )}
+              </form>
+            )}
+            {pdfResult && (
+              <div className={`out out--compact ${pdfResult.error ? "err" : "success-msg"}`}>
+                {pdfResult.error || pdfResult.detail || "Done."}
               </div>
             )}
           </div>

@@ -369,6 +369,16 @@ export async function createNoteFromImages(formData) {
   return result;
 }
 
+export async function extractPdfText(formData) {
+  const res = await fetch(`${BASE}/notes/from-pdf/extract`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  });
+  const data = await res.json();
+  return handleResponse(res, data);
+}
+
 export async function createNote(note) {
   const token = requireToken();
   const res = await fetch(`${BASE}/notes/`, {

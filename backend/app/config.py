@@ -80,5 +80,10 @@ MEMORY_ANALYTICS_ENABLED = os.getenv("MEMORY_ANALYTICS_ENABLED", "false").lower(
 MEMORY_ANALYTICS_FORMAT = os.getenv("MEMORY_ANALYTICS_FORMAT", "csv")
 MEMORY_ANALYTICS_PATH = os.getenv("MEMORY_ANALYTICS_PATH", "data/memory_analytics.csv")
 
+# Notes: body size cap (create + PDF extract) and PDF upload size
+NOTES_MAX_CONTENT_CHARS = int(os.getenv("NOTES_MAX_CONTENT_CHARS", "512000"))
+NOTES_PDF_MAX_BYTES = int(os.getenv("NOTES_PDF_MAX_BYTES", str(15 * 1024 * 1024)))
+NOTES_PDF_MAX_EXTRACT_CHARS = int(os.getenv("NOTES_PDF_MAX_EXTRACT_CHARS", str(NOTES_MAX_CONTENT_CHARS)))
+
 # CORS: comma-separated origins (e.g. Vite dev). Empty = no CORS. Default allows localhost:5174.
 CORS_ORIGINS = [o.strip() for o in (os.getenv("CORS_ORIGINS") or "http://localhost:5174,http://127.0.0.1:5174").split(",") if o.strip()]

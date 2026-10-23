@@ -34,3 +34,6 @@ PyJWT>=2.8
 # Notes from images (OCR); requires Tesseract installed on system
 Pillow>=10.0
 pytesseract>=0.3.10
+
+# Notes from PDF (text layer)
+pypdf>=4.0

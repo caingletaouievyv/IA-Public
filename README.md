@@ -86,7 +86,7 @@ The backend currently uses local JSON files under `backend/data/` for runtime an
 | Area | Endpoints |
 |------|-----------|
 | Auth | `POST /auth/register`, `POST /auth/login` |
-| Notes | `GET/POST /notes/`, `GET/PUT/DELETE /notes/<id>`, `POST /notes/from-images` |
+| Notes | `GET/POST /notes/`, `GET/PUT/DELETE /notes/<id>`, `POST /notes/from-images`, `POST /notes/from-pdf/extract` |
 | Memory | `GET /memories/`, `PUT/DELETE /memories/<id>`, `DELETE /memories/clear` |
 | AI | `POST /ai/ask`, `POST /ai/suggestions`, `POST /ai/flashcards/generate`, `POST /ai/estimate_tokens`, `POST /ai/debug/context` |
 | Credits | `POST /credits/rewarded-ad` (development foundation; JWT required) |

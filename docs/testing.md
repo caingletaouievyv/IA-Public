@@ -33,6 +33,7 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 | **POST /ai/debug/context** | POST | yes | Bearer + `{"question":"..."}` | 200 context, scores, dropped_notes |
 | **POST /notes** | POST | yes | Bearer + note JSON | 201 note |
 | **POST /notes/from-images** | POST | yes | Multipart: title, category, files | 201 `{ note, appended }` |
+| **POST /notes/from-pdf/extract** | POST | yes | Multipart: single `file` (PDF) | 200 `{ text, page_count, char_count }` |
 | **GET /notes** | GET | yes | Bearer; optional `?limit=500` | 200 array |
 | **GET /notes/<id>** | GET | yes | Bearer | 200 or 404 |
 | **PUT /notes/<id>** | PUT | yes | Bearer + partial JSON | 200 or 404 |
@@ -80,6 +81,7 @@ python -m scripts.test.test_text_retrieval
 python -m scripts.test.test_seed_user
 python -m scripts.test.test_seed_render_demo
 python -m scripts.test.test_settings_preferences
+python -m scripts.test.test_pdf_to_note
 ```
 
 `test_seed_user.py` checks the environment/password safety guard, repeated execution, and preservation of existing demo notes, settings, and credit balances using temporary JSON stores. `test_ai_credits.py` uses temporary account storage and mocks AI execution. It covers registration and lazy initialization at the configured starting balance, existing-account preservation when the initial-balance setting changes, per-user isolation, idempotent grants and ledger entries, rejection of unverified rewarded-ad grants outside dev/test, Ask spending, insufficient-credit rejection, unlimited-role behavior, refunds, JWT authentication, and rate limiting. It also verifies that completed Ask retries return the saved result without another provider call or debit, distinct IDs create distinct operations, and the same ID is isolated between users. It does not currently assert the active-pending 409 response. `test_ai_context_modes.py` covers all modes, selected IDs, missing-mode compatibility, and invalid modes. `test_text_retrieval.py` covers deterministic lexical scoring, filtering, thresholds, and token packing. `test_lazy_embeddings.py` verifies model initialization is deferred and supplies a test-only JWT secret for app startup.
@@ -127,6 +129,7 @@ This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it
 | Rewarded ads | Use `test_ai_credits.py` | Auth is required; caller-supplied reward IDs cannot grant outside explicit development/test mode |
 | JWT startup validation | Use `test_ai_credits.py` | Missing, weak, and placeholder secrets fail app creation without logging the secret |
 | Images | Notes UI or multipart `/notes/from-images` | 201; Tesseract required |
+| PDF import | `python -m scripts.test.test_pdf_to_note` or Manage → Add from PDF | 200 extract; save via `POST /notes/`; encrypted/blank/oversized rejected |
 
 ## Frontend component tests
 

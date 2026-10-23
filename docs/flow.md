@@ -173,6 +173,20 @@ The repository currently has no `gunicorn.conf.py`, guarded WSGI entrypoint, or 
 
 ---
 
+## 10b. Notes from PDF (text layer)
+
+| Step | Where | What to look at |
+|------|--------|------------------|
+| 1 | `frontend/src/components/Notes.jsx` | Manage → **Add from PDF**: pick file, title, category → **Extract text** → review/edit textarea → **Save note** via `createNote()`. |
+| 2 | `frontend/src/api.js` → `extractPdfText()` | Multipart `POST /notes/from-pdf/extract`; save uses existing `POST /notes/`. |
+| 3 | `backend/app/notes/routes.py` → `extract_note_text_from_pdf()` | `require_auth()`; single PDF file; call `extract_text_from_pdf()`; return `{ text, page_count, char_count }`. Does not persist the PDF or create a note. |
+| 4 | `backend/app/notes/pdf_extract.py` | Validate `.pdf`, 15 MB cap, `%PDF` magic; `pypdf` page text extraction; reject encrypted, invalid, empty/image-only PDFs and text over 512k characters. |
+| 5 | `backend/app/notes/routes.py` → `create_note()` | After client review, normal `NoteCreate` + `add_note()` + activity `note.created`. |
+
+**Prerequisite:** `pypdf` in backend requirements. Scanned/image-only PDFs are out of scope (no OCR).
+
+---
+
 ## 11. Ask with Notes and persistent Memory
 
 | Step | Where | What to look at |

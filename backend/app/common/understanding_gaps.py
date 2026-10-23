@@ -59,6 +59,31 @@ _GAPS = {
         "empty_summary",
         "save_ocr_text_excerpt",
     ),
+    "notes.pdf_extract.unavailable": (
+        "notes_from_pdf",
+        "pdf_dependency_unavailable",
+        "reject_extraction",
+    ),
+    "notes.pdf_extract.read_failed": (
+        "notes_from_pdf",
+        "upload_read_failed",
+        "reject_extraction",
+    ),
+    "notes.pdf_extract.parse_failed": (
+        "notes_from_pdf",
+        "pdf_parse_failed",
+        "reject_extraction",
+    ),
+    "notes.pdf_extract.encrypted": (
+        "notes_from_pdf",
+        "pdf_encrypted",
+        "reject_extraction",
+    ),
+    "notes.pdf_extract.page_failed": (
+        "notes_from_pdf",
+        "pdf_page_extract_failed",
+        "skip_page_continue",
+    ),
     "ask.provider_failed": (
         "ask",
         "provider_failure",
