@@ -3,10 +3,13 @@
 
 import json
 import os
+import threading
 import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from app.auth.roles import ROLE_USER, normalize_role
+from app.auth.roles import KNOWN_ROLES, ROLE_ADMIN, ROLE_MAIN_ADMIN, ROLE_USER, normalize_role
+
+_USERS_LOCK = threading.RLock()
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(_BACKEND_DIR, "data")
@@ -53,6 +56,59 @@ def get_user_role(user_id: str) -> str:
     return normalize_role(user.get("role"))
 
 
+def set_user_role(user_id: str, role: str) -> None:
+    """Persist a known role for one account. Used by operator bootstrap tooling."""
+    normalized = normalize_role(role)
+    if normalized not in KNOWN_ROLES:
+        raise ValueError("Unsupported role")
+    with _USERS_LOCK:
+        users = _load_users()
+        for user in users:
+            if user.get("user_id") == user_id:
+                user["role"] = normalized
+                _save_users(users)
+                return
+    raise ValueError("User not found")
+
+
+def list_user_summaries() -> list[dict]:
+    """Return public account metadata for Main Admin user management."""
+    with _USERS_LOCK:
+        users = _load_users()
+        return [
+            {
+                "user_id": user.get("user_id"),
+                "username": user.get("username"),
+                "role": normalize_role(user.get("role")),
+            }
+            for user in users
+            if user.get("user_id")
+        ]
+
+
+def promote_user_to_admin(target_user_id: str) -> dict:
+    """Promote a normal user to admin. Main Admin ownership cannot change here."""
+    if not target_user_id:
+        raise ValueError("user_id required")
+    with _USERS_LOCK:
+        users = _load_users()
+        target = next((user for user in users if user.get("user_id") == target_user_id), None)
+        if not target:
+            raise LookupError("User not found")
+        current_role = normalize_role(target.get("role"))
+        if current_role == ROLE_MAIN_ADMIN:
+            raise ValueError("Main Admin ownership cannot be changed through promotion")
+        if current_role != ROLE_USER:
+            raise ValueError("Only user accounts can be promoted to admin")
+        target["role"] = ROLE_ADMIN
+        _save_users(users)
+        return {
+            "user_id": target_user_id,
+            "username": target.get("username"),
+            "role": ROLE_ADMIN,
+        }
+
+
 def verify_password(user: dict, password: str) -> bool:
     """True if password matches user's stored hash."""
     return bool(user and check_password_hash(user.get("password_hash") or "", password or ""))
@@ -64,16 +120,18 @@ def create_user(username: str, password: str) -> dict | None:
     password = password or ""
     if not username or len(password) < 1:
         return None
-    if find_user_by_username(username):
-        return None
-    user_id = str(uuid.uuid4())
-    user = {
-        "user_id": user_id,
-        "username": username,
-        "password_hash": generate_password_hash(password),
-        "role": ROLE_USER,
-    }
-    users = _load_users()
-    users.append(user)
-    _save_users(users)
-    return {"user_id": user_id, "username": user["username"]}
+    with _USERS_LOCK:
+        users = _load_users()
+        for existing in users:
+            if (existing.get("username") or "").strip() == username:
+                return None
+        user_id = str(uuid.uuid4())
+        user = {
+            "user_id": user_id,
+            "username": username,
+            "password_hash": generate_password_hash(password),
+            "role": ROLE_USER,
+        }
+        users.append(user)
+        _save_users(users)
+        return {"user_id": user_id, "username": user["username"]}
