@@ -24,6 +24,9 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 |-----|--------|------|-------------|----------|
 | **POST /auth/register** | POST | no | `{"username","password"}` | 201 token + user_id or 409 |
 | **POST /auth/login** | POST | no | `{"username","password"}` | 200 token or 401 |
+| **GET /auth/me** | GET | yes | Bearer | 200 `{ user_id, username, role }` or 401 |
+| **GET /admin/users** | GET | yes (`main_admin`) | Bearer | 200 `{ users: [{ user_id, username, role }] }`; 403 otherwise |
+| **POST /admin/users/<user_id>/promote** | POST | yes (`main_admin`) | Bearer | 200 promoted `{ user_id, username, role: "admin" }`; 400 invalid state; 404 missing user; 403 otherwise |
 | **POST /ai/suggestions** | POST | yes | Authenticated; no body required | 200 no suggestion or an allow-listed action suggestion |
 | **POST /ai/ask** | POST | yes | Bearer + `{"question":"..."}`; optional `note_context_mode`, `note_ids`, prior `messages` | 200 `answer`, `tokens_estimated`; 402 for insufficient credits |
 | **POST /ai/estimate_tokens** | POST | yes | Bearer + `{"question":"..."}` | 200 `estimated_tokens`, `context_tokens` |
@@ -36,7 +39,7 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 | **DELETE /notes/<id>** | DELETE | yes | Bearer | 200 or 404 |
 | **GET /activity/** | GET | yes | Bearer; optional `?limit=50` | 200 newest-first events; default 50, maximum 100 |
 | **POST /diagnostics/feedback** | POST | yes | Bearer + `operation_id`, `feature` (`ask`), `reason` (`wrong`/`unhelpful`/`harmful`/`other`) | 201 recorded metadata linked to a completed Ask operation; 404 when the operation is unknown or incomplete |
-| **GET /diagnostics/events** | GET | yes (admin role) | Bearer; optional `?limit=50` | 200 newest-first content-free diagnostic events across users; 403 for non-admin accounts |
+| **GET /diagnostics/events** | GET | yes (`admin` or `main_admin`) | Bearer; optional `?limit=50` | 200 newest-first content-free diagnostic events across users; 403 for `user` accounts |
 | **GET /settings** | GET | yes | Bearer | 200 preferences |
 | **PUT /settings** | PUT | yes | Bearer + JSON merge | 200 settings |
 | **GET /memories/** | GET | yes | Bearer | 200 current user's saved memories |
@@ -65,8 +68,11 @@ python -m scripts.test.test_ai_credits
 python -m scripts.test.test_memories
 python -m scripts.test.test_understanding_gaps
 python -m scripts.test.test_diagnostics
+python -m scripts.test.test_auth_roles
+python -m scripts.test.test_main_admin_bootstrap
+python -m scripts.test.test_admin_users
 
-`test_diagnostics.py` covers automatic/fallback persistence, Ask `operation_id` responses, generic Ask failure responses, feedback ownership, duplicate feedback suppression, admin authorization, retention caps, disabled persistence, and content-free records. Frontend `askReportAnswer.test.jsx` verifies the feedback API adapter sends allow-listed reasons with the completed Ask `operation_id`.
+`test_diagnostics.py` covers automatic/fallback persistence, Ask `operation_id` responses, generic Ask failure responses, feedback ownership, duplicate feedback suppression, admin authorization, retention caps, disabled persistence, and content-free records. `test_auth_roles.py` covers role permission helpers, `GET /auth/me`, diagnostics access for `admin` and `main_admin`, and unlimited Ask credits for operator roles. `test_main_admin_bootstrap.py` covers first bootstrap, idempotent reruns, invalid configuration, operator secret confirmation (missing, incorrect, and matching), refusal messages that never echo secrets, demo refusal, marker conflicts, and concurrent exclusive marker creation on one data directory. `test_admin_users.py` covers Main Admin list/promote authorization, `user`→`admin` promotion rules, and absence of password hashes in list responses. `test_auth_users_concurrency.py` covers process-local locking for concurrent registration and registration overlapping promotion on `users.json`. Frontend `askReportAnswer.test.jsx` verifies the feedback API adapter sends allow-listed reasons with the completed Ask `operation_id`.
 python -m scripts.test.test_ai_response_style
 python -m scripts.test.test_lazy_embeddings
 python -m scripts.test.test_text_retrieval
@@ -131,6 +137,8 @@ npm --prefix .\frontend test
 
 This runs the existing Node source-mode tests and the Vitest/jsdom integration tests for the real `App`, `Ask`, and route-controlled `Login` components. The mocked HTTP API exercises Notes-backed restoration and saved updates without calling an AI provider. Regressions cover Login/Register route updates without a stale first render, Ask → Manage → Ask, loading the latest messages/title, explicit New conversation, switching conversations, deleted history, out-of-order responses, logout/account isolation, and editing/resending a User turn. Notes-context coverage verifies selected Note IDs and Notes mode survive remount and the expected IDs/mode are included in the next AI request. Context-source tests cover enabled/disabled label preferences, first-render Settings → Ask restoration, navigation during a pending label save, and account changes while a Settings read is waiting.
 
+**Admin frontend (`adminFrontend.test.jsx`, `authRoles.test.js`):** role-based nav visibility (`user` vs `admin` vs `main_admin`), redirect away from `/admin/users` for non–main-admin, user list loading/empty/error, promotion confirmation and refresh, diagnostics loading/empty/error, and safe metadata display only. Authenticated App tests mock `GET /auth/me` alongside existing endpoints.
+
 ## Frontend manual regression checklist
 
 Run the frontend production build from the repository root:
@@ -141,11 +149,11 @@ npm --prefix .\frontend run build
 
 - Logged out: direct-load `/login` and `/register`; verify register switching follows the route, registration/login still works, and success lands on `/ask`.
 - Verify `/` remains public, and `/privacy`, `/terms`, and `/contact` load directly.
-- Verify `/ask` is the authenticated default; navigation order is Ask, Manage, Settings, Sign out. Signed-in users can still open `/debug` directly; the debug API requires authentication.
+- Verify `/ask` is the authenticated default; navigation order is Ask, Manage, Settings, Sign out. Standard users do not see Users or Diagnostics. As `admin`, Diagnostics appears; as `main_admin`, Users and Diagnostics appear. Signed-in users can still open `/debug` directly; the debug API requires authentication.
 - Navigate Ask → Manage → Settings → Ask; verify browser Back and Forward update the visible page and URL. Confirm Debug is absent from navigation but remains available to signed-in users at `/debug`.
 - Select a conversation in Ask, save a new turn, navigate to Manage, then return to Ask; verify the same conversation title and latest saved turns load. Start a new conversation and repeat the navigation; verify the new empty conversation stays active instead of reopening the previous one.
 - Select Notes for context and set Notes mode to Selected or Automatic. Navigate to Manage and back; verify the mode and selected Note count remain, then submit a question and verify it uses the intended Notes. Log out or switch accounts and verify the previous account's selected IDs are not applied.
-- Direct-load and refresh `/ask`, `/manage`, `/debug`, and `/settings`; verify each returns the SPA and renders the correct page.
+- Direct-load and refresh `/ask`, `/manage`, `/debug`, `/settings`, `/admin/users`, and `/admin/diagnostics`; verify each returns the SPA and renders the correct page (or redirects to `/ask` when the role is not allowed).
 - On `/manage`, switch among Notes, Conversations, and Memory. Verify Notes and Conversations expose the existing CRUD interfaces, Notes excludes `_history`, and Memory loads persisted per-user records with working edit/delete/clear controls and setting status.
 - Verify logout and an unauthorized API response return to `/login`.
 - Open Ask and enter a draft. Open and close Notes/History; verify the draft and existing conversation remain intact.

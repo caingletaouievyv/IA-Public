@@ -21,7 +21,7 @@ React 18 + Vite 5 SPA. Index: [docs.md](docs.md). API contract: [project.md](pro
 frontend/
 ├── index.html              # Root shell, viewport meta, title "IA"
 ├── package.json            # Scripts: dev, build, preview
-├── vite.config.js          # Dev server :5174; proxy /ai, /auth, /notes, /memories, /activity, /files, /settings → :5000
+├── vite.config.js          # Dev server :5174; proxy /ai, /auth, /notes, /memories, /activity, /files, /settings, /diagnostics, /admin → :5000
 └── src/
     ├── main.jsx            # StrictMode; mounts App; imports index.css
     ├── App.jsx             # Route navigation, auth gate, authenticated page shell
@@ -35,7 +35,9 @@ frontend/
         ├── History.jsx
         ├── MemoryManager.jsx
         ├── DebugContext.jsx
-        └── Settings.jsx
+        ├── Settings.jsx
+        ├── AdminUsers.jsx
+        └── AdminDiagnostics.jsx
 ```
 
 | Path | Purpose |
@@ -106,9 +108,9 @@ frontend/
 
 | Component | Purpose | Props | Behavior / notes |
 |-----------|---------|-------|------------------|
-| **App** | Public/auth route handling, auth gate, page navigation | — | Public `/`, `/privacy`, `/terms`, `/contact`; auth `/login`, `/register`; authenticated `/ask`, `/manage`, `/debug`, `/settings` (default `/ask`). Uses `pathname`, `pushState`, and `popstate`; listens for `ia:unauthorized`; Ask opens Notes and History in selection mode. The authenticated shell mounts the contextual suggestion overlay; public and login routes do not. Page changes unmount Ask; the active history-note ID is restored from user-scoped `sessionStorage` on remount. Logout/account changes clear the old selection and invalidate the current-session Settings cache. |
+| **App** | Public/auth route handling, auth gate, page navigation | — | Public `/`, `/privacy`, `/terms`, `/contact`; auth `/login`, `/register`; authenticated `/ask`, `/manage`, `/debug`, `/settings`, `/admin/users`, `/admin/diagnostics` (default `/ask`). After login, loads `GET /auth/me` into in-memory session `{ user_id, username, role }` (not persisted separately from the JWT). Uses `pathname`, `pushState`, and `popstate`; listens for `ia:unauthorized`; Ask opens Notes and History in selection mode. The authenticated shell mounts the contextual suggestion overlay; public and login routes do not. Page changes unmount Ask; the active history-note ID is restored from user-scoped `sessionStorage` on remount. Logout/account changes clear the old selection and invalidate the current-session Settings cache. Non–main-admin users who open `/admin/users`, or users without diagnostics access who open `/admin/diagnostics`, are redirected to `/ask` (backend still enforces 403). |
 | **PublicSite** | Landing, Privacy, Terms, Contact | `path` | Path-based public shell with shared header/footer; no router or API dependency |
-| **Header** | Brand + sign out | `onLogout?: fn` | Authenticated navigation shows Ask, Manage, and Settings; `/debug` remains a directly addressable authenticated route. |
+| **Header** | Brand + sign out | `onLogout?: fn`, `role` | Authenticated navigation shows Ask, Manage, and Settings for all signed-in users. **Users** (`/admin/users`) appears only for `main_admin`. **Diagnostics** (`/admin/diagnostics`) appears for `admin` and `main_admin`. `/debug` remains a directly addressable authenticated route. |
 | **Login** | Sign in / register | `onLogin(token, userId)`, `initialIsRegister`, `onModeChange` | Local `username`, `password`, `loading`, `error`; when routed by App, the URL prop controls mode synchronously so Back/Forward does not flash the prior form; standalone use retains a local mode fallback. Validates non-empty. |
 | **Ask** | `/ask`: question, conversation, Notes, and persistent Memory | `userId` | Owns transient draft, messages, active conversation, selected Notes, source preferences, and Memory setting. The active `_history` note ID and selected Notes IDs are stored in per-tab `sessionStorage`, keyed by authenticated user ID. Ask loads conversation title/messages and submits Notes IDs through the existing Notes API; note content is never copied into browser storage. Logout/account changes clear the prior selection. Missing history clears the conversation selection. Drafts remain in component state; Notes context modes, source visibility, and `show_context_source_labels` use per-user Settings. Ask initializes from cached Settings on first render; when settings are unknown or a save is pending, the toolbar remains hidden until values are ready. The label preference control is in Ask; Focus temporarily hides source labels and exiting Focus restores the saved preference. Conversation, Notes, and Memory are defaults, and Conversation cannot be hidden. Conversation opens History and has no mode button. Notes cycles Off → Selected → Automatic → Off and uses Notes only. Memory is ON/OFF via server-side `memory_enabled`; it controls independent retrieval and best-effort extraction. Its source button opens Manage → Memory. Files has no Ask context flow; GitHub, Drive, and Web remain placeholders. Conversation History has a separate Focus button. AI responses have per-message Copy buttons with accessible feedback. User turns persist in `_history` notes; history is not Memory storage. |
 | **Manage** | `/manage`: organize saved Notes, Conversations, and Memory | `initialSection` | Notes and History reuse existing components. Memory loads actual backend records and setting; users can toggle Memory, edit/delete individual items, and clear all with confirmation. Loading, empty, error, and success feedback are surfaced. |
@@ -119,13 +121,15 @@ frontend/
 | **Memory** | Persistent user-specific memories | — | Independent per-user records with authenticated list/update/delete/clear operations; Ask setting controls automatic extraction and retrieval. |
 | **DebugContext** | Authenticated `/debug`: inspect retrieval context | — | The page remains available by direct path to signed-in users but is omitted from normal navigation. The debug API also requires authentication; results show retrieval context for the current user's notes. |
 | **Settings** | `/settings`; GET/PUT `/settings/` | — | Per-user `theme` and `default_model` preferences, Ask labels/context visibility, and the **AI Suggestions** toggle (`ai_suggestions_enabled`, default ON). Changes save through the existing settings API and update the current-session user-scoped cache; Conversation remains checked and disabled. |
+| **AdminUsers** | `/admin/users`; GET/POST admin APIs | — | Main Admin only. Lists `{ user_id, username, role }`, promotes `user` → `admin` with confirmation modal, loading/empty/error/success states. No promotion for existing `admin` or `main_admin`. |
+| **AdminDiagnostics** | `/admin/diagnostics`; GET `/diagnostics/events` | — | Admin and Main Admin. Shows newest content-free event metadata (`limit` query only; no client-side filter masquerading as server filters). Refresh reloads from the API. Never displays prompts, answers, tokens, or raw exception text. |
 
 **Internal helpers (not exported UI):** `App` owns route and auth transitions; `Notes` / `History` share confirm modal classes `.notes-delete-confirm*`.
 
 ### Route navigation
 
 - App navigation uses native links with centralized `pushState` handling; `popstate` keeps Back/Forward synchronized with React.
-- Authenticated navigation order is Ask, Manage, Settings, Sign out. `/debug` remains available to authenticated users by direct path.
+- Authenticated navigation order is Ask, Manage, Settings, optional Users and Diagnostics (role-gated), Sign out. `/debug` remains available to authenticated users by direct path.
 - Direct loads and refreshes are served by Flask SPA routes for public, auth, and authenticated frontend paths.
 - `/manage` reuses the existing Notes and History components for CRUD; Ask keeps their selector workflows.
 - The active page is identified by `aria-current="page"` and a subtle accent surface.
@@ -162,7 +166,7 @@ frontend/
 | **Grids** | `.form-row` — `grid-template-columns: 1fr 1fr` (available for forms; used where applicable in CSS) |
 | **Notes / History lists** | `.notes-list-header` — flex wrap: search or title left, toolbar right; `.notes-list` — vertical flex list of `.note-card` |
 
-**Route-based pages:** `/ask`, `/manage`, `/debug`, and `/settings` are authenticated pages. Manage reuses Notes and History for saved-content CRUD; Ask's Notes/History workflows remain selectors.
+**Route-based pages:** `/ask`, `/manage`, `/debug`, `/settings`, `/admin/users`, and `/admin/diagnostics` are authenticated pages. Manage reuses Notes and History for saved-content CRUD; Ask's Notes/History workflows remain selectors. Admin pages are UI-gated by role from `/auth/me`; API authorization remains on the server.
 
 ---
 

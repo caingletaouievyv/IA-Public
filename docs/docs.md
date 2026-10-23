@@ -12,6 +12,6 @@
 | **Testing** | [testing.md](testing.md) | Test scripts and per-endpoint reference |
 | **UI** | [ui.md](ui.md) | Frontend layout, theme, components |
 
-**Stack:** Python (repository-selected 3.13.5), Flask, Pydantic, Groq by default, startup-validated JWT authentication, ignored per-user JSON runtime storage for Notes, internal suggestion activity metadata, independent Memory (including keyed mutable preferences), Settings, and AI Credit ledgers, bounded lexical retrieval with AI-assisted matching for low-overlap Memory queries and metadata-only contextual suggestions, and React/Vite UI.
+**Stack:** Python (repository-selected 3.13.5), Flask, Pydantic, Groq by default, startup-validated JWT authentication, ignored per-user JSON runtime storage for Notes, internal suggestion activity metadata, independent Memory (including keyed mutable preferences), Settings, and AI Credit ledgers, bounded lexical retrieval with AI-assisted matching for low-overlap Memory queries and metadata-only contextual suggestions, and React/Vite UI. JSON persistence is intended for **one backend process** and **one local `backend/data/` directory**; see [project.md — JSON storage and deployment limits](project.md#json-storage-and-deployment-limits).
 
 **How docs relate:** **project.md** describes what the product does today. **ia.md** describes engineering, architecture, security, and testing conventions. **flow.md** and **testing.md** help you navigate and verify behavior. **ui.md** covers the frontend.
