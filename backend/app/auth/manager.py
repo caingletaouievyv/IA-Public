@@ -114,6 +114,28 @@ def verify_password(user: dict, password: str) -> bool:
     return bool(user and check_password_hash(user.get("password_hash") or "", password or ""))
 
 
+def create_initial_main_admin(username: str, password: str) -> dict:
+    """Create the first account as Main Admin when the user store is empty."""
+    username = (username or "").strip()
+    password = password or ""
+    if not username or not password:
+        raise ValueError("username and password required")
+    with _USERS_LOCK:
+        users = _load_users()
+        if users:
+            raise ValueError("User store is not empty")
+        user_id = str(uuid.uuid4())
+        user = {
+            "user_id": user_id,
+            "username": username,
+            "password_hash": generate_password_hash(password),
+            "role": ROLE_MAIN_ADMIN,
+        }
+        users.append(user)
+        _save_users(users)
+        return {"user_id": user_id, "username": username}
+
+
 def create_user(username: str, password: str) -> dict | None:
     """Register user if username not taken. Return user dict or None."""
     username = (username or "").strip()

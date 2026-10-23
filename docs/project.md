@@ -166,19 +166,75 @@ This account is shared demo data: anyone with its password uses the same account
 
 Render Free has no persistent disk attached. User records, sample data, and the provenance marker are local files under `backend/data/`, so replacements/restarts that use a fresh filesystem can lose changes. If the account and marker disappear together, the next start can create a fresh demo account; if an account remains but its marker is lost, startup fails closed and requires operator resolution. The seed does not restore other users' accounts or their data. For JSON persistence limits, run **one worker process on one instance** with a **local** `backend/data/` directory; do not assume a shared network volume makes JSON writes safe across instances (see [JSON storage and deployment limits](#json-storage-and-deployment-limits)).
 
+### Local development: optional Main Admin auto-seed
+
+**Disabled by default.** For local development only, `create_app()` can create the first Main Admin when **`users.json` is empty** and **no** `.ia_main_admin.json` marker exists. It does **not** promote existing accounts.
+
+| Variable | Purpose |
+|----------|---------|
+| `IA_AUTO_SEED_MAIN_ADMIN` | Set to `true` to enable (requires `APP_ENV=development` or `test`) |
+| `IA_AUTO_SEED_MAIN_ADMIN_USERNAME` | Non-empty username (not `demo`) |
+| `IA_AUTO_SEED_MAIN_ADMIN_PASSWORD` | Non-empty password (hashed with `generate_password_hash`) |
+
+**Refused when `APP_ENV=production`.** If the user store already has accounts, startup skips seeding silently. Uses the same `create_initial_main_admin` lock and exclusive marker create as CLI bootstrap. Never commit credentials; keep these in repo-root `.env` only.
+
+### Production: one-time startup bootstrap (empty user store)
+
+**Disabled by default.** When `APP_ENV=production`, a **separate** opt-in allows **one** startup pass to create the first Main Admin only if **`users.json` is empty** and **no** `.ia_main_admin.json` marker exists. It does **not** run on every restart after the marker exists, does **not** promote existing users, and is **not** the same as local `IA_AUTO_SEED_MAIN_ADMIN` (never enable both).
+
+| Variable | Purpose |
+|----------|---------|
+| `IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN` | Set to `true` for the first deploy only |
+| `IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN_USERNAME` | Non-empty username (not `demo`) |
+| `IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN_PASSWORD` | Non-empty account password (hashed at rest) |
+| `IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN_SECRET` | Bootstrap operator secret (≥ 8 chars); host secret only |
+| `IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN_SECRET_CONFIRM` | Must match the secret exactly (`hmac.compare_digest`); unset after success |
+
+**Deployment steps (fresh data directory):**
+
+1. Set host secrets above plus `APP_ENV=production` and a valid `JWT_SECRET`. Use **one** worker/instance and a persistent mount for the app data directory if accounts must survive restarts.
+2. Deploy and start the backend once. Startup creates the Main Admin account and marker, then logs a single completion line (no credentials in logs).
+3. Verify login (`POST /auth/login`), then **remove** `IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN` and **all** `IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN_*` variables from the runtime environment (including secret confirm). Redeploy or restart so later boots do not carry bootstrap credentials.
+4. If `users.json` already has accounts or a marker already exists, startup **skips** bootstrap without modifying data. For a non-empty store with an existing owner, use [CLI bootstrap B](#b-existing-owner-account-non-empty-user-store) instead.
+
+Alternative: use the [CLI bootstrap](#main-admin-bootstrap) without startup flags when shell access is preferred.
+
 ### Main Admin bootstrap
 
-Main Admin is **never** assigned during registration, demo seeding, or first login. After the owner account exists (via normal registration), an operator designates Main Admin explicitly:
+Main Admin is **never** assigned during registration, demo seeding, or first login. Operators run **one** explicit bootstrap command against the deployment's **actual** user data directory (the same path the running app uses for `users.json` — locally `backend/data/`, on a host whatever persistent disk or mount is configured). There is **no** HTTP admin-creation endpoint; bootstrap is CLI-only and must be disabled after success.
 
-1. Stop the backend so `backend/data/users.json` is not being written.
-2. In protected environment configuration (repository-root `.env` locally, or host secrets in deployment), set:
-   - `MAIN_ADMIN_BOOTSTRAP_ENABLED=true`
-   - `MAIN_ADMIN_BOOTSTRAP_USERNAME=<existing owner username>` (case-sensitive; not `demo`)
-   - `MAIN_ADMIN_BOOTSTRAP_SECRET=<at least 32 characters>` — store with a password manager; never commit or log it
-3. From `backend/`: `python -m scripts.bootstrap_main_admin`. The command prompts for the bootstrap secret on stdin (hidden via `getpass`); the value must match `MAIN_ADMIN_BOOTSTRAP_SECRET` exactly. Do not pass the secret on the command line.
-4. Unset `MAIN_ADMIN_BOOTSTRAP_ENABLED` (and optionally the secret) after success; restart the backend.
+**Environment variables** (host secrets / `.env`, never committed):
 
-The command writes `backend/data/.ia_main_admin.json` with the designated `user_id` and sets only that account's role to `main_admin`. It does not change passwords or other users. Reruns with the same username are idempotent. Reruns with a different username are rejected. If `users.json` already contains `main_admin` without a valid marker, the command fails closed until an operator resolves the data directory manually.
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `MAIN_ADMIN_BOOTSTRAP_ENABLED` | yes (`true`) | Explicit opt-in for the one-time command |
+| `MAIN_ADMIN_BOOTSTRAP_USERNAME` | yes | Case-sensitive owner username; not `demo` |
+| `MAIN_ADMIN_BOOTSTRAP_SECRET` | yes (≥ 8 chars) | Confirmed on stdin via `getpass`; never logged |
+| `MAIN_ADMIN_BOOTSTRAP_INITIAL_PASSWORD` | when `users.json` is empty | Initial account password (non-empty); confirmed on stdin when set |
+
+#### A. First production account (empty user store)
+
+Use when the deployment has **zero** users (fresh disk or first boot):
+
+1. Stop every backend process using that data directory.
+2. Set the four variables above (including `MAIN_ADMIN_BOOTSTRAP_INITIAL_PASSWORD` in host secrets for production).
+3. From `backend/` on a shell that loads the same secrets and `DATA_DIR` as production: `python -m scripts.bootstrap_main_admin`.
+   - Prompts: bootstrap secret (must match `MAIN_ADMIN_BOOTSTRAP_SECRET`), then initial password confirmation (must match `MAIN_ADMIN_BOOTSTRAP_INITIAL_PASSWORD` when configured).
+4. Unset `MAIN_ADMIN_BOOTSTRAP_ENABLED` and remove bootstrap secrets from the runtime environment; restart the backend.
+5. Sign in with `POST /auth/login` using the configured username and initial password. Normal `POST /auth/register` continues to create `user` roles only.
+
+The command creates exactly one hashed account with role `main_admin`, writes `backend/data/.ia_main_admin.json` (or the equivalent path on the deployment disk), and refuses to run if any user already exists unless the username matches an existing account (see B).
+
+#### B. Existing owner account (non-empty user store)
+
+When at least one user already exists:
+
+1. Stop the backend.
+2. Set `MAIN_ADMIN_BOOTSTRAP_ENABLED`, `MAIN_ADMIN_BOOTSTRAP_USERNAME` (must match an **existing** account), and `MAIN_ADMIN_BOOTSTRAP_SECRET`. Do **not** rely on initial-password creation.
+3. Run `python -m scripts.bootstrap_main_admin` and confirm the bootstrap secret on stdin.
+4. Unset bootstrap env vars and restart.
+
+The command sets only that account's role to `main_admin` and does not change passwords or other users. Reruns with the same username are idempotent. Reruns with a different username are rejected. If `users.json` already contains `main_admin` without a valid marker, the command fails closed until an operator resolves the data directory manually.
 
 **Concurrency:** marker creation uses an exclusive file create (`O_CREAT|O_EXCL`) so two simultaneous bootstrap processes on the **same filesystem** cannot both claim ownership on the first create; this is the same class of guarantee as the Render demo marker. That does not lock `users.json` across processes afterward. Run bootstrap once while the data directory is not being served by other backend processes. **Exactly-one Main Admin is not guaranteed** across multiple app instances or hosts that do not share a single, consistently updated data directory and a single bootstrap run.
 

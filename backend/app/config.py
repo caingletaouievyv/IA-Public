@@ -14,6 +14,12 @@ JWT_ALGORITHM = "HS256"
 JWT_EXP_DAYS = int(os.getenv("JWT_EXP_DAYS", "7"))
 APP_ENV = (os.getenv("APP_ENV") or "production").strip().lower()
 
+# Local development only: optional Main Admin auto-seed (password read in main_admin; not stored here).
+IA_AUTO_SEED_MAIN_ADMIN = _bool_env("IA_AUTO_SEED_MAIN_ADMIN", False)
+IA_AUTO_SEED_MAIN_ADMIN_USERNAME = (os.getenv("IA_AUTO_SEED_MAIN_ADMIN_USERNAME") or "").strip()
+# Production one-time empty-store bootstrap (credentials read in main_admin; not stored here).
+IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN = _bool_env("IA_PRODUCTION_BOOTSTRAP_MAIN_ADMIN", False)
+
 
 def validate_jwt_secret(secret: str | None = None) -> str:
     value = JWT_SECRET if secret is None else secret.strip()
