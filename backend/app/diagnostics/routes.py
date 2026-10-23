@@ -8,9 +8,9 @@ from pydantic import ValidationError
 
 from app import limiter
 from app.auth.manager import get_user_role
+from app.auth.permissions import can_view_diagnostics
 from app.common.auth import require_auth
 from app.common.understanding_gaps import report_user_feedback
-from app.config import AI_UNLIMITED_ROLE
 from app.credits.manager import has_completed_operation
 from app.diagnostics import manager
 from app.diagnostics.schemas import DiagnosticFeedbackRequest
@@ -58,7 +58,7 @@ def list_events():
     user_id, auth_err = require_auth()
     if auth_err:
         return auth_err
-    if get_user_role(user_id) != AI_UNLIMITED_ROLE:
+    if not can_view_diagnostics(get_user_role(user_id)):
         return jsonify({"error": "Forbidden"}), 403
 
     raw_limit = request.args.get("limit")

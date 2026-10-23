@@ -20,6 +20,7 @@ from app import config
 from app.ai import routes as ai_routes
 from app.ai.client import AIProviderError
 from app.auth import manager as auth_manager
+from app.auth.roles import ROLE_ADMIN
 from app.common.understanding_gaps import report_understanding_gap, report_user_feedback
 from app.credits import manager as credit_manager
 from app.diagnostics import manager as diagnostics_manager
@@ -124,18 +125,39 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(len(diagnostics_manager.list_events_for_user(owner_id, limit=10)), 1)
 
     def test_admin_events_endpoint_requires_admin_role(self):
-        user_id = str(uuid.uuid4())
+        event_user_id = str(uuid.uuid4())
         report_understanding_gap(
             "ask.operation_failed",
             RuntimeError("PRIVATE_ERROR_SENTINEL"),
-            user_id=user_id,
+            user_id=event_user_id,
         )
 
-        denied = self.client.get("/diagnostics/events", headers=self.headers(user_id))
+        denied_id = str(uuid.uuid4())
+        auth_manager._save_users([{
+            "user_id": denied_id,
+            "username": "diag-user",
+            "password_hash": "test-hash",
+            "role": "user",
+        }])
+        denied = self.client.get("/diagnostics/events", headers=self.headers(denied_id))
         self.assertEqual(denied.status_code, 403)
 
-        with patch("app.diagnostics.routes.get_user_role", return_value=config.AI_UNLIMITED_ROLE):
-            allowed = self.client.get("/diagnostics/events", headers=self.headers(user_id))
+        admin_id = str(uuid.uuid4())
+        auth_manager._save_users([
+            {
+                "user_id": denied_id,
+                "username": "diag-user",
+                "password_hash": "test-hash",
+                "role": "user",
+            },
+            {
+                "user_id": admin_id,
+                "username": "diag-admin",
+                "password_hash": "test-hash",
+                "role": ROLE_ADMIN,
+            },
+        ])
+        allowed = self.client.get("/diagnostics/events", headers=self.headers(admin_id))
         self.assertEqual(allowed.status_code, 200)
         payload = allowed.get_json()
         self.assertGreaterEqual(len(payload["events"]), 1)

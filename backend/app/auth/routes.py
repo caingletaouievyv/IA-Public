@@ -5,7 +5,8 @@ import datetime
 import jwt
 from flask import Blueprint, request, jsonify
 from app.config import JWT_SECRET, JWT_ALGORITHM, JWT_EXP_DAYS
-from app.auth.manager import find_user_by_username, verify_password, create_user
+from app.common.auth import require_auth
+from app.auth.manager import find_user_by_id, find_user_by_username, get_user_role, verify_password, create_user
 
 bp = Blueprint("auth", __name__)
 
@@ -35,6 +36,22 @@ def register():
         return jsonify({"error": "username already taken"}), 409
     token = _issue_token(user["user_id"])
     return jsonify({"token": token, "user_id": user["user_id"], "username": user["username"]}), 201
+
+
+@bp.route("/me", methods=["GET"])
+def me():
+    """Return the authenticated user's id, username, and persisted role."""
+    user_id, auth_err = require_auth()
+    if auth_err:
+        return auth_err
+    user = find_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({
+        "user_id": user_id,
+        "username": user.get("username"),
+        "role": get_user_role(user_id),
+    }), 200
 
 
 @bp.route("/login", methods=["POST"])

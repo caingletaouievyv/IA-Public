@@ -19,6 +19,7 @@ from app import create_app, limiter
 from app import config
 from app.ai import routes as ai_routes
 from app.auth import manager as auth_manager
+from app.auth.roles import ROLE_ADMIN
 from app.credits import manager as credit_manager
 from app.credits import routes as credit_routes
 from app.settings import manager as settings_manager
@@ -372,11 +373,16 @@ class AICreditTests(unittest.TestCase):
 
     def test_unlimited_role_can_ask_with_zero_credits_without_debit(self):
         user_id = self.user_id()
+        auth_manager._save_users([{
+            "user_id": user_id,
+            "username": "credit-admin",
+            "password_hash": "test-hash",
+            "role": ROLE_ADMIN,
+        }])
         for index in range(config.AI_CREDIT_INITIAL_BALANCE):
             credit_manager.reserve_credits(user_id, config.AI_ASK_CREDIT_COST, "ai_ask", f"zero-{index}")
-        with patch.object(ai_routes, "get_user_role", return_value=config.AI_UNLIMITED_ROLE):
-            with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
-                response = self.ask(user_id, "unlimited-ask")
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
+            response = self.ask(user_id, "unlimited-ask")
         self.assertEqual(response.status_code, 200)
         account = credit_manager.get_credit_account(user_id)
         self.assertEqual(account["credit_balance"], 0)

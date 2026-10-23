@@ -8,6 +8,7 @@ from app import limiter, logger
 from app.common.auth import require_auth
 from app.common.understanding_gaps import report_understanding_gap
 from app.auth.manager import get_user_role
+from app.auth.permissions import has_unlimited_credits
 from app.ai.client import AIProviderError
 from app.ai.engine import ask, get_token_estimate
 from app.diagnostics.context import DiagnosticContext, set_diagnostic_context
@@ -16,7 +17,7 @@ from app.ai.flashcards import (
     validate_flashcard_request,
 )
 from app.ai.suggestions import generate_suggestion
-from app.config import AI_ASK_CREDIT_COST, AI_UNLIMITED_ROLE
+from app.config import AI_ASK_CREDIT_COST
 from app.credits.manager import (
     InsufficientCreditsError,
     claim_operation,
@@ -129,7 +130,7 @@ def ask_ai():
         note_context_mode=note_context_mode,
         memory_enabled=memory_enabled,
     ))
-    if get_user_role(user_id) != AI_UNLIMITED_ROLE:
+    if not has_unlimited_credits(get_user_role(user_id)):
         try:
             reservation = reserve_credits(
                 user_id,
@@ -207,7 +208,7 @@ def generate_flashcards_route():
         return jsonify({"error": "operation_in_progress"}), 409
 
     reservation = None
-    if get_user_role(user_id) != AI_UNLIMITED_ROLE:
+    if not has_unlimited_credits(get_user_role(user_id)):
         try:
             reservation = reserve_credits(
                 user_id,

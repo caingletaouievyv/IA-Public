@@ -6,6 +6,8 @@ import os
 import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
 
+from app.auth.roles import ROLE_USER, normalize_role
+
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(_BACKEND_DIR, "data")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
@@ -46,7 +48,9 @@ def find_user_by_id(user_id: str) -> dict | None:
 def get_user_role(user_id: str) -> str:
     """Return the persisted role; users without one remain normal users."""
     user = find_user_by_id(user_id)
-    return (user.get("role") or "user") if user else "user"
+    if not user:
+        return ROLE_USER
+    return normalize_role(user.get("role"))
 
 
 def verify_password(user: dict, password: str) -> bool:
@@ -67,7 +71,7 @@ def create_user(username: str, password: str) -> dict | None:
         "user_id": user_id,
         "username": username,
         "password_hash": generate_password_hash(password),
-        "role": "user",
+        "role": ROLE_USER,
     }
     users = _load_users()
     users.append(user)
