@@ -40,6 +40,30 @@ changing a rule or prompt.
 | Flashcards | `flashcards.generation_failed` | Return the requested number of valid, grounded cards; malformed/provider-failed output is rejected. | Missing or malformed `cards` output | Return an error, refund reserved credits, and save no deck; there is no generated-content fallback | Keep schema/grounding tests; inspect only the fixed code and exception type | `test_flashcards.py` |
 | Notes from images | `notes.image_ocr.unavailable`, `notes.image_ocr.image_failed` | Extract readable text from each supported image. | Missing OCR dependency or an unreadable/corrupt image | Skip failed images; reject the request if no text remains | Check local dependency/image compatibility; do not attach image bytes or extracted text to diagnostics | No dedicated OCR dependency/image-failure test discovered; add focused coverage when changing this path |
 | Notes from images | `notes.image_summary.empty` | Produce a non-empty concise summary from extracted text. | Empty summary result | Save an excerpt of OCR text instead | Add a sanitized blank-output regression if this fallback changes | `test_understanding_gaps.py` covers the fallback and verifies OCR text is not logged |
+| Ask | `ask.provider_failed` | Return an answer when the configured provider is reachable. | Provider/network failure during Ask | Return a generic client error and refund reserved credits when applicable | Monitor provider outages separately from semantic misses | `test_diagnostics.py` |
+| Ask | `ask.operation_failed` | Return an answer when provider output can be processed. | Unexpected processing failure during Ask | Return a generic client error and refund reserved credits when applicable | Inspect only fixed metadata and exception class | `test_diagnostics.py` |
+| Ask | `ask.feedback.reported` | N/A (user-initiated quality signal) | User reports an incorrect or unhelpful answer | Record metadata linked to `operation_id`; do not store conversation text | Review reports through admin diagnostics API or CLI summary | `test_diagnostics.py` |
+
+## Automated production workflow
+
+Observed fallback and failure paths call `report_understanding_gap()` with an
+allow-listed code. When a `user_id` is available, the same call also appends a
+bounded, content-free diagnostic record under `backend/data/diagnostics_<hash>.json`.
+These records include timestamps, feature, code, category, fallback, exception
+class, provider/model metadata, and the Ask `operation_id` when the request
+context is active. They never store prompts, answers, note text, or provider
+response bodies.
+
+Users can report a bad Ask answer from the Ask UI with an allow-listed reason
+only (`wrong`, `unhelpful`, `harmful`, `other`). The report links to a completed
+Ask `operation_id` for the authenticated user and does not attach conversation
+content to the diagnostic record.
+
+Operators with the configured unlimited role (default `admin`) can review recent
+metadata with `GET /diagnostics/events` or summarize stored events from
+`backend/` using `python -m scripts.analyze_ai_diagnostics`. Use this register
+for semantic follow-up: add sanitized expected/actual rows when a code indicates
+a reproducible understanding gap rather than a pure provider outage.
 
 ## Structured logs and privacy
 
@@ -54,8 +78,9 @@ Only allow-listed codes and fixed metadata are logged. The helper accepts an
 exception only to record its class name; it never logs exception text, prompts,
 note contents, credentials, tokens, or provider responses. Search local backend
 logs for `understanding_gap`, then use the code to find the corresponding
-register row. These are ordinary application logs, not a new persistent event
-store or external telemetry service.
+register row. Matching diagnostic records (when persistence is enabled) provide
+a bounded local review queue; they are not a full conversation archive or
+external telemetry service.
 
 Prompt-bearing retrieval diagnostics are disabled by default:
 `FAISS_LOG_SCORES`, `INTENT_CACHE_LOG_HITS`, and `LOG_DROPPED_NOTES` default to

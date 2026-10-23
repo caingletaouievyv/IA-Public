@@ -8,7 +8,9 @@ from app import limiter, logger
 from app.common.auth import require_auth
 from app.common.understanding_gaps import report_understanding_gap
 from app.auth.manager import get_user_role
+from app.ai.client import AIProviderError
 from app.ai.engine import ask, get_token_estimate
+from app.diagnostics.context import DiagnosticContext, set_diagnostic_context
 from app.ai.flashcards import (
     generate_flashcards,
     validate_flashcard_request,
@@ -79,6 +81,12 @@ def _operation_id(data: dict) -> str:
     return request.headers.get("Idempotency-Key") or str(data.get("request_id") or uuid.uuid4())
 
 
+def _attach_operation_id(result: dict, operation_id: str) -> dict:
+    payload = dict(result)
+    payload["operation_id"] = operation_id
+    return payload
+
+
 @bp.route("/ask", methods=["POST"])
 @limiter.limit("30 per minute")
 def ask_ai():
@@ -110,10 +118,17 @@ def ask_ai():
     operation_id = _operation_id(data)
     operation = claim_operation(user_id, operation_id)
     if operation["status"] == "completed":
-        return jsonify(operation["result"]), 200
+        return jsonify(_attach_operation_id(operation["result"], operation_id)), 200
     if operation["status"] == "pending":
         return jsonify({"error": "operation_in_progress"}), 409
     reservation = None
+    memory_enabled = get_settings(user_id).get("memory_enabled") is True
+    set_diagnostic_context(DiagnosticContext(
+        operation_id=operation_id,
+        feature="ask",
+        note_context_mode=note_context_mode,
+        memory_enabled=memory_enabled,
+    ))
     if get_user_role(user_id) != AI_UNLIMITED_ROLE:
         try:
             reservation = reserve_credits(
@@ -133,7 +148,6 @@ def ask_ai():
     try:
         ask_started_at = time.perf_counter()
         logger.info("ai_ask ask_start")
-        memory_enabled = get_settings(user_id).get("memory_enabled") is True
         answer, tokens, memory_status = ask(
             question,
             note_ids=note_ids,
@@ -143,14 +157,33 @@ def ask_ai():
             memory_enabled=memory_enabled,
         )
         logger.info("ai_ask ask_complete elapsed_seconds=%.3f", time.perf_counter() - ask_started_at)
-        result = {"answer": answer, "tokens_estimated": tokens, "memory_status": memory_status}
+        set_diagnostic_context(DiagnosticContext(
+            operation_id=operation_id,
+            feature="ask",
+            note_context_mode=note_context_mode,
+            memory_enabled=memory_enabled,
+            memory_status=memory_status,
+        ))
+        result = _attach_operation_id(
+            {"answer": answer, "tokens_estimated": tokens, "memory_status": memory_status},
+            operation_id,
+        )
         complete_operation(user_id, operation_id, result)
         return jsonify(result), 200
-    except Exception as e:
+    except AIProviderError as error:
+        report_understanding_gap("ask.provider_failed", error, user_id=user_id)
         if reservation and reservation["charged"]:
             refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_ask_refund", operation_id)
         release_operation(user_id, operation_id)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "AI request failed"}), 502
+    except Exception as error:
+        report_understanding_gap("ask.operation_failed", error, user_id=user_id)
+        if reservation and reservation["charged"]:
+            refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_ask_refund", operation_id)
+        release_operation(user_id, operation_id)
+        return jsonify({"error": "AI request failed"}), 502
+    finally:
+        set_diagnostic_context(None)
 
 
 @bp.route("/flashcards/generate", methods=["POST"])
@@ -204,7 +237,7 @@ def generate_flashcards_route():
         if reservation and reservation["charged"]:
             refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_flashcards_refund", operation_id)
         release_operation(user_id, operation_id)
-        report_understanding_gap("flashcards.generation_failed", error)
+        report_understanding_gap("flashcards.generation_failed", error, user_id=user_id)
         return jsonify({"error": "Flashcard generation failed"}), 502
 
 

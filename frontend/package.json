@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run src/activeConversation.test.jsx && node --test src/askContextSources.test.js"
+    "test": "vitest run src/activeConversation.test.jsx src/askReportAnswer.test.jsx src/reportAnswerDialog.test.jsx && node --test src/askContextSources.test.js"
   },
   "dependencies": {
     "react": "^18.2.0",

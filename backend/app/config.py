@@ -45,6 +45,11 @@ AI_ASK_CREDIT_COST = int(os.getenv("AI_ASK_CREDIT_COST", "1"))
 REWARDED_AD_CREDIT_AMOUNT = int(os.getenv("REWARDED_AD_CREDIT_AMOUNT", "10"))
 AI_UNLIMITED_ROLE = os.getenv("AI_UNLIMITED_ROLE", "admin").strip()
 
+# AI diagnostics (content-free fallback and feedback records)
+DIAGNOSTICS_ENABLED = _bool_env("DIAGNOSTICS_ENABLED", True)
+DIAGNOSTICS_MAX_EVENTS_PER_USER = int(os.getenv("DIAGNOSTICS_MAX_EVENTS_PER_USER", "200"))
+DIAGNOSTICS_RETENTION_DAYS = int(os.getenv("DIAGNOSTICS_RETENTION_DAYS", "90"))
+
 # context & retrieval
 MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", 500))
 MEMORY_RETRIEVAL = os.getenv("MEMORY_RETRIEVAL", "text").strip().lower()

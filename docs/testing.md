@@ -35,6 +35,8 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 | **PUT /notes/<id>** | PUT | yes | Bearer + partial JSON | 200 or 404 |
 | **DELETE /notes/<id>** | DELETE | yes | Bearer | 200 or 404 |
 | **GET /activity/** | GET | yes | Bearer; optional `?limit=50` | 200 newest-first events; default 50, maximum 100 |
+| **POST /diagnostics/feedback** | POST | yes | Bearer + `operation_id`, `feature` (`ask`), `reason` (`wrong`/`unhelpful`/`harmful`/`other`) | 201 recorded metadata linked to a completed Ask operation; 404 when the operation is unknown or incomplete |
+| **GET /diagnostics/events** | GET | yes (admin role) | Bearer; optional `?limit=50` | 200 newest-first content-free diagnostic events across users; 403 for non-admin accounts |
 | **GET /settings** | GET | yes | Bearer | 200 preferences |
 | **PUT /settings** | PUT | yes | Bearer + JSON merge | 200 settings |
 | **GET /memories/** | GET | yes | Bearer | 200 current user's saved memories |
@@ -48,7 +50,7 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 
 For `/ai/ask`, Memory is controlled by the persisted `memory_enabled` boolean in `/settings/`, default false; a client request field cannot enable it. When enabled, Ask retrieves independent stored memories and performs best-effort extraction after the answer. When disabled, it does neither and preserves existing records. Notes continues to use `note_context_mode` (`off`, `automatic`, or `focused`; omitted defaults to `automatic`). Optional `note_ids` must be an array of non-empty strings and are resolved only within the authenticated user's Notes.
 
-The `/ai/ask` response also includes `memory_status` to report the best-effort Memory outcome without exposing saved content.
+The `/ai/ask` response also includes `memory_status` to report the best-effort Memory outcome without exposing saved content, and `operation_id` so the client can submit allow-listed answer feedback for that completed Ask operation.
 
 ## Backend checks
 
@@ -62,6 +64,9 @@ python -m scripts.test.test_ai_context_modes
 python -m scripts.test.test_ai_credits
 python -m scripts.test.test_memories
 python -m scripts.test.test_understanding_gaps
+python -m scripts.test.test_diagnostics
+
+`test_diagnostics.py` covers automatic/fallback persistence, Ask `operation_id` responses, generic Ask failure responses, feedback ownership, duplicate feedback suppression, admin authorization, retention caps, disabled persistence, and content-free records. Frontend `askReportAnswer.test.jsx` verifies the feedback API adapter sends allow-listed reasons with the completed Ask `operation_id`.
 python -m scripts.test.test_ai_response_style
 python -m scripts.test.test_lazy_embeddings
 python -m scripts.test.test_text_retrieval

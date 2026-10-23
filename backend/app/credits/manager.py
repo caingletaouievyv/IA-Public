@@ -129,6 +129,16 @@ def release_operation(user_id: str, operation_id: str) -> None:
             _save_account(account, user_id)
 
 
+def has_completed_operation(user_id: str, operation_id: str) -> bool:
+    """Return True when the user owns a completed operation with this identifier."""
+    if not user_id or not operation_id:
+        return False
+    with _FILE_LOCK:
+        account = _get_account_locked(user_id)
+        existing = account["operations"].get(operation_id)
+        return isinstance(existing, dict) and existing.get("status") == "completed"
+
+
 def grant_credits(user_id: str, amount: int, reason: str, operation_id: str) -> dict:
     """Grant credits and record the grant idempotently."""
     if not user_id:

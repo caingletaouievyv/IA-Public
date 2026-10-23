@@ -7,7 +7,7 @@ from app.common.understanding_gaps import report_understanding_gap
 
 APPEND_SEP = "\n\n---\n\n"
 
-def extract_text_from_images(image_files) -> str:
+def extract_text_from_images(image_files, user_id: str | None = None) -> str:
     """Run OCR on each image; concatenate text. Returns empty string if no text or OCR unavailable."""
     try:
         import pytesseract
@@ -26,19 +26,19 @@ def extract_text_from_images(image_files) -> str:
             if (text or "").strip():
                 texts.append(text.strip())
         except Exception as error:
-            report_understanding_gap("notes.image_ocr.image_failed", error)
+            report_understanding_gap("notes.image_ocr.image_failed", error, user_id=user_id)
     return "\n\n".join(texts) if texts else ""
 
 def process_images_to_note(image_files, title: str, category: str, tags: list | None = None, user_id: str = None):
     """OCR images → concatenate → AI summarize → add_note or append to existing note with same title+category. user_id required (Phase 8)."""
     if not user_id:
         raise ValueError("user_id required")
-    raw = extract_text_from_images(image_files)
+    raw = extract_text_from_images(image_files, user_id=user_id)
     if not raw.strip():
         raise ValueError("No text extracted from images. Check image format and Tesseract installation.")
     content = summarize_for_note(raw)
     if not content.strip():
-        report_understanding_gap("notes.image_summary.empty")
+        report_understanding_gap("notes.image_summary.empty", user_id=user_id)
         content = raw[:5000]
     content = content.strip()
     title = title.strip() or "Untitled"

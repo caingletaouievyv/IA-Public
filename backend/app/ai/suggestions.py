@@ -81,7 +81,7 @@ def generate_suggestion(user_id: str) -> dict | None:
         if action not in _ACTIONS:
             raise ValueError("AI suggestion action was invalid")
     except Exception as error:
-        report_understanding_gap("ai_suggestions.action_selection_failed", error)
+        report_understanding_gap("ai_suggestions.action_selection_failed", error, user_id=user_id)
         action = _fallback_action(events)
 
     return {

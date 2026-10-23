@@ -3,7 +3,7 @@
 // No authenticated API calls without token; surface auth errors in UI.
 
 import { useState, useEffect, useLayoutEffect, useRef, useId } from "react";
-import { ask, getNote, createHistory, updateNote, getToken, getSettings, getCachedSettings, putSettings } from "../api";
+import { ask, getNote, createHistory, updateNote, getToken, getSettings, getCachedSettings, putSettings, reportAiFeedback } from "../api";
 import {
   getActiveConversation,
   getSelectedNoteIds,
@@ -13,6 +13,7 @@ import {
 import AskContextIcon from "./AskContextIcon";
 import AskOverlay from "./AskOverlay";
 import FlashcardsPanel from "./FlashcardsPanel";
+import ReportAnswerDialog from "./ReportAnswerDialog";
 import {
   DEFAULT_CONTEXT_MODES,
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
@@ -27,11 +28,21 @@ function nextContextMode(mode, options = CONTEXT_MODES) {
   return options[(options.indexOf(mode) + 1) % options.length];
 }
 
-function parseMessages(content) {
+export function parseMessages(content) {
   if (!content || !content.trim()) return [];
   try {
     const arr = JSON.parse(content);
-    return Array.isArray(arr) ? arr.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string") : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.map((message) => {
+      if (!message || typeof message.content !== "string") return null;
+      if (message.role !== "user" && message.role !== "assistant") return null;
+      const parsed = { role: message.role, content: message.content };
+      const operationId = message.operationId || message.operation_id;
+      if (typeof operationId === "string" && operationId.trim()) {
+        parsed.operationId = operationId.trim();
+      }
+      return parsed;
+    }).filter(Boolean);
   } catch {
     return [];
   }
@@ -287,10 +298,12 @@ export default function Ask({
   const [historyLoading, setHistoryLoading] = useState(() => Boolean(getActiveConversation(userId)));
   const [historyFocused, setHistoryFocused] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(null);
+  const [reportDialog, setReportDialog] = useState(null);
   const [activeHistoryUserIndex, setActiveHistoryUserIndex] = useState(null);
   const historyRef = useRef(null);
   const historyUserMessageRefs = useRef([]);
   const copyFeedbackTimerRef = useRef(null);
+  const reportCloseTimerRef = useRef(null);
   const submissionInFlightRef = useRef(false);
   const skipNextHistoryLoadRef = useRef(null);
   const currentHistoryIdRef = useRef(currentHistoryId);
@@ -320,7 +333,10 @@ export default function Ask({
     return () => { cancelled = true; };
   }, [initialContextSettings]);
 
-  useEffect(() => () => window.clearTimeout(copyFeedbackTimerRef.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(copyFeedbackTimerRef.current);
+    window.clearTimeout(reportCloseTimerRef.current);
+  }, []);
 
   const setContextMode = (source, mode) => {
     const nextModes = { ...contextModesRef.current, [source]: mode };
@@ -536,8 +552,11 @@ export default function Ask({
     const data = await ask(prompt, noteIds, historyMessages, noteApiMode);
     const userContent = (prompt || "").trim();
     const assistantContent = (data.answer || "").trim();
+    const operationId = typeof data.operation_id === "string" ? data.operation_id : null;
     if (historyId && (userContent || assistantContent)) {
-      const nextMessages = [...activeMessages, { role: "user", content: userContent }, { role: "assistant", content: assistantContent }];
+      const assistantMessage = { role: "assistant", content: assistantContent };
+      if (operationId) assistantMessage.operationId = operationId;
+      const nextMessages = [...activeMessages, { role: "user", content: userContent }, assistantMessage];
       const updatedHistory = await updateNote(
         historyId,
         { content: JSON.stringify(nextMessages) },
@@ -614,6 +633,63 @@ export default function Ask({
       });
     }
     copyFeedbackTimerRef.current = window.setTimeout(() => setCopyFeedback(null), 2500);
+  };
+
+  const openReportDialog = (index, operationId) => {
+    window.clearTimeout(reportCloseTimerRef.current);
+    setReportDialog({
+      index,
+      operationId: operationId || null,
+      reason: "wrong",
+      status: "idle",
+      message: "",
+    });
+  };
+
+  const closeReportDialog = () => {
+    if (reportDialog?.status === "submitting") return;
+    window.clearTimeout(reportCloseTimerRef.current);
+    setReportDialog(null);
+  };
+
+  const setReportDialogReason = (reason) => {
+    setReportDialog((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        reason,
+        status: current.status === "error" ? "idle" : current.status,
+        message: current.status === "error" ? "" : current.message,
+      };
+    });
+  };
+
+  const submitReportDialog = async () => {
+    if (!reportDialog || reportDialog.status === "submitting" || reportDialog.status === "success") return;
+    if (!reportDialog.operationId) {
+      setReportDialog((current) => ({
+        ...current,
+        status: "error",
+        message: "This answer cannot be reported yet. Ask a new question first.",
+      }));
+      return;
+    }
+    setReportDialog((current) => ({ ...current, status: "submitting", message: "" }));
+    try {
+      await reportAiFeedback(reportDialog.operationId, reportDialog.reason);
+      setReportDialog((current) => ({
+        ...current,
+        status: "success",
+        message: "Report received. Thank you.",
+      }));
+      reportCloseTimerRef.current = window.setTimeout(() => setReportDialog(null), 2000);
+    } catch (error) {
+      setReportDialog((current) => ({
+        ...current,
+        status: "error",
+        message: error.message || "Could not send report.",
+      }));
+    }
   };
 
   return (
@@ -757,20 +833,44 @@ export default function Ask({
                     <div className="ask-history-message__content">
                       <strong>AI:</strong> <span className="ask-history-message__text">{message.content}</span>
                     </div>
-                    <button
-                      type="button"
-                      className="button-subtle button-icon ask-history-copy"
-                      onClick={() => copyAiResponse(index, message.content)}
-                      aria-label={`Copy AI response ${messages.slice(0, index).filter((priorMessage) => priorMessage.role === "assistant").length + 1}`}
-                      title={copyFeedback?.index === index && copyFeedback.status === "failed"
-                        ? copyFeedback.message
-                        : "Copy AI response"}
+                    <div
+                      className="ask-shortcuts"
+                      role="group"
+                      aria-label={`Actions for AI response ${messages.slice(0, index).filter((priorMessage) => priorMessage.role === "assistant").length + 1}`}
                     >
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <rect x="7" y="7" width="10" height="10" rx="1.5" />
-                        <path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v7A1.5 1.5 0 0 0 4.5 14H7" />
-                      </svg>
-                    </button>
+                      <button
+                        type="button"
+                        className="button-subtle button-icon ask-history-copy"
+                        onClick={() => copyAiResponse(index, message.content)}
+                        aria-label={`Copy AI response ${messages.slice(0, index).filter((priorMessage) => priorMessage.role === "assistant").length + 1}`}
+                        title={copyFeedback?.index === index && copyFeedback.status === "failed"
+                          ? copyFeedback.message
+                          : "Copy AI response"}
+                      >
+                        <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                          <rect x="7" y="7" width="10" height="10" rx="1.5" />
+                          <path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v7A1.5 1.5 0 0 0 4.5 14H7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="button-subtle button-icon ask-history-copy"
+                        onClick={() => openReportDialog(index, message.operationId)}
+                        disabled={loading}
+                        aria-haspopup="dialog"
+                        aria-label={`Report AI response ${messages.slice(0, index).filter((priorMessage) => priorMessage.role === "assistant").length + 1}`}
+                        title={
+                          !message.operationId
+                            ? "Report this answer (may require a newer Ask response with a reference id)."
+                            : "Report answer"
+                        }
+                      >
+                        <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                          <path d="M5 3v14" />
+                          <path d="M5 3h9l-2 3 2 3H5" />
+                        </svg>
+                      </button>
+                    </div>
                     <span className="ask-history-copy-status" role="status" aria-live="polite">
                       {copyFeedback?.index === index ? copyFeedback.message : ""}
                     </span>
@@ -832,6 +932,17 @@ export default function Ask({
           />
         </AskOverlay>
       )}
+      {reportDialog ? (
+        <ReportAnswerDialog
+          reason={reportDialog.reason}
+          status={reportDialog.status}
+          message={reportDialog.message}
+          operationId={reportDialog.operationId}
+          onReasonChange={setReportDialogReason}
+          onSubmit={submitReportDialog}
+          onClose={closeReportDialog}
+        />
+      ) : null}
     </section>
   );
 }

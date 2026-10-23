@@ -622,7 +622,7 @@ def extract_and_save(user_id: str, current_message: str, history_messages: list 
                 matching_memory["text"],
             ):
                 return "removed"
-        report_understanding_gap("memory.forget.unresolved")
+        report_understanding_gap("memory.forget.unresolved", user_id=user_id)
         return "unavailable"
 
     if _is_question_or_ordinary_request(current_message):
@@ -762,5 +762,5 @@ def best_effort_extract(user_id: str, current_message: str, history_messages: li
             code = "memory.extraction.output_invalid"
         else:
             code = "memory.extraction.operation_failed"
-        report_understanding_gap(code, error)
+        report_understanding_gap(code, error, user_id=user_id)
         return "unavailable"

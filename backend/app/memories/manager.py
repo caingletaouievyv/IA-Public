@@ -382,7 +382,7 @@ def retrieve_memories(user_id: str, query: str) -> list[dict]:
         try:
             requested_key = _classify_memory_query(query, available_keys)
         except Exception as error:
-            report_understanding_gap("memory.query.classification_failed", error)
+            report_understanding_gap("memory.query.classification_failed", error, user_id=user_id)
             requested_key = None
         if requested_key:
             ranked.append((2.0, latest_by_key[requested_key]))

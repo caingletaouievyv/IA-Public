@@ -412,7 +412,8 @@ class AICreditTests(unittest.TestCase):
         user_id = self.user_id()
         with patch.object(ai_routes, "ask", side_effect=RuntimeError("provider failed")):
             response = self.ask(user_id, "ask-failed")
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json()["error"], "AI request failed")
         account = credit_manager.get_credit_account(user_id)
         self.assertEqual(account["credit_balance"], config.AI_CREDIT_INITIAL_BALANCE)
         self.assertEqual(account["ledger"][-2]["reason"], "ai_ask")

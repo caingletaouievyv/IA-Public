@@ -103,6 +103,7 @@ export async function ask(question, noteIds = null, messages = null, noteContext
   const body = {
     question: (question || "hello").trim(),
     note_context_mode: noteContextMode,
+    request_id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
   };
   if (Array.isArray(noteIds) && noteIds.length) body.note_ids = noteIds;
   if (Array.isArray(messages) && messages.length) body.messages = messages;
@@ -112,6 +113,20 @@ export async function ask(question, noteIds = null, messages = null, noteContext
     body: JSON.stringify(body),
   });
   const data = await res.json();
+  return handleResponse(res, data);
+}
+
+export async function reportAiFeedback(operationId, reason, feature = "ask") {
+  const res = await fetch(`${BASE}/diagnostics/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({
+      operation_id: operationId,
+      feature,
+      reason,
+    }),
+  });
+  const data = await readJsonResponse(res);
   return handleResponse(res, data);
 }
 
