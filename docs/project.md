@@ -82,6 +82,7 @@ Persistent Memory is separate from Notes and Conversation History. It uses a ded
 - `MEMORY_RETRIEVAL=text` (default): deterministic weighted lexical overlap; no embedding model is loaded.
 - `MEMORY_RETRIEVAL=semantic` (opt-in): uses a temporary FAISS index for the current user's candidate notes and the `sentence-transformers/all-MiniLM-L6-v2` model. Model loading is lazy. The normal manager path does not use the persistent global vector cache.
 - Text and FAISS retrieval use their own lookup/exploratory thresholds. Context size is controlled by `MAX_CONTEXT_TOKENS`; both modes use `MAX_FAISS_RESULTS` as the configured top-N count.
+- Query-bearing diagnostics (`FAISS_LOG_SCORES`, `INTENT_CACHE_LOG_HITS`) and dropped-note-title logs (`LOG_DROPPED_NOTES`) default off. `MEMORY_ANALYTICS_ENABLED` also defaults off; when enabled, its local records include query text and note titles. Understanding-gap logs use fixed content-free codes; see [understanding-gaps.md](understanding-gaps.md).
 
 ### Retrieval threshold tuning
 

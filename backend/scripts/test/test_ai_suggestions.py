@@ -110,7 +110,13 @@ class AISuggestionTests(unittest.TestCase):
         user_id = self.user_id()
         self.add_recent_events(user_id, "note.created", "note.updated")
 
-        with patch("app.ai.suggestions.call_ai", side_effect=RuntimeError("provider unavailable")):
+        with (
+            self.assertLogs("ia.understanding", level="WARNING") as captured,
+            patch(
+                "app.ai.suggestions.call_ai",
+                side_effect=RuntimeError("PRIVATE_USER_PROMPT_SENTINEL"),
+            ),
+        ):
             suggestion = self.client.post(
                 "/ai/suggestions",
                 headers=self.headers(user_id),
@@ -121,6 +127,8 @@ class AISuggestionTests(unittest.TestCase):
             suggestion["text"],
             "Want to ask IA to summarize your recent note changes and suggest next steps?",
         )
+        self.assertIn("code=ai_suggestions.action_selection_failed", captured.output[0])
+        self.assertNotIn("PRIVATE_USER_PROMPT_SENTINEL", captured.output[0])
 
 
 if __name__ == "__main__":

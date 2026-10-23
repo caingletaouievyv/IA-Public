@@ -2,6 +2,12 @@
 
 import os
 
+
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    return default if value is None else value.lower() == "true"
+
+
 # auth: JWT for login (no API secret in UI). Set JWT_SECRET in .env (do not commit).
 JWT_SECRET = (os.getenv("JWT_SECRET") or "").strip()
 JWT_ALGORITHM = "HS256"
@@ -45,18 +51,18 @@ MEMORY_RETRIEVAL = os.getenv("MEMORY_RETRIEVAL", "text").strip().lower()
 # Lexical scores are normalized to 0..1 and use thresholds separate from FAISS scores.
 TEXT_RETRIEVAL_THRESHOLD_LOOKUP = float(os.getenv("TEXT_RETRIEVAL_THRESHOLD_LOOKUP", 0.20))
 TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY = float(os.getenv("TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY", 0.20))
-FAISS_LOG_SCORES = os.getenv("FAISS_LOG_SCORES", "true").lower() == "true"
+FAISS_LOG_SCORES = _bool_env("FAISS_LOG_SCORES", False)
 FAISS_SCORE_LOG_PATH = os.getenv("FAISS_SCORE_LOG_PATH", "data/faiss_scores.log")
 # Thresholds from scripts/analyze_memory_analytics; override in .env (docs/project.md FAISS tuning).
 FAISS_THRESHOLD_LOOKUP = float(os.getenv("FAISS_THRESHOLD_LOOKUP", 0.54))
 FAISS_THRESHOLD_EXPLORATORY = float(os.getenv("FAISS_THRESHOLD_EXPLORATORY", 0.649))
 MAX_FAISS_RESULTS = int(os.getenv("MAX_FAISS_RESULTS", 10))
-LOG_DROPPED_NOTES = os.getenv("LOG_DROPPED_NOTES", "true").lower() == "true"
+LOG_DROPPED_NOTES = _bool_env("LOG_DROPPED_NOTES", False)
 
 # intent cache
 INTENT_CACHE_MAX_SIZE = int(os.getenv("INTENT_CACHE_MAX_SIZE", 1000))
 INTENT_CACHE_TTL = int(os.getenv("INTENT_CACHE_TTL", 300))
-INTENT_CACHE_LOG_HITS = os.getenv("INTENT_CACHE_LOG_HITS", "true").lower() == "true"
+INTENT_CACHE_LOG_HITS = _bool_env("INTENT_CACHE_LOG_HITS", False)
 
 # memory analytics (per-query logging)
 MEMORY_ANALYTICS_ENABLED = os.getenv("MEMORY_ANALYTICS_ENABLED", "false").lower() == "true"

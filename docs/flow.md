@@ -92,6 +92,16 @@ Supported standalone persistent assistant-name updates and recognized standalone
 
 ---
 
+## Understanding gaps and fallback reports
+
+| Step | Where | What to look at |
+|------|-------|------------------|
+| 1 | `backend/app/common/understanding_gaps.py` | `report_understanding_gap()` accepts only registered codes and logs fixed feature/category/fallback metadata plus exception class. It never logs exception text or caller content. |
+| 2 | Memory extraction/retrieval, suggestions, Flashcards, and image-to-Note fallback paths | Report only observed provider, output-validation, or fallback failures. Ordinary no-candidate and no-note-match outcomes are not automatically gaps. |
+| 3 | Backend logs → [understanding-gaps.md](understanding-gaps.md) | Search for `understanding_gap`, classify by code, and add sanitized expected/actual/test details to the register. Do not paste raw prompts or note data. |
+
+---
+
 ## 8. Auth (login; no API secret)
 
 | Step | Where | What to look at |

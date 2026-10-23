@@ -3,11 +3,12 @@
 import datetime
 import json
 import os
+import requests
 import sys
 import tempfile
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("JWT_SECRET", "ia-unit-test-jwt-secret-with-enough-variety-2026")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -1893,6 +1894,79 @@ class MemoryFeatureTests(unittest.TestCase):
         self.assertEqual(status, "unchanged")
         self.assertEqual(manager.list_memories(user_id), [])
 
+    def test_provider_failure_reports_provider_code_and_preserves_memory(self):
+        user_id = self.user_id()
+        self.add_memory(user_id, "The user prefers concise answers.")
+        memories_before = manager.list_memories(user_id)
+
+        with (
+            self.assertLogs("ia.understanding", level="WARNING") as captured,
+            patch("app.ai.client.AI_MODE", "single"),
+            patch("app.ai.client.MODEL_PROVIDER", "groq"),
+            patch(
+                "app.ai.client.requests.post",
+                side_effect=requests.ConnectionError("PRIVATE_PROVIDER_ERROR_SENTINEL"),
+            ),
+        ):
+            status = extraction.best_effort_extract(
+                user_id,
+                "Please remember that I prefer short answers.",
+            )
+
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(manager.list_memories(user_id), memories_before)
+        self.assertIn("code=memory.extraction.provider_failed", captured.output[0])
+        self.assertNotIn("PRIVATE_PROVIDER_ERROR_SENTINEL", captured.output[0])
+
+    def test_response_processing_error_is_not_reported_as_provider_failure(self):
+        user_id = self.user_id()
+        self.add_memory(user_id, "The user prefers concise answers.")
+        memories_before = manager.list_memories(user_id)
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.side_effect = RuntimeError("PRIVATE_RESPONSE_ERROR_SENTINEL")
+
+        with (
+            self.assertLogs("ia.understanding", level="WARNING") as captured,
+            patch("app.ai.client.AI_MODE", "single"),
+            patch("app.ai.client.MODEL_PROVIDER", "groq"),
+            patch("app.ai.client.requests.post", return_value=response),
+        ):
+            status = extraction.best_effort_extract(
+                user_id,
+                "Please remember that I prefer short answers.",
+            )
+
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(manager.list_memories(user_id), memories_before)
+        self.assertIn("code=memory.extraction.operation_failed", captured.output[0])
+        self.assertNotIn("memory.extraction.provider_failed", captured.output[0])
+        self.assertNotIn("PRIVATE_RESPONSE_ERROR_SENTINEL", captured.output[0])
+
+    def test_programming_runtime_error_is_not_reported_as_provider_failure(self):
+        user_id = self.user_id()
+        self.add_memory(user_id, "The user prefers concise answers.")
+        memories_before = manager.list_memories(user_id)
+
+        with (
+            self.assertLogs("ia.understanding", level="WARNING") as captured,
+            patch("app.ai.client.AI_MODE", "single"),
+            patch(
+                "app.ai.client.call_single",
+                side_effect=RuntimeError("PRIVATE_PROGRAMMING_ERROR_SENTINEL"),
+            ),
+        ):
+            status = extraction.best_effort_extract(
+                user_id,
+                "Please remember that I prefer short answers.",
+            )
+
+        self.assertEqual(status, "unavailable")
+        self.assertEqual(manager.list_memories(user_id), memories_before)
+        self.assertIn("code=memory.extraction.operation_failed", captured.output[0])
+        self.assertNotIn("memory.extraction.provider_failed", captured.output[0])
+        self.assertNotIn("PRIVATE_PROGRAMMING_ERROR_SENTINEL", captured.output[0])
+
     def test_sensitive_memories_require_explicit_request_and_secrets_are_never_saved(self):
         with self.assertRaisesRegex(ValueError, "explicit remember"):
             manager.validate_memory_text("The user has a medical condition.")
@@ -1962,16 +2036,29 @@ class MemoryFeatureTests(unittest.TestCase):
     def test_semantic_query_classification_falls_back_to_lexical_matches(self):
         user_id = self.user_id()
         self.add_memory(user_id, "The user prefers concise answers about Python.")
+        manager.add_or_update_memories(
+            user_id,
+            [{
+                "text": "The user wants the assistant to be called Atlas.",
+                "key": "assistant.name",
+                "explicit_remember": True,
+            }],
+        )
 
-        with patch(
-            "app.ai.client.call_ai",
-            side_effect=RuntimeError("provider unavailable"),
+        with (
+            self.assertLogs("ia.understanding", level="WARNING") as captured,
+            patch(
+                "app.ai.client.call_ai",
+                side_effect=RuntimeError("PRIVATE_USER_PROMPT_SENTINEL"),
+            ),
         ):
             memories = manager.retrieve_memories(user_id, "How should you answer my Python question?")
 
         self.assertEqual([item["text"] for item in memories], [
             "The user prefers concise answers about Python."
         ])
+        self.assertIn("code=memory.query.classification_failed", captured.output[0])
+        self.assertNotIn("PRIVATE_USER_PROMPT_SENTINEL", captured.output[0])
 
 
 

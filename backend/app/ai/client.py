@@ -24,6 +24,10 @@ MODEL_MAP = {
 }
 
 
+class AIProviderError(RuntimeError):
+    """Raised when a configured AI provider request fails."""
+
+
 def call_single(prompt: str | None = None, messages: list | None = None, provider: str = None) -> str:
     """Call one provider. Use messages (chat format) if provided; else single user message from prompt."""
     config = MODEL_MAP.get(provider or MODEL_PROVIDER, MODEL_MAP["groq"])
@@ -37,11 +41,15 @@ def call_single(prompt: str | None = None, messages: list | None = None, provide
     try:
         response = requests.post(config["endpoint"], headers=headers, json=payload, timeout=60)
         response.raise_for_status()
-        result = response.json()
-        return result.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except requests.RequestException as e:
-        logger.error(f"{provider} request failed: {e}")
-        raise RuntimeError(f"{provider} request failed") from e
+    except requests.RequestException as error:
+        logger.warning(
+            "ai_provider_request_failed provider=%s error_type=%s",
+            provider or MODEL_PROVIDER,
+            type(error).__name__,
+        )
+        raise AIProviderError(f"{provider} request failed") from error
+    result = response.json()
+    return result.get("choices", [{}])[0].get("message", {}).get("content", "")
 
 def judge_answers(question: str, answers: list) -> str:
     """Pick best answer by relevance + length + clarity (fewer ?)."""
@@ -71,6 +79,8 @@ def call_ai(prompt: str, question: str | None = None, messages: list | None = No
         if AI_MODE == "judge":
             return judge_answers(question or prompt, answers)
         return "\n\n---\n\n".join(answers)
-    except Exception as e:
-        logger.exception("Unexpected AI error")
-        raise RuntimeError(f"AI request error: {str(e)}")
+    except AIProviderError:
+        raise
+    except Exception as error:
+        logger.error("ai_client_unexpected_error error_type=%s", type(error).__name__)
+        raise RuntimeError(f"AI request error: {str(error)}")

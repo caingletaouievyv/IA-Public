@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from app.ai.client import AIProviderError
 from app.ai.engine import ask
 from app.ai.routes import _parse_memory_context_mode, _parse_note_context_mode
 from app.memory import manager
@@ -322,9 +323,13 @@ class AIContextModeTests(unittest.TestCase):
 
     def test_extraction_failure_does_not_fail_ai_response(self):
         with (
+            self.assertLogs("ia.understanding", level="WARNING") as captured,
             patch("app.ai.engine.retrieve_memories", return_value=[]),
             patch("app.ai.engine.call_ai", return_value="answer"),
-            patch("app.memories.extraction.call_ai", side_effect=RuntimeError("provider unavailable")),
+            patch(
+                "app.memories.extraction.call_ai",
+                side_effect=AIProviderError("PRIVATE_USER_PROMPT_SENTINEL"),
+            ),
         ):
             answer, _, status = ask(
                 "Please remember that I prefer short answers.",
@@ -335,6 +340,8 @@ class AIContextModeTests(unittest.TestCase):
 
         self.assertEqual(answer, "answer")
         self.assertEqual(status, "unavailable")
+        self.assertIn("code=memory.extraction.provider_failed", captured.output[0])
+        self.assertNotIn("PRIVATE_USER_PROMPT_SENTINEL", captured.output[0])
 
     def test_missing_mode_defaults_to_automatic(self):
         self.assertEqual(_parse_note_context_mode({}), "automatic")

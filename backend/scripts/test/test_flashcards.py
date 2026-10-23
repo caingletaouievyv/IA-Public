@@ -178,7 +178,13 @@ class FlashcardRouteTests(unittest.TestCase):
         note = self.add_note(user_id, "Study", "A source.")
         initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
 
-        with patch("app.ai.flashcards.call_ai", return_value='{"cards":[]}'):
+        with (
+            self.assertLogs("ia.understanding", level="WARNING") as captured,
+            patch(
+                "app.ai.flashcards.call_ai",
+                return_value="PRIVATE_PROVIDER_OUTPUT_SENTINEL",
+            ),
+        ):
             response = self.client.post(
                 "/ai/flashcards/generate",
                 json=self.request_data(note["id"]),
@@ -186,6 +192,8 @@ class FlashcardRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 502)
+        self.assertIn("code=flashcards.generation_failed", captured.output[0])
+        self.assertNotIn("PRIVATE_PROVIDER_OUTPUT_SENTINEL", captured.output[0])
         self.assertEqual(
             credit_manager.get_credit_account(user_id)["credit_balance"],
             initial_balance,

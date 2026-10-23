@@ -61,6 +61,7 @@ python -m scripts.test.test_ai_suggestions
 python -m scripts.test.test_ai_context_modes
 python -m scripts.test.test_ai_credits
 python -m scripts.test.test_memories
+python -m scripts.test.test_understanding_gaps
 python -m scripts.test.test_ai_response_style
 python -m scripts.test.test_lazy_embeddings
 python -m scripts.test.test_text_retrieval
@@ -80,6 +81,8 @@ python -m scripts.test.test_settings_preferences
 `test_selected_notes_context.py` is pytest-style and can be run with `python -m pytest scripts/test/test_selected_notes_context.py` if pytest is installed; pytest is not listed in `requirements.txt`.
 
 `test_memories.py` uses temporary storage and mocked provider output. It covers the default-off persistent setting (including ignoring request-supplied enablement), user isolation, authenticated CRUD and clear-all, bounds/secrets, deterministic and model-classified assistant-name settings, several independent durable-name paraphrases, stable-key changes and legacy-record reconciliation, duplicate prevention, low-overlap name-query classification, conflicting legacy record selection, lexical fallback on classifier failure, question/hypothetical/temporary classification, compound messages that retain a durable fact but reject a temporary assistant name, grounded explicit extraction, candidate-scoped sensitive consent (including independent requests, uncertain/negated/corrected/superseded claims, unrelated people and contrast clauses, unrelated history, quoted requests, and missing/fabricated/assistant-only evidence), targeted revocation of a unique standalone sensitive record with an in-process atomic unchanged-record check, a deterministic intervening-edit regression, fail-closed handling of ambiguous matches and compound records, update/deduplication, forget requests, and relevance. Provider intent labels and retrieval key classifications are mocked; live-model semantic accuracy is not asserted and may vary by configured provider/model. `test_ai_context_modes.py` verifies Memory and Notes are independent, Off skips retrieval/extraction, enabled Memory is injected as untrusted background data, prior conversation turns are untrusted context, and extraction failures do not fail an AI response. `test_ai_credits.py` verifies the server-side setting controls Memory and that a successful Ask with Memory still reserves only one credit.
+
+`test_understanding_gaps.py` verifies the fixed log schema, rejects unknown gap codes, proves exception/provider/OCR content is not emitted, checks privacy-sensitive log options default off, and verifies the empty-summary OCR-text fallback still saves its content. Fallback integration tests also check that Memory extraction and retrieval, suggestions, and Flashcards retain their existing outcomes while reporting fixed codes. Use [understanding-gaps.md](understanding-gaps.md) to classify new cases; provider mocks verify the fallback path, not live semantic accuracy. Query-bearing FAISS/cache diagnostics and dropped-note-title logs are opt-in; detailed memory analytics persist query text and titles and should only be enabled with suitable test data.
 
 ### Live API smoke (optional)
 

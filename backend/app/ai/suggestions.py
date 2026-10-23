@@ -2,12 +2,11 @@
 
 import datetime
 import json
-import logging
 
 from app.activity.manager import list_activity
 from app.ai.client import call_ai
+from app.common.understanding_gaps import report_understanding_gap
 
-logger = logging.getLogger(__name__)
 _RECENT_WINDOW = datetime.timedelta(days=7)
 _MINIMUM_EVENTS = 2
 _MAX_CONTEXT_EVENTS = 5
@@ -82,7 +81,7 @@ def generate_suggestion(user_id: str) -> dict | None:
         if action not in _ACTIONS:
             raise ValueError("AI suggestion action was invalid")
     except Exception as error:
-        logger.warning("ai_suggestion_fallback error_type=%s", type(error).__name__)
+        report_understanding_gap("ai_suggestions.action_selection_failed", error)
         action = _fallback_action(events)
 
     return {

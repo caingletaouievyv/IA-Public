@@ -6,6 +6,7 @@ import uuid
 from flask import Blueprint, request, jsonify
 from app import limiter, logger
 from app.common.auth import require_auth
+from app.common.understanding_gaps import report_understanding_gap
 from app.auth.manager import get_user_role
 from app.ai.engine import ask, get_token_estimate
 from app.ai.flashcards import (
@@ -203,7 +204,7 @@ def generate_flashcards_route():
         if reservation and reservation["charged"]:
             refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_flashcards_refund", operation_id)
         release_operation(user_id, operation_id)
-        logger.warning("Flashcard generation failed (error_type=%s)", type(error).__name__)
+        report_understanding_gap("flashcards.generation_failed", error)
         return jsonify({"error": "Flashcard generation failed"}), 502
 
 

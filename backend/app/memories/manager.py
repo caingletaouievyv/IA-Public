@@ -12,6 +12,7 @@ import uuid
 
 from app.memory.text_retrieval import normalize_query
 from app.memory.utils import estimate_tokens
+from app.common.understanding_gaps import report_understanding_gap
 
 logger = logging.getLogger(__name__)
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -381,10 +382,7 @@ def retrieve_memories(user_id: str, query: str) -> list[dict]:
         try:
             requested_key = _classify_memory_query(query, available_keys)
         except Exception as error:
-            logger.warning(
-                "Memory query classification failed; using lexical retrieval (error_type=%s)",
-                type(error).__name__,
-            )
+            report_understanding_gap("memory.query.classification_failed", error)
             requested_key = None
         if requested_key:
             ranked.append((2.0, latest_by_key[requested_key]))

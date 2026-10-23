@@ -1,10 +1,10 @@
 """Structured, best-effort extraction of user-approved persistent memories."""
 
 import json
-import logging
 import re
 
-from app.ai.client import call_ai
+from app.ai.client import AIProviderError, call_ai
+from app.common.understanding_gaps import report_understanding_gap
 from app.memories.manager import (
     add_or_update_memories,
     contains_secret,
@@ -15,7 +15,6 @@ from app.memories.manager import (
     validate_memory_text,
 )
 
-logger = logging.getLogger(__name__)
 MAX_SOURCE_MESSAGES = 8
 MAX_SOURCE_LENGTH = 2000
 MAX_OUTPUT_RECORDS = 10
@@ -623,6 +622,7 @@ def extract_and_save(user_id: str, current_message: str, history_messages: list 
                 matching_memory["text"],
             ):
                 return "removed"
+        report_understanding_gap("memory.forget.unresolved")
         return "unavailable"
 
     if _is_question_or_ordinary_request(current_message):
@@ -756,8 +756,11 @@ def best_effort_extract(user_id: str, current_message: str, history_messages: li
     try:
         return extract_and_save(user_id, current_message, history_messages)
     except Exception as error:
-        logger.warning(
-            "Memory extraction or persistence failed; AI response will still be returned (error_type=%s)",
-            type(error).__name__,
-        )
+        if isinstance(error, AIProviderError):
+            code = "memory.extraction.provider_failed"
+        elif isinstance(error, (TypeError, ValueError)):
+            code = "memory.extraction.output_invalid"
+        else:
+            code = "memory.extraction.operation_failed"
+        report_understanding_gap(code, error)
         return "unavailable"

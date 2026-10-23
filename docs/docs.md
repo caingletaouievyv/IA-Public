@@ -7,6 +7,7 @@
 | **Session state** | [state.md](state.md) | Current State → Intent → Next (multi-machine / new AI chat) |
 | **Implementation agreement** | [ia.md](ia.md) | Engineering principles, architecture, security, and testing conventions |
 | **AI-assisted workflows** | [architecture/ai-assisted-workflows.md](architecture/ai-assisted-workflows.md) | Reusable pattern, safeguards, and adoption candidates for natural-language operations |
+| **Understanding gaps** | [understanding-gaps.md](understanding-gaps.md) | Content-free fallback diagnostics, known gaps, and review format |
 | **Flow** | [flow.md](flow.md) | Step-by-step traces in the codebase |
 | **Testing** | [testing.md](testing.md) | Test scripts and per-endpoint reference |
 | **UI** | [ui.md](ui.md) | Frontend layout, theme, components |
