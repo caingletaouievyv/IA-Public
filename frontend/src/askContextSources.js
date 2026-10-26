@@ -88,3 +88,24 @@ export function normalizeContextModes(value) {
     ]),
   );
 }
+
+/** Matches Ask toolbar `active` state for each context source. */
+export function isContextSourceActive(sourceId, { currentHistoryId, contextModes }) {
+  if (sourceId === "conversation") {
+    return Boolean(currentHistoryId);
+  }
+  return contextModes?.[sourceId] !== "off";
+}
+
+export function getActiveContextSources(visibleSources, state) {
+  return getVisibleContextSources(visibleSources).filter((source) => isContextSourceActive(source.id, state));
+}
+
+/** Focus indicators: toggleable sources only (Conversation is history navigation, not an ON/OFF context mode). */
+export function getFocusActiveContextSources(visibleSources, state) {
+  return getActiveContextSources(visibleSources, state).filter((source) => source.id !== "conversation");
+}
+
+export function getContextSourceOnLabel(sourceLabel) {
+  return `${sourceLabel}: ON`;
+}

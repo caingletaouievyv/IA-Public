@@ -1708,6 +1708,11 @@ button.secondary:focus-visible,
     padding: 0.4rem 0.65rem;
     justify-content: center;
   }
+  .ask-history-active-source__button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
   .ask-context-mode {
     min-height: 2.75rem;
     padding-right: 0.62rem;
@@ -1809,6 +1814,65 @@ button.secondary:focus-visible,
   color: var(--text);
   font-size: 0.88rem;
   font-weight: 600;
+}
+.ask-history-active-sources {
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.ask-history-active-source {
+  position: relative;
+  display: inline-flex;
+}
+.ask-history-active-source__button {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0.2rem;
+  color: var(--accent);
+}
+.ask-history-active-source__button:hover,
+.ask-history-active-source__button:focus-visible {
+  color: var(--accent-hover);
+}
+.ask-history-active-source__tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.35rem);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: max-content;
+  max-width: min(12rem, calc(100vw - 2rem));
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+  transform: translateX(-50%);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition), visibility var(--transition);
+}
+.ask-history-active-source__tooltip strong {
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.ask-history-active-source:hover .ask-history-active-source__tooltip,
+.ask-history-active-source:focus-within .ask-history-active-source__tooltip,
+.ask-history-active-source--pressed .ask-history-active-source__tooltip {
+  visibility: visible;
+  opacity: 1;
 }
 .ask-history-heading__controls {
   display: flex;

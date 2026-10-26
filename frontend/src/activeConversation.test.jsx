@@ -201,6 +201,14 @@ function getNotesModeButton(mode) {
   });
 }
 
+async function enterHistoryFocus(user) {
+  await user.click(screen.getByRole("button", { name: "Focus Conversation History" }));
+}
+
+function getFocusActiveSourceButtons() {
+  return screen.getByRole("list", { name: "Active context sources" }).querySelectorAll("button");
+}
+
 beforeEach(() => {
   cleanup();
   localStorage.clear();
@@ -768,6 +776,90 @@ describe("active conversation restoration", () => {
     expect(toolbar.className).toContain("ask-shortcuts--labels-hidden");
     expect(toolbar.className).not.toContain("ask-shortcuts--labels-visible");
     expect(await screen.findByRole("button", { name: "Conversation: No active conversation" })).toBeTruthy();
+  });
+
+  describe("Focus Mode active context source indicators", () => {
+    it("shows no indicators when Notes, Memory, and other optional sources are off", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await selectConversation(user, "First conversation");
+      await enterHistoryFocus(user);
+
+      expect(screen.queryByRole("list", { name: "Active context sources" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Conversation: ON" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Notes: ON" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Memory: ON" })).toBeNull();
+    });
+
+    it("shows Notes, Memory, and placeholder sources when their modes are on", async () => {
+      settings.ask_context_sources = ["conversation", "notes", "memory", "files", "github"];
+      settings.ask_context_modes = { notes: "automatic", memory: "off", files: "automatic", github: "off" };
+      settings.memory_enabled = true;
+      const user = userEvent.setup();
+      renderApp();
+      await selectConversation(user, "First conversation");
+      await enterHistoryFocus(user);
+
+      expect(screen.queryByRole("button", { name: "Conversation: ON" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Notes: ON" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Memory: ON" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Files: ON" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "GitHub: ON" })).toBeNull();
+      expect(getFocusActiveSourceButtons()).toHaveLength(3);
+    });
+
+    it("updates indicators when context modes change while Focus Mode stays active", async () => {
+      const user = userEvent.setup();
+      activityEvents = [
+        { event_id: "event-b", event_type: "note.updated", description: "Note updated", timestamp: new Date().toISOString() },
+        { event_id: "event-a", event_type: "note.created", description: "Note created", timestamp: new Date(Date.now() - 1000).toISOString() },
+      ];
+      suggestionResponse = {
+        suggestion_id: "event-b|event-a",
+        action: "prepare_ask",
+        text: "Want to ask IA to summarize your recent note changes and suggest next steps?",
+      };
+      renderApp();
+      await selectConversation(user, "First conversation");
+      await enterHistoryFocus(user);
+      expect(screen.queryByLabelText("Ask shortcuts")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Notes: ON" })).toBeNull();
+
+      await user.click(await screen.findByRole("button", { name: "Prepare Ask" }));
+      await waitFor(() => expect(settings.ask_context_modes.notes).toBe("automatic"));
+      expect(screen.getByRole("button", { name: "Exit Conversation History focus" })).toBeTruthy();
+      expect(screen.queryByLabelText("Ask shortcuts")).toBeNull();
+      expect(screen.getByRole("button", { name: "Notes: ON" })).toBeTruthy();
+    });
+
+    it("removes indicators after exiting Focus Mode", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await selectConversation(user, "First conversation");
+      await user.click(getNotesModeButton("OFF"));
+      await enterHistoryFocus(user);
+      expect(screen.getByRole("list", { name: "Active context sources" })).toBeTruthy();
+
+      await user.click(screen.getByRole("button", { name: "Exit Conversation History focus" }));
+      expect(screen.queryByRole("list", { name: "Active context sources" })).toBeNull();
+    });
+
+    it("exposes status through accessible names and tooltip content", async () => {
+      const user = userEvent.setup();
+      settings.ask_context_modes = { notes: "selected", memory: "off" };
+      renderApp();
+      await selectConversation(user, "First conversation");
+      await enterHistoryFocus(user);
+
+      const notesIndicator = screen.getByRole("button", { name: "Notes: ON" });
+      expect(notesIndicator.getAttribute("title")).toBe("Notes: ON");
+      const tooltip = document.getElementById(notesIndicator.getAttribute("aria-describedby"));
+      expect(tooltip.textContent).toContain("Notes");
+      expect(tooltip.textContent).toContain("ON");
+
+      await user.click(notesIndicator);
+      expect(notesIndicator.closest(".ask-history-active-source").className).toContain("--pressed");
+    });
   });
 
   it("keeps the saved label preference unchanged when using Focus", async () => {

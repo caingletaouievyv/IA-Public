@@ -5,7 +5,11 @@ import test from "node:test";
 import {
   DEFAULT_CONTEXT_MODES,
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
+  getActiveContextSources,
+  getFocusActiveContextSources,
+  getContextSourceOnLabel,
   getVisibleContextSources,
+  isContextSourceActive,
   normalizeContextModes,
   normalizeShowContextSourceLabels,
   normalizeVisibleContextSources,
@@ -46,4 +50,27 @@ test("Ask labels default on while preserving an explicit off preference", () => 
   assert.equal(normalizeShowContextSourceLabels(undefined), true);
   assert.equal(normalizeShowContextSourceLabels(false), false);
   assert.equal(normalizeShowContextSourceLabels(true), true);
+});
+
+test("active context sources mirror Ask toolbar active state", () => {
+  const modes = normalizeContextModes({ notes: "selected", memory: "off", files: "automatic" });
+  const state = { currentHistoryId: "hist-1", contextModes: modes };
+  assert.equal(isContextSourceActive("conversation", state), true);
+  assert.equal(isContextSourceActive("notes", state), true);
+  assert.equal(isContextSourceActive("memory", state), false);
+  assert.equal(isContextSourceActive("files", state), true);
+  assert.equal(isContextSourceActive("conversation", { currentHistoryId: null, contextModes: modes }), false);
+
+  const active = getActiveContextSources(
+    ["conversation", "notes", "memory", "files"],
+    state,
+  ).map((source) => source.id);
+  assert.deepEqual(active, ["conversation", "notes", "files"]);
+
+  const focusActive = getFocusActiveContextSources(
+    ["conversation", "notes", "memory", "files"],
+    state,
+  ).map((source) => source.id);
+  assert.deepEqual(focusActive, ["notes", "files"]);
+  assert.equal(getContextSourceOnLabel("Memory"), "Memory: ON");
 });

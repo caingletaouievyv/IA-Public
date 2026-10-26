@@ -17,6 +17,8 @@ import ReportAnswerDialog from "./ReportAnswerDialog";
 import {
   DEFAULT_CONTEXT_MODES,
   DEFAULT_VISIBLE_CONTEXT_SOURCES,
+  getFocusActiveContextSources,
+  getContextSourceOnLabel,
   getVisibleContextSources,
   normalizeContextModes,
   normalizeShowContextSourceLabels,
@@ -26,6 +28,47 @@ const CONTEXT_MODES = ["off", "selected", "automatic"];
 
 function nextContextMode(mode, options = CONTEXT_MODES) {
   return options[(options.indexOf(mode) + 1) % options.length];
+}
+
+function AskHistoryActiveSourceIndicator({ sourceId, label }) {
+  const statusLabel = getContextSourceOnLabel(label);
+  const [detailsPinned, setDetailsPinned] = useState(false);
+  const wrapRef = useRef(null);
+  const detailsId = useId();
+
+  useEffect(() => {
+    if (!detailsPinned) return undefined;
+    const close = (event) => {
+      if (!wrapRef.current?.contains(event.target)) setDetailsPinned(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [detailsPinned]);
+
+  return (
+    <span
+      ref={wrapRef}
+      className={`ask-history-active-source${detailsPinned ? " ask-history-active-source--pressed" : ""}`}
+      role="listitem"
+    >
+      <button
+        type="button"
+        className="button-subtle button-icon ask-history-active-source__button"
+        aria-label={statusLabel}
+        aria-describedby={detailsId}
+        title={statusLabel}
+        onClick={() => setDetailsPinned((open) => !open)}
+      >
+        <span className="ask-shortcut-icon" aria-hidden="true">
+          <AskContextIcon name={sourceId} />
+        </span>
+      </button>
+      <span id={detailsId} className="ask-history-active-source__tooltip" role="tooltip">
+        <strong>{label}</strong>
+        <span className="ask-context-details__state">ON</span>
+      </span>
+    </span>
+  );
 }
 
 export function parseMessages(content) {
@@ -664,6 +707,10 @@ export default function Ask({
     });
   };
 
+  const activeFocusContextSources = historyFocused
+    ? getFocusActiveContextSources(visibleContextSources, { currentHistoryId, contextModes })
+    : [];
+
   const submitReportDialog = async () => {
     if (!reportDialog || reportDialog.status === "submitting" || reportDialog.status === "success") return;
     if (!reportDialog.operationId) {
@@ -740,6 +787,17 @@ export default function Ask({
           <div className="ask-previous-messages">
             <h3 className="ask-section-heading ask-history-heading">
               <span className="ask-history-title">Conversation History</span>
+              {historyFocused && activeFocusContextSources.length > 0 ? (
+                <div className="ask-history-active-sources" role="list" aria-label="Active context sources">
+                  {activeFocusContextSources.map((source) => (
+                    <AskHistoryActiveSourceIndicator
+                      key={source.id}
+                      sourceId={source.id}
+                      label={source.label}
+                    />
+                  ))}
+                </div>
+              ) : null}
               <div className="ask-history-heading__controls">
                 <button
                   type="button"
