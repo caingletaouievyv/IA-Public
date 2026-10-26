@@ -243,6 +243,44 @@ def add_or_update_memories(
         return {"added": added_count, "updated": updated_count, "removed": removed_count}
 
 
+def save_remember_command(user_id: str, text: str) -> dict:
+    """Persist explicit !remember text; raise ValueError when validation or save fails."""
+    validated = validate_memory_text(text, explicit_remember=True)
+    normalized = _normalize(validated)
+    before = load_memories(user_id)
+    before_match = next(
+        (item for item in before if _normalize(item.get("text", "")) == normalized),
+        None,
+    )
+
+    counts = add_or_update_memories(
+        user_id,
+        [{"text": validated, "explicit_remember": True}],
+    )
+
+    after = load_memories(user_id)
+    after_match = next(
+        (item for item in after if _normalize(item.get("text", "")) == normalized),
+        None,
+    )
+
+    if counts["added"] > 0:
+        if after_match is None:
+            raise ValueError("Failed to save Memory.")
+        return {"remember_status": "saved", "message": "Saved to Memory."}
+    if counts["updated"] > 0:
+        return {"remember_status": "updated", "message": "Updated Memory."}
+    if after_match is not None and before_match and before_match.get("text") == validated:
+        return {"remember_status": "unchanged", "message": "Already in Memory."}
+    if after_match is not None and before_match is not None:
+        return {"remember_status": "unchanged", "message": "Already in Memory."}
+    if len(before) >= MAX_MEMORIES:
+        raise ValueError(
+            f"Memory limit reached ({MAX_MEMORIES} records). Delete a record before saving more.",
+        )
+    raise ValueError("Failed to save Memory.")
+
+
 def update_memory(user_id: str, memory_id: str, value: object) -> dict | None:
     text = validate_memory_text(value, explicit_remember=True)
     normalized = _normalize(text)

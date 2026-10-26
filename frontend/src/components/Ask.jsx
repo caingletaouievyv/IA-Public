@@ -322,6 +322,7 @@ export default function Ask({
   const [flashcardsBusy, setFlashcardsBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [rememberMessage, setRememberMessage] = useState(null);
   const [notes, setNotes] = useState([]);
   const [selectedIds, setSelectedIds] = useState(() => new Set(getSelectedNoteIds(userId)));
   const [visibleContextSources, setVisibleContextSources] = useState(() => initialContextSettings
@@ -593,6 +594,9 @@ export default function Ask({
     const historyMessages = activeMessages.length > 0 ? activeMessages : null;
     const noteApiMode = contextModes.notes === "selected" ? "focused" : contextModes.notes;
     const data = await ask(prompt, noteIds, historyMessages, noteApiMode);
+    if (data.remember_command === true) {
+      return { rememberCommand: true, message: data.message || "" };
+    }
     const userContent = (prompt || "").trim();
     const assistantContent = (data.answer || "").trim();
     const operationId = typeof data.operation_id === "string" ? data.operation_id : null;
@@ -624,9 +628,14 @@ export default function Ask({
     }
     submissionInFlightRef.current = true;
     setError(null);
+    setRememberMessage(null);
     setLoading(true);
     try {
-      await sendQuestion(editedContent, messages.slice(0, messageIndex));
+      const result = await sendQuestion(editedContent, messages.slice(0, messageIndex));
+      if (result?.rememberCommand) {
+        setRememberMessage(result.message);
+        return { success: true, content: editedContent };
+      }
       return { success: true, content: editedContent };
     } catch (err) {
       setError(err.message);
@@ -642,9 +651,13 @@ export default function Ask({
     if (loading || historyLoading || submissionInFlightRef.current) return;
     submissionInFlightRef.current = true;
     setError(null);
+    setRememberMessage(null);
     setLoading(true);
     try {
-      await sendQuestion(question, currentHistoryId ? messages : []);
+      const result = await sendQuestion(question, currentHistoryId ? messages : []);
+      if (result?.rememberCommand) {
+        setRememberMessage(result.message);
+      }
       setQuestion("");
     } catch (err) {
       setError(err.message);
@@ -975,6 +988,9 @@ export default function Ask({
             </button>
           </div>
         </details>
+      )}
+      {rememberMessage && (
+        <div className="out success-msg" role="status">{rememberMessage}</div>
       )}
       {error && <div className="out err">{error}</div>}
       {flashcardsOpen && (

@@ -22,6 +22,8 @@ export default function Settings() {
   const [prefs, setPrefs] = useState({ theme: "dark", default_model: "" });
   const [visibleSources, setVisibleSources] = useState(DEFAULT_VISIBLE_CONTEXT_SOURCES);
   const [aiSuggestionsEnabled, setAiSuggestionsEnabled] = useState(true);
+  const [rememberCommandEnabled, setRememberCommandEnabled] = useState(true);
+  const [rememberSaving, setRememberSaving] = useState(false);
   const [showContextSourceLabels, setShowContextSourceLabels] = useState(
     normalizeShowContextSourceLabels(undefined),
   );
@@ -35,16 +37,19 @@ export default function Settings() {
       const sources = normalizeVisibleContextSources(loaded.ask_context_sources);
       const showLabels = normalizeShowContextSourceLabels(loaded.show_context_source_labels);
       const suggestionsEnabled = loaded.ai_suggestions_enabled !== false;
+      const rememberEnabled = loaded.remember_command_enabled !== false;
       setSettings(loaded);
       setVisibleSources(sources);
       setShowContextSourceLabels(showLabels);
       setAiSuggestionsEnabled(suggestionsEnabled);
+      setRememberCommandEnabled(rememberEnabled);
       setPrefs((p) => ({
         ...p,
         ...loaded,
         ask_context_sources: sources,
         show_context_source_labels: showLabels,
         ai_suggestions_enabled: suggestionsEnabled,
+        remember_command_enabled: rememberEnabled,
       }));
     } catch (e) {
       setError(e.message);
@@ -99,6 +104,24 @@ export default function Settings() {
     }
   };
 
+  const changeRememberCommand = async (enabled) => {
+    const previousValue = rememberCommandEnabled;
+    setRememberCommandEnabled(enabled);
+    setPrefs((current) => ({ ...current, remember_command_enabled: enabled }));
+    setError(null);
+    setRememberSaving(true);
+    try {
+      const updated = await putSettings({ remember_command_enabled: enabled });
+      setSettings(updated);
+    } catch (e) {
+      setRememberCommandEnabled(previousValue);
+      setPrefs((current) => ({ ...current, remember_command_enabled: previousValue }));
+      setError(e.message);
+    } finally {
+      setRememberSaving(false);
+    }
+  };
+
   const changeAiSuggestions = async (enabled) => {
     const previousValue = aiSuggestionsEnabled;
     setAiSuggestionsEnabled(enabled);
@@ -127,6 +150,7 @@ export default function Settings() {
         ask_context_sources: visibleSources,
         show_context_source_labels: showContextSourceLabels,
         ai_suggestions_enabled: aiSuggestionsEnabled,
+        remember_command_enabled: rememberCommandEnabled,
       });
       setSettings(updated);
       setVisibleSources(normalizeVisibleContextSources(updated.ask_context_sources));
@@ -194,11 +218,30 @@ export default function Settings() {
         <p className="ask-context-settings__status" role="status">
           {loading && settings !== null
             ? "Refreshing saved sources…"
-            : sourceSaving || labelSaving || suggestionSaving
+            : sourceSaving || labelSaving || suggestionSaving || rememberSaving
               ? "Saving…"
               : ""}
         </p>
       </div>
+      {settings !== null && (
+        <div className="card app-panel ask-context-settings">
+          <p className="card-title">Memory</p>
+          <p className="card-desc">Save facts from Ask with the !remember command. Memory must also be on in Ask.</p>
+          <label className="ask-context-settings__option" htmlFor="remember-command-enabled">
+            <input
+              id="remember-command-enabled"
+              type="checkbox"
+              checked={rememberCommandEnabled}
+              disabled={loading || rememberSaving || saving}
+              onChange={(event) => changeRememberCommand(event.target.checked)}
+            />
+            <span className="ask-context-settings__copy">
+              <span className="ask-context-settings__name">Enable !remember command</span>
+              <span className="ask-context-settings__description">When off, !remember in Ask is rejected without using credits.</span>
+            </span>
+          </label>
+        </div>
+      )}
       {settings !== null && (
         <div className="card app-panel ask-context-settings">
           <p className="card-title">AI Suggestions</p>

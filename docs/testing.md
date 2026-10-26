@@ -68,6 +68,7 @@ python -m scripts.test.test_ai_suggestions
 python -m scripts.test.test_ai_context_modes
 python -m scripts.test.test_ai_credits
 python -m scripts.test.test_memories
+python -m scripts.test.test_remember_command
 python -m scripts.test.test_understanding_gaps
 python -m scripts.test.test_diagnostics
 python -m scripts.test.test_auth_roles
@@ -122,6 +123,7 @@ This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it
 | Persistent Memory | Toggle Memory in Ask or Manage, then inspect `/settings/` | `memory_enabled` persists per user, defaults off, and controls both automatic extraction and retrieval |
 | Memory isolation/CRUD | `python -m scripts.test.test_memories` | Cross-user list/edit/delete/clear cannot access another account's records |
 | Memory extraction/retrieval | `python -m scripts.test.test_memories` and `test_ai_context_modes` | Grounded bounded records, explicit remember/forget, deduplication/update, relevance, and independent prompt section; Off skips both |
+| Ask !remember command | `python -m scripts.test.test_remember_command` and frontend `activeConversation.test.jsx` | Case-insensitive parse, no AI/credits/history append, settings gates, validation, save/update/unchanged/cap outcomes |
 | Memory failure behavior | `python -m scripts.test.test_ai_context_modes` | Extraction failure leaves normal Ask answer intact and returns unavailable status |
 | Context request validation | Send invalid modes, malformed `note_ids`, or non-object JSON | 400 before operation claim or credit charge; no provider call |
 | Default retrieval | Default config / `MEMORY_RETRIEVAL=text` | Deterministic lexical retrieval; no SentenceTransformer model load |

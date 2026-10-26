@@ -28,6 +28,7 @@ from app.credits.manager import (
 )
 from app.memory.manager import build_context
 from app.settings.manager import get_settings
+from app.memories.remember_command import execute_remember_command, parse_remember_command
 
 bp = Blueprint("ai", __name__)
 
@@ -88,6 +89,37 @@ def _attach_operation_id(result: dict, operation_id: str) -> dict:
     return payload
 
 
+def _handle_remember_command(user_id: str, data: dict, remember_text: str):
+    operation_id = _operation_id(data)
+    operation = claim_operation(user_id, operation_id)
+    if operation["status"] == "completed":
+        return jsonify(_attach_operation_id(operation["result"], operation_id)), 200
+    if operation["status"] == "pending":
+        return jsonify({"error": "operation_in_progress"}), 409
+    settings = get_settings(user_id)
+    settings.setdefault("remember_command_enabled", True)
+    settings.setdefault("memory_enabled", False)
+    try:
+        outcome = execute_remember_command(user_id, remember_text, settings)
+        result = _attach_operation_id(
+            {
+                "remember_command": True,
+                "remember_status": outcome["remember_status"],
+                "message": outcome["message"],
+            },
+            operation_id,
+        )
+        complete_operation(user_id, operation_id, result)
+        return jsonify(result), 200
+    except ValueError as error:
+        release_operation(user_id, operation_id)
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        report_understanding_gap("ask.remember_failed", error, user_id=user_id)
+        release_operation(user_id, operation_id)
+        return jsonify({"error": "Failed to save Memory."}), 500
+
+
 @bp.route("/ask", methods=["POST"])
 @limiter.limit("30 per minute")
 def ask_ai():
@@ -110,6 +142,9 @@ def ask_ai():
     question = data.get("question")
     if not question:
         return jsonify({"error": "Missing 'question' field"}), 400
+    remember_text = parse_remember_command(question)
+    if remember_text is not None:
+        return _handle_remember_command(user_id, data, remember_text)
     try:
         note_context_mode = _parse_note_context_mode(data)
         _parse_memory_context_mode(data)

@@ -141,6 +141,14 @@ function installApiMock() {
     if (url.pathname === "/ai/ask" && method === "POST") {
       const request = JSON.parse(options.body);
       aiRequests.push(request);
+      if (/^\s*!remember\b/i.test(request.question || "")) {
+        return jsonResponse({
+          remember_command: true,
+          remember_status: "saved",
+          message: "Saved to Memory.",
+          operation_id: "remember-mock",
+        });
+      }
       return jsonResponse({ answer: `Answer to ${request.question}`, memory_status: "disabled" });
     }
     if (url.pathname === "/ai/flashcards/generate" && method === "POST") {
@@ -916,6 +924,23 @@ describe("active conversation restoration", () => {
       new URL(input, window.location.origin).pathname === "/settings/" && (options.method || "GET") === "GET",
     );
     expect(settingsGets).toHaveLength(1);
+  });
+
+  it("handles !remember without adding Ask turns to conversation history", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await selectConversation(user, "First conversation");
+    await screen.findByText("First saved question");
+
+    await user.type(screen.getByRole("textbox", { name: "Question" }), "!remember Private detail");
+    await user.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(await screen.findByText("Saved to Memory.")).toBeTruthy();
+    expect(screen.queryByText("!remember Private detail")).toBeNull();
+    expect(aiRequests.at(-1).question).toBe("!remember Private detail");
+    const storedMessages = JSON.parse(notes.get("first").content);
+    expect(storedMessages).toHaveLength(2);
+    expect(storedMessages[0].content).toBe("First saved question");
   });
 
   it("restores the selected conversation and its latest saved messages after Ask remounts", async () => {
