@@ -7,6 +7,32 @@ import { listNotes, createNote, createNoteFromImages, extractPdfText, updateNote
 /** Must match backend NOTES_MAX_CONTENT_CHARS (POST /notes/ and PDF extract). */
 const NOTE_MAX_CONTENT_CHARS = 512_000;
 
+function NotesFieldHint({ show, id, children }) {
+  if (!show || !children) return null;
+  return (
+    <p id={id} className="flashcards-help" role="status">
+      {children}
+    </p>
+  );
+}
+
+/** One-line reason the primary toolbar action is disabled (avoids repeating field-level hints). */
+function missingForActionHint(parts, { minCount = 2 } = {}) {
+  const need = parts.filter((p) => p.missing).map((p) => p.label);
+  if (need.length < minCount) return null;
+  if (need.length === 1) return `Add ${need[0]} to continue.`;
+  return `Add ${need.slice(0, -1).join(", ")} and ${need.at(-1)} to continue.`;
+}
+
+function NotesToolbarHint({ text }) {
+  if (!text) return null;
+  return (
+    <span className="flashcards-help" role="status">
+      {text}
+    </span>
+  );
+}
+
 function loadNotesList(setData, setLoading, setError) {
   setError(null);
   setLoading(true);
@@ -221,6 +247,12 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
       setNoteResult({ error: "Title, category, and content are required." });
       return;
     }
+    if (content.length > NOTE_MAX_CONTENT_CHARS) {
+      setNoteResult({
+        error: `Note content exceeds the ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit.`,
+      });
+      return;
+    }
     let tags = [...noteTagsArray];
     const pending = (noteTagInput || "").trim();
     if (pending && !tags.includes(pending)) tags.push(pending);
@@ -276,6 +308,52 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
 
   const pdfReviewCharCount = (pdfReviewText || "").length;
   const pdfReviewOverLimit = pdfReviewCharCount > NOTE_MAX_CONTENT_CHARS;
+
+  const noteContentCharCount = (noteContent || "").length;
+  const noteContentOverLimit = noteContentCharCount > NOTE_MAX_CONTENT_CHARS;
+  const noteSubmitDisabled =
+    noteLoading
+    || !noteTitle.trim()
+    || !noteCategory.trim()
+    || !noteContent.trim()
+    || noteContentOverLimit;
+  const showNoteTitleHint = !noteLoading && !noteTitle.trim();
+  const showNoteCategoryHint = !noteLoading && !noteCategory.trim();
+  const showNoteContentHint = !noteLoading && !noteContent.trim();
+  const showNoteContentLimitErr = !noteLoading && noteContentOverLimit;
+
+  const imgSubmitDisabled = imgLoading || !imgFiles.length;
+  const showImgFilesHint = !imgLoading && !imgFiles.length;
+
+  const pdfExtractDisabled = pdfExtractLoading || !pdfFile;
+  const showPdfFileHint = !pdfExtractLoading && !pdfFile;
+
+  const pdfSaveDisabled =
+    pdfSaveLoading
+    || !pdfTitle.trim()
+    || !pdfCategory.trim()
+    || !pdfReviewText.trim()
+    || pdfReviewOverLimit;
+  const showPdfTitleHint = pdfExtracted && !pdfSaveLoading && !pdfTitle.trim();
+  const showPdfCategoryHint = pdfExtracted && !pdfSaveLoading && !pdfCategory.trim();
+  const showPdfReviewHint = pdfExtracted && !pdfSaveLoading && !pdfReviewText.trim() && !pdfReviewOverLimit;
+
+  const noteToolbarHint = noteSubmitDisabled && !noteLoading
+    ? (noteContentOverLimit
+      ? `Shorten content to ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters or fewer.`
+      : missingForActionHint([
+          { missing: !noteTitle.trim(), label: "title" },
+          { missing: !noteCategory.trim(), label: "category" },
+          { missing: !noteContent.trim(), label: "content" },
+        ]))
+    : null;
+  const pdfSaveToolbarHint = pdfSaveDisabled && !pdfSaveLoading && !pdfReviewOverLimit
+    ? missingForActionHint([
+        { missing: !pdfTitle.trim(), label: "title" },
+        { missing: !pdfCategory.trim(), label: "category" },
+        { missing: !pdfReviewText.trim(), label: "extracted text" },
+      ])
+    : null;
 
   const handleSavePdfNote = async (e) => {
     e.preventDefault();
@@ -496,50 +574,60 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                       Back to list
                     </button>
                     {addFormMode === "note" && (
-                      <button
-                        type="submit"
-                        form="notes-new-note-form"
-                        className="button-primary"
-                        disabled={noteLoading || !noteTitle.trim() || !noteCategory.trim() || !noteContent.trim()}
-                      >
-                        {noteLoading ? "…" : "Add note"}
-                      </button>
+                      <>
+                        <button
+                          type="submit"
+                          form="notes-new-note-form"
+                          className="button-primary"
+                          disabled={noteSubmitDisabled}
+                        >
+                          {noteLoading ? "…" : "Add note"}
+                        </button>
+                        <NotesToolbarHint text={noteToolbarHint} />
+                      </>
                     )}
                     {addFormMode === "from-images" && (
-                      <button
-                        type="submit"
-                        form="notes-from-images-form"
-                        className="button-primary"
-                        disabled={imgLoading || !imgFiles.length}
-                      >
-                        {imgLoading ? "…" : "Add from images"}
-                      </button>
+                      <>
+                        <button
+                          type="submit"
+                          form="notes-from-images-form"
+                          className="button-primary"
+                          disabled={imgSubmitDisabled}
+                        >
+                          {imgLoading ? "…" : "Add from images"}
+                        </button>
+                      </>
                     )}
                     {addFormMode === "from-pdf" && (
                       pdfExtracted ? (
-                        <button
-                          type="submit"
-                          form="notes-from-pdf-save-form"
-                          className="button-primary"
-                          disabled={
-                            pdfSaveLoading
-                            || !pdfTitle.trim()
-                            || !pdfCategory.trim()
-                            || !pdfReviewText.trim()
-                            || pdfReviewOverLimit
-                          }
-                        >
-                          {pdfSaveLoading ? "…" : "Save note"}
-                        </button>
+                        <>
+                          <button
+                            type="submit"
+                            form="notes-from-pdf-save-form"
+                            className="button-primary"
+                            disabled={pdfSaveDisabled}
+                          >
+                            {pdfSaveLoading ? "…" : "Save note"}
+                          </button>
+                          <NotesToolbarHint
+                            text={
+                              pdfReviewOverLimit && !pdfSaveLoading
+                                ? `Shorten content to ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters or fewer.`
+                                : pdfSaveToolbarHint
+                            }
+                          />
+                        </>
                       ) : (
-                        <button
-                          type="submit"
-                          form="notes-from-pdf-extract-form"
-                          className="button-primary"
-                          disabled={pdfExtractLoading || !pdfFile}
-                        >
-                          {pdfExtractLoading ? "…" : "Extract text"}
-                        </button>
+                        <>
+                          <button
+                            type="submit"
+                            form="notes-from-pdf-extract-form"
+                            className="button-primary"
+                            disabled={pdfExtractDisabled}
+                          >
+                            {pdfExtractLoading ? "…" : "Extract text"}
+                          </button>
+                        </>
                       )
                     )}
                   </>
@@ -595,58 +683,68 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                     </button>
                   )}
                   {addFormMode === "note" && (
-                    <button
-                      type="submit"
-                      form="notes-new-note-form"
-                      className="button-primary"
-                      disabled={noteLoading || !noteTitle.trim() || !noteCategory.trim() || !noteContent.trim()}
-                      aria-label="Add note"
-                      title="Add note"
-                    >
-                      {noteLoading ? "…" : "Add note"}
-                    </button>
+                    <>
+                      <button
+                        type="submit"
+                        form="notes-new-note-form"
+                        className="button-primary"
+                        disabled={noteSubmitDisabled}
+                        aria-label="Add note"
+                        title="Add note"
+                      >
+                        {noteLoading ? "…" : "Add note"}
+                      </button>
+                      <NotesToolbarHint text={noteToolbarHint} />
+                    </>
                   )}
                   {addFormMode === "from-images" && (
-                    <button
-                      type="submit"
-                      form="notes-from-images-form"
-                      className="button-primary"
-                      disabled={imgLoading || !imgFiles.length}
-                      aria-label="Add note from images"
-                      title="Add note from images"
-                    >
-                      {imgLoading ? "…" : "Add from images"}
-                    </button>
+                    <>
+                      <button
+                        type="submit"
+                        form="notes-from-images-form"
+                        className="button-primary"
+                        disabled={imgSubmitDisabled}
+                        aria-label="Add note from images"
+                        title="Add note from images"
+                      >
+                        {imgLoading ? "…" : "Add from images"}
+                      </button>
+                    </>
                   )}
                   {addFormMode === "from-pdf" && (
                     pdfExtracted ? (
-                      <button
-                        type="submit"
-                        form="notes-from-pdf-save-form"
-                        className="button-primary"
-                        disabled={
-                          pdfSaveLoading
-                          || !pdfTitle.trim()
-                          || !pdfCategory.trim()
-                          || !pdfReviewText.trim()
-                          || pdfReviewOverLimit
-                        }
-                        aria-label="Save note from PDF"
-                        title="Save note"
-                      >
-                        {pdfSaveLoading ? "…" : "Save note"}
-                      </button>
+                      <>
+                        <button
+                          type="submit"
+                          form="notes-from-pdf-save-form"
+                          className="button-primary"
+                          disabled={pdfSaveDisabled}
+                          aria-label="Save note from PDF"
+                          title="Save note"
+                        >
+                          {pdfSaveLoading ? "…" : "Save note"}
+                        </button>
+                        <NotesToolbarHint
+                          text={
+                            pdfReviewOverLimit && !pdfSaveLoading
+                              ? `Shorten content to ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters or fewer.`
+                              : pdfSaveToolbarHint
+                          }
+                        />
+                      </>
                     ) : (
-                      <button
-                        type="submit"
-                        form="notes-from-pdf-extract-form"
-                        className="button-primary"
-                        disabled={pdfExtractLoading || !pdfFile}
-                        aria-label="Extract text from PDF"
-                        title="Extract text"
-                      >
-                        {pdfExtractLoading ? "…" : "Extract text"}
-                      </button>
+                      <>
+                        <button
+                          type="submit"
+                          form="notes-from-pdf-extract-form"
+                          className="button-primary"
+                          disabled={pdfExtractDisabled}
+                          aria-label="Extract text from PDF"
+                          title="Extract text"
+                        >
+                          {pdfExtractLoading ? "…" : "Extract text"}
+                        </button>
+                      </>
                     )
                   )}
                 </div>
@@ -751,7 +849,12 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 value={noteTitle}
                 onChange={(e) => setNoteTitle(e.target.value)}
                 disabled={noteLoading}
+                aria-invalid={showNoteTitleHint || undefined}
+                aria-describedby={showNoteTitleHint ? "noteTitle-hint" : undefined}
               />
+              <NotesFieldHint show={showNoteTitleHint} id="noteTitle-hint">
+                Title is required.
+              </NotesFieldHint>
               <label htmlFor="noteCategory">Category</label>
               <div className="notes-category-wrap">
                 <input
@@ -783,6 +886,8 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   }}
                   disabled={noteLoading}
                   autoComplete="off"
+                  aria-invalid={showNoteCategoryHint || undefined}
+                  aria-describedby={showNoteCategoryHint ? "noteCategory-hint" : undefined}
                 />
                 {categoryDropdown.open && categoryDropdown.inputId === "noteCategory" && filteredCategorySuggestionsNewNote.length > 0 && (
                   <ul className="notes-category-suggestions" role="listbox">
@@ -800,7 +905,14 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   </ul>
                 )}
               </div>
-              <label htmlFor="noteContent">Content</label>
+              <NotesFieldHint show={showNoteCategoryHint} id="noteCategory-hint">
+                Category is required.
+              </NotesFieldHint>
+              <label htmlFor="noteContent">
+                Content
+                {" — "}
+                {noteContentCharCount.toLocaleString()} / {NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters
+              </label>
               <textarea
                 id="noteContent"
                 placeholder="Note content…"
@@ -808,7 +920,23 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 onChange={(e) => setNoteContent(e.target.value)}
                 disabled={noteLoading}
                 rows={4}
+                aria-invalid={showNoteContentHint || showNoteContentLimitErr || undefined}
+                aria-describedby={
+                  showNoteContentHint
+                    ? "noteContent-hint"
+                    : showNoteContentLimitErr
+                      ? "noteContent-limit"
+                      : undefined
+                }
               />
+              <NotesFieldHint show={showNoteContentHint} id="noteContent-hint">
+                Content is required.
+              </NotesFieldHint>
+              {showNoteContentLimitErr && (
+                <p id="noteContent-limit" className="out out--compact err" role="alert">
+                  Note content exceeds the {NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit. Shorten the text before saving.
+                </p>
+              )}
               <label htmlFor="noteTags">Tags</label>
               <div className="notes-tags-wrap">
                 <div className="notes-tags-chips">
@@ -943,7 +1071,12 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 multiple
                 onChange={(e) => setImgFiles(Array.from(e.target.files || []))}
                 disabled={imgLoading}
+                aria-invalid={showImgFilesHint || undefined}
+                aria-describedby={showImgFilesHint ? "imgFiles-hint" : undefined}
               />
+              <NotesFieldHint show={showImgFilesHint} id="imgFiles-hint">
+                Select at least one image to add from images.
+              </NotesFieldHint>
             </form>
             {imgResult && (
               <div className={`out out--compact ${imgResult.error ? "err" : "success-msg"}`}>
@@ -968,7 +1101,12 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 value={pdfTitle}
                 onChange={(e) => setPdfTitle(e.target.value)}
                 disabled={pdfExtractLoading || pdfSaveLoading}
+                aria-invalid={showPdfTitleHint || undefined}
+                aria-describedby={showPdfTitleHint ? "pdfTitle-hint" : undefined}
               />
+              <NotesFieldHint show={showPdfTitleHint} id="pdfTitle-hint">
+                Title is required before saving.
+              </NotesFieldHint>
               <label htmlFor="pdfCategory">Category</label>
               <div className="notes-category-wrap">
                 <input
@@ -1000,6 +1138,8 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   }}
                   disabled={pdfExtractLoading || pdfSaveLoading}
                   autoComplete="off"
+                  aria-invalid={showPdfCategoryHint || undefined}
+                  aria-describedby={showPdfCategoryHint ? "pdfCategory-hint" : undefined}
                 />
                 {categoryDropdown.open && categoryDropdown.inputId === "pdfCategory" && filteredCategorySuggestionsPdf.length > 0 && (
                   <ul className="notes-category-suggestions" role="listbox">
@@ -1017,6 +1157,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   </ul>
                 )}
               </div>
+              <NotesFieldHint show={showPdfCategoryHint} id="pdfCategory-hint">
+                Category is required before saving.
+              </NotesFieldHint>
               <label htmlFor="pdfFile">PDF</label>
               <input
                 id="pdfFile"
@@ -1029,7 +1172,12 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   setPdfReviewText("");
                 }}
                 disabled={pdfExtractLoading || pdfSaveLoading}
+                aria-invalid={showPdfFileHint || undefined}
+                aria-describedby={showPdfFileHint ? "pdfFile-hint" : undefined}
               />
+              <NotesFieldHint show={showPdfFileHint} id="pdfFile-hint">
+                Select a PDF file to extract text.
+              </NotesFieldHint>
             </form>
             {pdfExtracted && (
               <form id="notes-from-pdf-save-form" onSubmit={handleSavePdfNote} className={`form--compact ${pdfSaveLoading ? "loading" : ""}`}>
@@ -1045,10 +1193,20 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   onChange={(e) => setPdfReviewText(e.target.value)}
                   disabled={pdfSaveLoading}
                   rows={12}
-                  aria-invalid={pdfReviewOverLimit || undefined}
+                  aria-invalid={pdfReviewOverLimit || showPdfReviewHint || undefined}
+                  aria-describedby={
+                    pdfReviewOverLimit
+                      ? "pdfReviewText-limit"
+                      : showPdfReviewHint
+                        ? "pdfReviewText-hint"
+                        : undefined
+                  }
                 />
+                <NotesFieldHint show={showPdfReviewHint} id="pdfReviewText-hint">
+                  Extracted text is required. Edit the text above or extract again from your PDF.
+                </NotesFieldHint>
                 {pdfReviewOverLimit && (
-                  <p className="out out--compact err" role="alert">
+                  <p id="pdfReviewText-limit" className="out out--compact err" role="alert">
                     Note content exceeds the {NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit. Shorten the text before saving.
                   </p>
                 )}
