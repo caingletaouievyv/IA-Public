@@ -20,7 +20,7 @@ def can_view_diagnostics(role: str) -> bool:
 
 
 def can_promote_users(role: str) -> bool:
-    """True only for the Main Admin role (user management APIs)."""
+    """True only for the Main Admin role (promote/demote user-management APIs)."""
     return normalize_role(role) == ROLE_MAIN_ADMIN
 
 

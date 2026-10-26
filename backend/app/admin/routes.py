@@ -4,7 +4,12 @@
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
 
 from app import limiter
-from app.auth.manager import get_user_role, list_user_summaries, promote_user_to_admin
+from app.auth.manager import (
+    demote_admin_to_user,
+    get_user_role,
+    list_user_summaries,
+    promote_user_to_admin,
+)
 from app.auth.permissions import can_promote_users
 from app.common.auth import require_auth
 
@@ -45,13 +50,28 @@ def list_users():
 @bp.route("/users/<user_id>/promote", methods=["POST"])
 @limiter.limit("30 per minute")
 def promote_user(user_id):
-    _, auth_err = _require_main_admin()
+    actor_id, auth_err = _require_main_admin()
     if auth_err:
         return auth_err
     try:
-        promoted = promote_user_to_admin(user_id)
+        promoted = promote_user_to_admin(user_id, actor_id)
     except LookupError:
         return jsonify({"error": "User not found"}), 404
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
     return jsonify(promoted), 200
+
+
+@bp.route("/users/<user_id>/demote", methods=["POST"])
+@limiter.limit("30 per minute")
+def demote_user(user_id):
+    actor_id, auth_err = _require_main_admin()
+    if auth_err:
+        return auth_err
+    try:
+        demoted = demote_admin_to_user(user_id, actor_id)
+    except LookupError:
+        return jsonify({"error": "User not found"}), 404
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    return jsonify(demoted), 200

@@ -29,7 +29,15 @@ function jsonResponse(data, status = 200) {
   };
 }
 
-function installFetch({ role = "user", users = [], events = [], usersError = null, eventsError = null, promoteError = null } = {}) {
+function installFetch({
+  role = "user",
+  users = [],
+  events = [],
+  usersError = null,
+  eventsError = null,
+  promoteError = null,
+  demoteError = null,
+} = {}) {
   const fetchMock = vi.fn(async (input, options = {}) => {
     const url = new URL(input, window.location.origin);
     const method = options.method || "GET";
@@ -50,6 +58,13 @@ function installFetch({ role = "user", users = [], events = [], usersError = nul
       const promotedId = decodeURIComponent(promoteMatch[1]);
       const user = users.find((item) => item.user_id === promotedId);
       return jsonResponse({ ...user, role: "admin" });
+    }
+    const demoteMatch = url.pathname.match(/^\/admin\/users\/([^/]+)\/demote$/);
+    if (demoteMatch && method === "POST") {
+      if (demoteError) return jsonResponse({ error: demoteError }, 400);
+      const demotedId = decodeURIComponent(demoteMatch[1]);
+      const user = users.find((item) => item.user_id === demotedId);
+      return jsonResponse({ ...user, role: "user" });
     }
     if (url.pathname === "/diagnostics/events" && method === "GET") {
       if (eventsError) return jsonResponse({ error: eventsError }, 403);
@@ -134,17 +149,41 @@ describe("AdminUsers", () => {
       expect(screen.getByText("alice")).toBeTruthy();
       expect(screen.getByText("bob")).toBeTruthy();
     });
-    expect(screen.getByRole("button", { name: /Promote to admin/i })).toBeTruthy();
-    expect(screen.queryAllByRole("button", { name: /Promote to admin/i })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Promote to Admin/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Demote to User/i })).toBeTruthy();
+    expect(screen.queryAllByRole("button", { name: /Promote to Admin/i })).toHaveLength(1);
 
-    await userEvent.click(screen.getByRole("button", { name: /Promote to admin/i }));
-    const dialog = screen.getByRole("dialog");
+    await userEvent.click(screen.getByRole("button", { name: /Promote to Admin/i }));
+    let dialog = screen.getByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Promote" }));
 
     await waitFor(() => {
       expect(screen.getByText(/Promoted alice to admin/i)).toBeTruthy();
     });
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/admin/users")).length).toBeGreaterThanOrEqual(2);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/promote"))).toBe(true);
+  });
+
+  it("confirms demotion and updates the listed role", async () => {
+    const users = [
+      { user_id: "u1", username: "alice", role: "user" },
+      { user_id: "u2", username: "bob", role: "admin" },
+    ];
+    installFetch({ role: "main_admin", users });
+    render(<AdminUsers />);
+
+    await waitFor(() => {
+      expect(screen.getByText("bob")).toBeTruthy();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /Demote to User/i }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Demote" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Demoted bob to user/i)).toBeTruthy();
+    });
+    const bobRow = screen.getByText("bob").closest("tr");
+    expect(within(bobRow).getByText("user")).toBeTruthy();
   });
 
   it("shows error when user list fails", async () => {

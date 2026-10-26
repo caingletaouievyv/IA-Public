@@ -86,10 +86,16 @@ def list_user_summaries() -> list[dict]:
         ]
 
 
-def promote_user_to_admin(target_user_id: str) -> dict:
+def _assert_actor_may_change_target_role(actor_user_id: str, target_user_id: str) -> None:
+    if actor_user_id and actor_user_id == target_user_id:
+        raise ValueError("You cannot change your own role")
+
+
+def promote_user_to_admin(target_user_id: str, actor_user_id: str | None = None) -> dict:
     """Promote a normal user to admin. Main Admin ownership cannot change here."""
     if not target_user_id:
         raise ValueError("user_id required")
+    _assert_actor_may_change_target_role(actor_user_id or "", target_user_id)
     with _USERS_LOCK:
         users = _load_users()
         target = next((user for user in users if user.get("user_id") == target_user_id), None)
@@ -106,6 +112,35 @@ def promote_user_to_admin(target_user_id: str) -> dict:
             "user_id": target_user_id,
             "username": target.get("username"),
             "role": ROLE_ADMIN,
+        }
+
+
+def demote_admin_to_user(target_user_id: str, actor_user_id: str | None = None) -> dict:
+    """Demote an admin to a regular user. Main Admin accounts are protected."""
+    if not target_user_id:
+        raise ValueError("user_id required")
+    _assert_actor_may_change_target_role(actor_user_id or "", target_user_id)
+    with _USERS_LOCK:
+        users = _load_users()
+        target = next((user for user in users if user.get("user_id") == target_user_id), None)
+        if not target:
+            raise LookupError("User not found")
+        current_role = normalize_role(target.get("role"))
+        if current_role == ROLE_MAIN_ADMIN:
+            raise ValueError("Main Admin ownership cannot be changed through demotion")
+        if current_role != ROLE_ADMIN:
+            raise ValueError("Only admin accounts can be demoted to user")
+        main_admin_count = sum(
+            1 for user in users if normalize_role(user.get("role")) == ROLE_MAIN_ADMIN
+        )
+        if main_admin_count < 1:
+            raise ValueError("At least one Main Admin account must remain")
+        target["role"] = ROLE_USER
+        _save_users(users)
+        return {
+            "user_id": target_user_id,
+            "username": target.get("username"),
+            "role": ROLE_USER,
         }
 
 

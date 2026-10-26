@@ -113,6 +113,15 @@ export async function promoteAdminUser(userId) {
   return handleResponse(res, data);
 }
 
+export async function demoteAdminUser(userId) {
+  const res = await fetch(`${BASE}/admin/users/${encodeURIComponent(userId)}/demote`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  const data = await readJsonResponse(res);
+  return handleResponse(res, data);
+}
+
 export async function listDiagnosticEvents(limit = 50) {
   const params = new URLSearchParams({ limit: String(limit) });
   const res = await fetch(`${BASE}/diagnostics/events?${params}`, {

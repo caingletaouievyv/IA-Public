@@ -27,6 +27,7 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 | **GET /auth/me** | GET | yes | Bearer | 200 `{ user_id, username, role }` or 401 |
 | **GET /admin/users** | GET | yes (`main_admin`) | Bearer | 200 `{ users: [{ user_id, username, role }] }`; 403 otherwise |
 | **POST /admin/users/<user_id>/promote** | POST | yes (`main_admin`) | Bearer | 200 promoted `{ user_id, username, role: "admin" }`; 400 invalid state; 404 missing user; 403 otherwise |
+| **POST /admin/users/<user_id>/demote** | POST | yes (`main_admin`) | Bearer | 200 demoted `{ user_id, username, role: "user" }`; 400 invalid state, self-change, or Main Admin protection; 404 missing user; 403 otherwise |
 | **POST /ai/suggestions** | POST | yes | Authenticated; no body required | 200 no suggestion or an allow-listed action suggestion |
 | **POST /ai/ask** | POST | yes | Bearer + `{"question":"..."}`; optional `note_context_mode`, `note_ids`, prior `messages` | 200 `answer`, `tokens_estimated`; 402 for insufficient credits |
 | **POST /ai/estimate_tokens** | POST | yes | Bearer + `{"question":"..."}` | 200 `estimated_tokens`, `context_tokens` |

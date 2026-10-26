@@ -107,6 +107,8 @@ class AdminUserManagementTests(unittest.TestCase):
         user_id = self.add_user("member", ROLE_USER)
         target_id = self.add_user("promote-me", ROLE_USER)
 
+        demote_target_id = self.add_user("demote-me", ROLE_ADMIN)
+
         for actor_id in (admin_id, user_id):
             list_response = self.client.get("/admin/users", headers=self.headers(actor_id))
             self.assertEqual(list_response.status_code, 403, actor_id)
@@ -115,6 +117,11 @@ class AdminUserManagementTests(unittest.TestCase):
                 headers=self.headers(actor_id),
             )
             self.assertEqual(promote_response.status_code, 403, actor_id)
+            demote_response = self.client.post(
+                f"/admin/users/{demote_target_id}/demote",
+                headers=self.headers(actor_id),
+            )
+            self.assertEqual(demote_response.status_code, 403, actor_id)
 
         still_user = self.client.post(
             f"/admin/users/{target_id}/promote",
@@ -145,6 +152,56 @@ class AdminUserManagementTests(unittest.TestCase):
         )
         self.assertEqual(reject_main.status_code, 400)
         self.assertEqual(auth_manager.get_user_role(main_id), ROLE_MAIN_ADMIN)
+
+    def test_main_admin_can_demote_admin_to_user(self):
+        main_admin_id = self.add_user("owner", ROLE_MAIN_ADMIN)
+        admin_id = self.add_user("operator", ROLE_ADMIN)
+        response = self.client.post(
+            f"/admin/users/{admin_id}/demote",
+            headers=self.headers(main_admin_id),
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["role"], ROLE_USER)
+        self.assertEqual(auth_manager.get_user_role(admin_id), ROLE_USER)
+
+    def test_demotion_rejects_user_main_admin_missing_and_self(self):
+        main_admin_id = self.add_user("owner", ROLE_MAIN_ADMIN)
+        user_id = self.add_user("member", ROLE_USER)
+        other_main_id = self.add_user("main-copy", ROLE_MAIN_ADMIN)
+        admin_id = self.add_user("operator", ROLE_ADMIN)
+
+        missing = self.client.post(
+            f"/admin/users/{uuid.uuid4()}/demote",
+            headers=self.headers(main_admin_id),
+        )
+        self.assertEqual(missing.status_code, 404)
+
+        reject_user = self.client.post(
+            f"/admin/users/{user_id}/demote",
+            headers=self.headers(main_admin_id),
+        )
+        self.assertEqual(reject_user.status_code, 400)
+
+        reject_main = self.client.post(
+            f"/admin/users/{other_main_id}/demote",
+            headers=self.headers(main_admin_id),
+        )
+        self.assertEqual(reject_main.status_code, 400)
+        self.assertEqual(auth_manager.get_user_role(other_main_id), ROLE_MAIN_ADMIN)
+
+        self_demote = self.client.post(
+            f"/admin/users/{main_admin_id}/demote",
+            headers=self.headers(main_admin_id),
+        )
+        self.assertEqual(self_demote.status_code, 400)
+        self.assertEqual(auth_manager.get_user_role(main_admin_id), ROLE_MAIN_ADMIN)
+
+        self_promote = self.client.post(
+            f"/admin/users/{main_admin_id}/promote",
+            headers=self.headers(main_admin_id),
+        )
+        self.assertEqual(self_promote.status_code, 400)
 
     def test_registration_still_creates_user_role(self):
         created = auth_manager.create_user("new-member", "test-password-value")

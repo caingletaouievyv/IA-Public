@@ -1,21 +1,20 @@
 // IA/frontend/src/components/AdminUsers.jsx
-// Main Admin user list and user→admin promotion.
+// Main Admin user list, promotion, and demotion.
 
 import { useCallback, useEffect, useState } from "react";
-import { listAdminUsers, promoteAdminUser } from "../api";
-import { ROLE_USER } from "../authRoles";
+import { demoteAdminUser, listAdminUsers, promoteAdminUser } from "../api";
+import { ROLE_ADMIN, ROLE_USER } from "../authRoles";
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  const [promoteTarget, setPromoteTarget] = useState(null);
-  const [promoting, setPromoting] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [acting, setActing] = useState(false);
 
   const loadUsers = useCallback(async () => {
     setError(null);
-    setSuccess(null);
     setLoading(true);
     try {
       const data = await listAdminUsers();
@@ -32,27 +31,55 @@ export default function AdminUsers() {
     loadUsers();
   }, [loadUsers]);
 
-  const confirmPromote = async () => {
-    if (!promoteTarget || promoting) return;
-    setPromoting(true);
+  const confirmAction = async () => {
+    if (!pendingAction || acting) return;
+    setActing(true);
     setError(null);
     setSuccess(null);
-    const target = promoteTarget;
+    const { kind, user: target } = pendingAction;
     try {
-      await promoteAdminUser(target.user_id);
-      setPromoteTarget(null);
-      await loadUsers();
-      setSuccess(`Promoted ${target.username} to admin.`);
+      const updated =
+        kind === "promote"
+          ? await promoteAdminUser(target.user_id)
+          : await demoteAdminUser(target.user_id);
+      setUsers((previous) =>
+        previous.map((item) =>
+          item.user_id === updated.user_id ? { ...item, role: updated.role } : item
+        )
+      );
+      setPendingAction(null);
+      setSuccess(
+        kind === "promote"
+          ? `Promoted ${target.username} to admin.`
+          : `Demoted ${target.username} to user.`
+      );
     } catch (err) {
-      setError(err.message || "Promotion failed.");
+      setError(err.message || (kind === "promote" ? "Promotion failed." : "Demotion failed."));
     } finally {
-      setPromoting(false);
+      setActing(false);
     }
   };
 
+  const dialogCopy =
+    pendingAction?.kind === "demote"
+      ? {
+          title: `Demote ${pendingAction.user.username} to user?`,
+          desc: "They will lose diagnostics access and unlimited AI credits. Main Admin ownership is unchanged.",
+          confirm: acting ? "Demoting…" : "Demote",
+        }
+      : pendingAction
+        ? {
+            title: `Promote ${pendingAction.user.username} to admin?`,
+            desc: "Admins can view diagnostics and bypass AI credit limits. This cannot assign Main Admin.",
+            confirm: acting ? "Promoting…" : "Promote",
+          }
+        : null;
+
   return (
     <section className="section section--admin">
-      <p className="card-desc">Promote trusted users to admin. Main Admin ownership cannot change here.</p>
+      <p className="card-desc">
+        Promote trusted users to admin or demote admins to regular users. Main Admin ownership cannot change here.
+      </p>
       {loading ? <p role="status">Loading users…</p> : null}
       {error ? <div className="out err" role="alert">{error}</div> : null}
       {success ? <div className="out success-msg" role="status">{success}</div> : null}
@@ -79,9 +106,17 @@ export default function AdminUsers() {
                       <button
                         type="button"
                         className="button-subtle"
-                        onClick={() => setPromoteTarget(user)}
+                        onClick={() => setPendingAction({ kind: "promote", user })}
                       >
-                        Promote to admin
+                        Promote to Admin
+                      </button>
+                    ) : user.role === ROLE_ADMIN ? (
+                      <button
+                        type="button"
+                        className="button-subtle"
+                        onClick={() => setPendingAction({ kind: "demote", user })}
+                      >
+                        Demote to User
                       </button>
                     ) : (
                       <span className="admin-users-table__muted">—</span>
@@ -93,22 +128,24 @@ export default function AdminUsers() {
           </table>
         </div>
       ) : null}
-      {promoteTarget ? (
-        <div className="notes-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="admin-promote-title">
-          <div className="notes-delete-confirm__backdrop" onClick={() => !promoting && setPromoteTarget(null)} aria-hidden />
+      {pendingAction && dialogCopy ? (
+        <div className="notes-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="admin-role-action-title">
+          <div
+            className="notes-delete-confirm__backdrop"
+            onClick={() => !acting && setPendingAction(null)}
+            aria-hidden
+          />
           <div className="notes-delete-confirm__box">
-            <p id="admin-promote-title" className="notes-delete-confirm__title">
-              Promote {promoteTarget.username} to admin?
+            <p id="admin-role-action-title" className="notes-delete-confirm__title">
+              {dialogCopy.title}
             </p>
-            <p className="notes-delete-confirm__desc">
-              Admins can view diagnostics and bypass AI credit limits. This cannot assign Main Admin.
-            </p>
+            <p className="notes-delete-confirm__desc">{dialogCopy.desc}</p>
             <div className="notes-delete-confirm__actions">
-              <button type="button" className="button-subtle" onClick={() => setPromoteTarget(null)} disabled={promoting}>
+              <button type="button" className="button-subtle" onClick={() => setPendingAction(null)} disabled={acting}>
                 Cancel
               </button>
-              <button type="button" className="button-primary" onClick={confirmPromote} disabled={promoting}>
-                {promoting ? "Promoting…" : "Promote"}
+              <button type="button" className="button-primary" onClick={confirmAction} disabled={acting}>
+                {dialogCopy.confirm}
               </button>
             </div>
           </div>
