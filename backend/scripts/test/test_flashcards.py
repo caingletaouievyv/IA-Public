@@ -150,6 +150,12 @@ class FlashcardRouteTests(unittest.TestCase):
         user_id = self.user_id()
         note = self.add_note(user_id, "Study", "A source.")
         history = self.add_note(user_id, "History", "[]", category="_history")
+        deck = self.add_note(
+            user_id,
+            "Deck",
+            '{"version":1,"cards":[{"question":"Q","answer":"A"}]}',
+            category="_flashcards",
+        )
 
         with patch("app.ai.flashcards.call_ai") as provider:
             invalid_count = self.client.post(
@@ -167,10 +173,16 @@ class FlashcardRouteTests(unittest.TestCase):
                 json=self.request_data(history["id"]),
                 headers=self.headers(user_id),
             )
+            deck_response = self.client.post(
+                "/ai/flashcards/generate",
+                json=self.request_data(deck["id"]),
+                headers=self.headers(user_id),
+            )
 
         self.assertEqual(invalid_count.status_code, 400)
         self.assertEqual(invalid_style.status_code, 400)
         self.assertEqual(history_response.status_code, 400)
+        self.assertEqual(deck_response.status_code, 400)
         provider.assert_not_called()
 
     def test_malformed_provider_response_fails_and_refunds_reserved_credit(self):

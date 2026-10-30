@@ -12,7 +12,11 @@ const SECTIONS = [
   { id: "memory", label: "Memory" },
 ];
 
-export default function Manage({ initialSection = "notes" }) {
+export default function Manage({
+  initialSection = "notes",
+  focusNoteId = null,
+  onFocusNoteHandled = null,
+}) {
   const [activeSection, setActiveSection] = useState(initialSection);
 
   useEffect(() => {
@@ -40,7 +44,9 @@ export default function Manage({ initialSection = "notes" }) {
         ))}
       </div>
 
-      {activeSection === "notes" && <Notes />}
+      {activeSection === "notes" && (
+        <Notes focusNoteId={focusNoteId} onFocusNoteHandled={onFocusNoteHandled} />
+      )}
       {activeSection === "conversations" && <History />}
       {activeSection === "memory" && <MemoryManager />}
     </section>

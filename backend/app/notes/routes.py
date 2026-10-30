@@ -9,9 +9,18 @@ from app import limiter
 from app.config import NOTES_MAX_CONTENT_CHARS
 from app.activity.manager import record_activity
 from app.common.auth import require_auth, auth_debug
-from app.notes.manager import add_note, update_note, get_notes_list, get_note, delete_note, get_categories, get_tags
+from app.notes.manager import (
+    add_note,
+    update_note,
+    get_notes_list,
+    get_note,
+    delete_note,
+    get_categories,
+    get_tags,
+    is_flashcard_deck_category,
+)
 from app.notes.schemas import NoteCreate, NoteUpdate
-from app.notes.image_to_note import process_images_to_note
+from app.notes.image_to_note import extract_text_from_images, process_images_to_note
 from app.notes.pdf_extract import PdfExtractError, extract_text_from_pdf
 
 logger = logging.getLogger(__name__)
@@ -28,7 +37,7 @@ def _note_activity_type(action: str, note: dict | None, previous_note: dict | No
     notes = [item for item in (note, previous_note) if item]
     if not notes or any(item.get("category") == "_history" for item in notes):
         return None
-    prefix = "flashcard_deck" if any(item.get("category") == "flashcards" for item in notes) else "note"
+    prefix = "flashcard_deck" if any(is_flashcard_deck_category(item.get("category")) for item in notes) else "note"
     return f"{prefix}.{action}"
 
 
@@ -109,6 +118,32 @@ def extract_note_text_from_pdf():
     except Exception as error:
         logger.error("pdf_extract_failed error_type=%s", type(error).__name__)
         return jsonify({"error": "PDF extraction failed."}), 500
+
+
+@bp.route("/from-images/extract", methods=["POST"])
+@limiter.limit("10 per minute")
+def extract_note_text_from_images():
+    """Multipart: image files. OCR only — returns text for client review; does not create a note."""
+    user_id, auth_err = require_auth()
+    if auth_err:
+        return auth_err
+    files = request.files.getlist("files") or request.files.getlist("file") or (
+        [request.files.get("file")] if request.files.get("file") else []
+    )
+    if not files or not any(f and getattr(f, "filename", None) for f in files):
+        return jsonify({"error": "Missing 'files' or 'file' in multipart form"}), 400
+    try:
+        text = (extract_text_from_images(files, user_id=user_id) or "").strip()
+        if not text:
+            return jsonify({"error": "No text extracted from images. Check format and Tesseract installation."}), 400
+        if len(text) > NOTES_MAX_CONTENT_CHARS:
+            return jsonify({
+                "error": f"Extracted text exceeds the {NOTES_MAX_CONTENT_CHARS:,} character limit.",
+            }), 400
+        return jsonify({"text": text, "char_count": len(text)}), 200
+    except Exception as error:
+        logger.error("image_extract_failed error_type=%s", type(error).__name__)
+        return jsonify({"error": "Image text extraction failed."}), 500
 
 
 @bp.route("/from-images", methods=["POST"])

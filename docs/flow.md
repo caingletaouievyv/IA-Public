@@ -26,11 +26,11 @@ Follow the code: step → where → what to look at. Index: [docs.md](docs.md). 
 
 ## Flashcards shortcut and generation
 
-The Ask page's collapsible Shortcuts section opens a centered accessible overlay without navigation. The initial view lists saved deck Notes from the authenticated user's existing Notes store. **New Flashcards** opens the first step, where the user can search and select up to 20 non-history, non-deck Notes; the second step collects generation options, and the third presents one editable card at a time with navigation and removal controls. Back navigation retains the current selections, options, and draft edits.
+The Ask page's collapsible Shortcuts section opens a centered accessible overlay without navigation. The initial **Deck library** lists saved deck Notes from the authenticated user's existing Notes store (**Decks** + **New Flashcard**). **Open** enters **Study mode** (question visible, answer revealed on demand, prev/next navigation). **Edit** opens the existing edit workflow (title and card textareas, save/remove). **New Flashcard** opens the first generation step, where the user can search and select up to 20 non-history, non-deck Notes; the second step collects generation options, and the third presents one editable card at a time with navigation and removal controls. Back navigation retains the current selections, options, and draft edits.
 
 Generation sends only explicitly selected note IDs with validated options to `POST /ai/flashcards/generate`. The backend resolves every note ID using the authenticated user's identity, rejects unavailable/history notes, treats notes and extra instructions as untrusted prompt data, and validates the provider's JSON and exact requested card count. The endpoint uses the configured AI provider and reserves the normal configured AI Credit cost; provider failures or malformed output refund the reservation.
 
-Generated cards remain an editable client-side draft. Only **Save approved deck** creates a regular Note in the user's existing Notes store (category and tag `flashcards`, JSON card content). Editing a saved deck updates that selected Note only after explicit **Save changes**; deleting requires confirmation and calls the existing user-scoped Notes delete API for that deck ID. Saving or deleting prevents the overlay from closing while the request is in progress. No separate deck store is used.
+Generated cards remain an editable client-side draft. Only **Save approved deck** creates a regular Note in the user's existing Notes store (category `_flashcards`, tag `flashcards`, JSON card content). Legacy decks with category `flashcards` remain readable; saves upgrade category to `_flashcards`. Editing a saved deck updates that selected Note only after explicit **Save changes**; deleting requires confirmation and calls the existing user-scoped Notes delete API for that deck ID. Saving or deleting prevents the overlay from closing while the request is in progress. No separate deck store is used.
 
 ---
 
@@ -282,7 +282,7 @@ There is no backend chat-edit endpoint; the frontend uses `POST /ai/ask` and the
 
 | Step | Where | What to look at |
 |------|-------|------------------|
-| 1 | `backend/app/notes/routes.py` | After a Note create/update/delete succeeds, record one fixed event. Flashcards are identified by the existing `flashcards` category. `_history` conversation-note operations are excluded. Image imports record once after the image operation succeeds, as a create or update. |
+| 1 | `backend/app/notes/routes.py` | After a Note create/update/delete succeeds, record one fixed event. Flashcards are identified by `_flashcards` or legacy `flashcards` category. `_history` conversation-note operations are excluded. Image imports record once after the image operation succeeds, as a create or update. |
 | 2 | `backend/app/activity/manager.py` | Store only `event_id`, `event_type`, fixed `description`, and UTC `timestamp` in `activity_<user-hash>.json`. Serialize reads/writes with an in-process lock, briefly retry permission failures during atomic replacement, and retain at most 500 events per user. No note title, content, settings, or credentials are written. |
 | 3 | `backend/app/activity/routes.py` → `GET /activity/` | Internal suggestion context endpoint. Require JWT auth and derive ownership from `sub`. Return newest first, default 50 and maximum 100; reject invalid/non-positive limits. File/data failures return a generic error. |
 

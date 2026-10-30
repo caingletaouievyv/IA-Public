@@ -7,7 +7,7 @@ from typing import List
 class NoteBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     category: str = Field(..., min_length=1, max_length=50)
-    content: str = Field(..., min_length=1)
+    content: str = Field(default="")
     tags: List[str] = Field(default_factory=list)
 
     @validator("tags", each_item=True)

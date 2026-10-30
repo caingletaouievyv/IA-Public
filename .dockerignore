@@ -1,0 +1,10 @@
+# IA/.dockerignore
+.git
+.cursor
+**/__pycache__
+**/*.pyc
+backend/data
+frontend/node_modules
+frontend/dist
+.env
+*.md

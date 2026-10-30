@@ -2,7 +2,7 @@
 // Ask: question → POST /ai/ask; optional Notes/Memory context and conversation history.
 // No authenticated API calls without token; surface auth errors in UI.
 
-import { useState, useEffect, useLayoutEffect, useRef, useId } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useId, useMemo } from "react";
 import { ask, getNote, createHistory, updateNote, getToken, getSettings, getCachedSettings, putSettings, reportAiFeedback } from "../api";
 import {
   getActiveConversation,
@@ -23,6 +23,14 @@ import {
   normalizeContextModes,
   normalizeShowContextSourceLabels,
 } from "../askContextSources";
+import {
+  acceptAskCommand,
+  filterAskCommands,
+  getActiveCommandToken,
+  listAvailableAskCommands,
+} from "../askCommands";
+import AskCommandSuggestions from "./AskCommandSuggestions";
+import AskNotesActionBanner from "./AskNotesActionBanner";
 
 const CONTEXT_MODES = ["off", "selected", "automatic"];
 
@@ -83,6 +91,10 @@ export function parseMessages(content) {
       const operationId = message.operationId || message.operation_id;
       if (typeof operationId === "string" && operationId.trim()) {
         parsed.operationId = operationId.trim();
+      }
+      const notesAction = message.notesAction || message.notes_action;
+      if (notesAction && typeof notesAction === "object") {
+        parsed.notesAction = notesAction;
       }
       return parsed;
     }).filter(Boolean);
@@ -308,6 +320,7 @@ export default function Ask({
   onUserMessageDetail,
   onHistoryFocusChange,
   onMemoryManage,
+  onOpenCreatedNote,
   suggestionAction,
   onSuggestionActionConsumed,
 }) {
@@ -318,6 +331,11 @@ export default function Ask({
     return savedModes;
   });
   const [question, setQuestion] = useState("");
+  const [questionCaretIndex, setQuestionCaretIndex] = useState(0);
+  const [commandSuggestionIndex, setCommandSuggestionIndex] = useState(0);
+  const [commandSuggestionsDismissed, setCommandSuggestionsDismissed] = useState(false);
+  const questionInputRef = useRef(null);
+  const commandListId = useId();
   const [flashcardsOpen, setFlashcardsOpen] = useState(false);
   const [flashcardsBusy, setFlashcardsBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -334,6 +352,9 @@ export default function Ask({
   const [contextModes, setContextModes] = useState(initialContextModes);
   const [contextSettingsLoaded, setContextSettingsLoaded] = useState(() => initialContextSettings !== null);
   const [memoryEnabled, setMemoryEnabled] = useState(() => initialContextSettings?.memory_enabled === true);
+  const [rememberCommandEnabled, setRememberCommandEnabled] = useState(
+    () => initialContextSettings?.remember_command_enabled !== false,
+  );
   const [memorySettingSaving, setMemorySettingSaving] = useState(false);
   const [currentHistoryId, setCurrentHistoryId] = useState(() => getActiveConversation(userId));
   const [currentHistoryTitle, setCurrentHistoryTitle] = useState("");
@@ -366,6 +387,7 @@ export default function Ask({
           const enabled = settings?.memory_enabled === true;
           savedModes.memory = enabled ? "automatic" : "off";
           setMemoryEnabled(enabled);
+          setRememberCommandEnabled(settings?.remember_command_enabled !== false);
           contextModesRef.current = savedModes;
           setContextModes(savedModes);
           setContextSettingsLoaded(true);
@@ -600,9 +622,13 @@ export default function Ask({
     const userContent = (prompt || "").trim();
     const assistantContent = (data.answer || "").trim();
     const operationId = typeof data.operation_id === "string" ? data.operation_id : null;
+    const notesAction = data.notes_action && typeof data.notes_action === "object"
+      ? data.notes_action
+      : null;
     if (historyId && (userContent || assistantContent)) {
       const assistantMessage = { role: "assistant", content: assistantContent };
       if (operationId) assistantMessage.operationId = operationId;
+      if (notesAction) assistantMessage.notesAction = notesAction;
       const nextMessages = [...activeMessages, { role: "user", content: userContent }, assistantMessage];
       const updatedHistory = await updateNote(
         historyId,
@@ -643,6 +669,97 @@ export default function Ask({
     } finally {
       setLoading(false);
       submissionInFlightRef.current = false;
+    }
+  };
+
+  const commandSettings = useMemo(
+    () => ({ remember_command_enabled: rememberCommandEnabled }),
+    [rememberCommandEnabled],
+  );
+  const activeCommandToken = getActiveCommandToken(question, questionCaretIndex);
+  const availableAskCommands = listAvailableAskCommands(commandSettings);
+  const commandSuggestions = activeCommandToken
+    ? filterAskCommands(activeCommandToken.query, availableAskCommands)
+    : [];
+  const commandAutocompleteOpen = !commandSuggestionsDismissed
+    && Boolean(activeCommandToken)
+    && commandSuggestions.length > 0;
+
+  useEffect(() => {
+    setCommandSuggestionIndex(0);
+  }, [commandSuggestions.length, activeCommandToken?.query]);
+
+  const focusQuestionCaret = (caret) => {
+    requestAnimationFrame(() => {
+      const input = questionInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(caret, caret);
+    });
+  };
+
+  const acceptCommandSuggestion = (command) => {
+    const token = getActiveCommandToken(question, questionCaretIndex);
+    if (!token || !command?.name) return;
+    const { value, caret } = acceptAskCommand(
+      question,
+      questionCaretIndex,
+      command.name,
+      token.tokenStart,
+      token.tokenEnd,
+    );
+    setQuestion(value);
+    setQuestionCaretIndex(caret);
+    setCommandSuggestionsDismissed(true);
+    focusQuestionCaret(caret);
+  };
+
+  const handleQuestionChange = (event) => {
+    setCommandSuggestionsDismissed(false);
+    setQuestion(event.target.value);
+    setQuestionCaretIndex(event.target.selectionStart ?? event.target.value.length);
+  };
+
+  const handleQuestionKeyDown = (event) => {
+    if (commandAutocompleteOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setCommandSuggestionIndex((current) => (current + 1) % commandSuggestions.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setCommandSuggestionIndex((current) => (
+          current <= 0 ? commandSuggestions.length - 1 : current - 1
+        ));
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setCommandSuggestionsDismissed(true);
+        return;
+      }
+      if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+        event.preventDefault();
+        acceptCommandSuggestion(commandSuggestions[commandSuggestionIndex]);
+        return;
+      }
+    }
+    if (event.key === "Enter" && event.shiftKey) {
+      event.preventDefault();
+      const { selectionStart, selectionEnd, value } = event.currentTarget;
+      const start = selectionStart ?? value.length;
+      const end = selectionEnd ?? value.length;
+      const nextValue = `${value.slice(0, start)}\n${value.slice(end)}`;
+      setQuestion(nextValue);
+      const nextCaret = start + 1;
+      setQuestionCaretIndex(nextCaret);
+      focusQuestionCaret(nextCaret);
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
     }
   };
 
@@ -902,7 +1019,23 @@ export default function Ask({
                     className={`${messageClassName} ask-history-message--assistant`}
                   >
                     <div className="ask-history-message__content">
-                      <strong>AI:</strong> <span className="ask-history-message__text">{message.content}</span>
+                      {message.notesAction ? (
+                        <AskNotesActionBanner
+                          notesAction={message.notesAction}
+                          fallbackContent={message.content}
+                          onOpenCreatedNote={onOpenCreatedNote}
+                          onApplySuggestionDraft={(draft) => {
+                            setQuestion(draft);
+                            setQuestionCaretIndex(draft.length);
+                            focusQuestionCaret(draft.length);
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <strong>AI:</strong>{" "}
+                          <span className="ask-history-message__text">{message.content}</span>
+                        </>
+                      )}
                     </div>
                     <div
                       className="ask-shortcuts"
@@ -954,20 +1087,36 @@ export default function Ask({
 
         <section className="ask-question">
         <label htmlFor="question" className="ask-question__label">Question</label>
+        <div className="ask-question__composer">
         <textarea
+          ref={questionInputRef}
           id="question"
           className="ask-question__input"
           placeholder="Ask a question or describe what you need…"
           value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              e.currentTarget.form?.requestSubmit();
-            }
-          }}
+          onChange={handleQuestionChange}
+          onClick={(event) => setQuestionCaretIndex(event.target.selectionStart ?? 0)}
+          onKeyUp={(event) => setQuestionCaretIndex(event.target.selectionStart ?? 0)}
+          onKeyDown={handleQuestionKeyDown}
           disabled={loading || historyLoading}
+          aria-autocomplete={commandAutocompleteOpen ? "list" : undefined}
+          aria-controls={commandAutocompleteOpen ? commandListId : undefined}
+          aria-expanded={commandAutocompleteOpen}
+          aria-activedescendant={
+            commandAutocompleteOpen
+              ? `${commandListId}-option-${commandSuggestionIndex}`
+              : undefined
+          }
         />
+        <AskCommandSuggestions
+          listId={commandListId}
+          anchorRef={questionInputRef}
+          suggestions={commandAutocompleteOpen ? commandSuggestions : []}
+          selectedIndex={commandSuggestionIndex}
+          onHighlight={setCommandSuggestionIndex}
+          onSelect={acceptCommandSuggestion}
+        />
+        </div>
         <button type="submit" className="button-primary ask-submit" aria-label={loading ? "Sending question" : "Ask"} disabled={loading || historyLoading}>
           {loading ? "…" : "Ask"}
         </button>

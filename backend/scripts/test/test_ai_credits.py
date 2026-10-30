@@ -271,7 +271,7 @@ class AICreditTests(unittest.TestCase):
     def test_successful_ask_consumes_one_credit_and_is_retry_safe(self):
         user_id = self.user_id()
         operation_id = "ask-success"
-        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")) as ask_mock:
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled", None)) as ask_mock:
             response = self.ask(user_id, operation_id)
             retry = self.ask(user_id, operation_id)
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -287,7 +287,7 @@ class AICreditTests(unittest.TestCase):
 
     def test_ask_passes_context_modes_and_authenticated_user_to_engine(self):
         user_id = self.user_id()
-        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")) as ask_mock:
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled", None)) as ask_mock:
             response = self.ask(
                 user_id,
                 "memory-context",
@@ -306,7 +306,7 @@ class AICreditTests(unittest.TestCase):
         user_id = self.user_id()
         settings_manager.save_settings(user_id, {"memory_enabled": True})
 
-        with patch.object(ai_routes, "ask", return_value=("answer", 3, "saved")) as ask_mock:
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "saved", None)) as ask_mock:
             response = self.ask(user_id, "memory-enabled", memory_enabled=False)
 
         self.assertEqual(response.status_code, 200)
@@ -341,7 +341,7 @@ class AICreditTests(unittest.TestCase):
 
     def test_different_idempotency_keys_are_independent_operations(self):
         user_id = self.user_id()
-        with patch.object(ai_routes, "ask", side_effect=[("first", 3, "disabled"), ("second", 4, "disabled")]) as ask_mock:
+        with patch.object(ai_routes, "ask", side_effect=[("first", 3, "disabled", None), ("second", 4, "disabled", None)]) as ask_mock:
             first = self.ask(user_id, "ask-first")
             second = self.ask(user_id, "ask-second")
         self.assertEqual(first.get_json()["answer"], "first")
@@ -353,7 +353,7 @@ class AICreditTests(unittest.TestCase):
     def test_idempotency_records_are_isolated_by_user(self):
         first_user = self.user_id()
         second_user = self.user_id()
-        with patch.object(ai_routes, "ask", side_effect=[("first", 3, "disabled"), ("second", 4, "disabled")]) as ask_mock:
+        with patch.object(ai_routes, "ask", side_effect=[("first", 3, "disabled", None), ("second", 4, "disabled", None)]) as ask_mock:
             first = self.ask(first_user, "shared-key")
             second = self.ask(second_user, "shared-key")
         self.assertEqual(first.get_json()["answer"], "first")
@@ -364,7 +364,7 @@ class AICreditTests(unittest.TestCase):
 
     def test_normal_user_still_pays_credits(self):
         user_id = self.user_id()
-        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled", None)):
             response = self.ask(user_id, "normal-user-pays")
         self.assertEqual(response.status_code, 200)
         account = credit_manager.get_credit_account(user_id)
@@ -381,7 +381,7 @@ class AICreditTests(unittest.TestCase):
         }])
         for index in range(config.AI_CREDIT_INITIAL_BALANCE):
             credit_manager.reserve_credits(user_id, config.AI_ASK_CREDIT_COST, "ai_ask", f"zero-{index}")
-        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled", None)):
             response = self.ask(user_id, "unlimited-ask")
         self.assertEqual(response.status_code, 200)
         account = credit_manager.get_credit_account(user_id)
@@ -390,7 +390,7 @@ class AICreditTests(unittest.TestCase):
 
     def test_request_payload_cannot_activate_unlimited_mode(self):
         user_id = self.user_id()
-        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
+        with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled", None)):
             response = self.client.post(
                 "/ai/ask",
                 json={"question": "hello", "unlimited": True, "role": config.AI_UNLIMITED_ROLE},
@@ -435,7 +435,7 @@ class AICreditTests(unittest.TestCase):
         user_id = self.user_id()
         credit_manager.grant_credits(user_id, 40, "test_setup", "rate-limit-credits")
         limiter.reset()
-        with patch.object(ai_routes, "ask", return_value=("answer", 1)):
+        with patch.object(ai_routes, "ask", return_value=("answer", 1, "disabled", None)):
             responses = [self.ask(user_id, f"rate-limit-{index}") for index in range(31)]
         self.assertEqual(responses[-1].status_code, 429)
 

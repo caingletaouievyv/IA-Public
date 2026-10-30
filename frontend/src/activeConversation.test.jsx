@@ -200,7 +200,7 @@ async function openFlashcards(user) {
 
 async function startNewFlashcards(user) {
   await openFlashcards(user);
-  await user.click(await screen.findByRole("button", { name: "New Flashcards" }));
+  await user.click(await screen.findByRole("button", { name: "New Flashcard" }));
 }
 
 function getNotesModeButton(mode) {
@@ -242,6 +242,7 @@ beforeEach(() => {
     ask_context_sources: ["conversation", "notes", "memory"],
     ask_context_modes: { notes: "off", memory: "off" },
     memory_enabled: false,
+    remember_command_enabled: true,
   };
   settingsGetGate = null;
   settingsPutGate = null;
@@ -926,6 +927,110 @@ describe("active conversation restoration", () => {
     expect(settingsGets).toHaveLength(1);
   });
 
+  describe("Ask command autocomplete", () => {
+    function questionInput() {
+      return screen.getByRole("textbox", { name: "Question" });
+    }
+
+    it("opens and filters IntelliSense suggestions for message-prefix commands", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByLabelText("Ask shortcuts");
+      const input = questionInput();
+      await user.type(input, "!");
+      expect(await screen.findByRole("listbox", { name: "Ask commands" })).toBeTruthy();
+      expect(screen.getByRole("option", { selected: true }).textContent).toContain("!remember");
+      await user.type(input, "rem");
+      expect(screen.getByText("Save the following text to Memory.")).toBeTruthy();
+    });
+
+    it("shows no suggestions for unknown prefixes or mid-message exclamation marks", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByLabelText("Ask shortcuts");
+      const input = questionInput();
+      await user.type(input, "!unknown");
+      expect(screen.queryByRole("listbox", { name: "Ask commands" })).toBeNull();
+      await user.clear(input);
+      await user.type(input, "hello !rem");
+      expect(screen.queryByRole("listbox", { name: "Ask commands" })).toBeNull();
+    });
+
+    it("supports keyboard navigation, acceptance, dismissal, and normal Enter submit", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByLabelText("Ask shortcuts");
+      const input = questionInput();
+      const askCallsBefore = aiRequests.length;
+
+      await user.type(input, "!rem");
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      expect(screen.getByRole("option", { selected: true }).textContent).toContain("!remember");
+      fireEvent.keyDown(input, { key: "Tab" });
+      expect(input.value).toBe("!remember ");
+      expect(document.activeElement).toBe(input);
+      expect(aiRequests.length).toBe(askCallsBefore);
+
+      await user.clear(input);
+      await user.type(input, "!rem");
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(input.value).toBe("!remember ");
+      expect(input.selectionStart).toBe(10);
+      await user.type(input, "tail");
+      expect(input.value).toBe("!remember tail");
+      expect(aiRequests.length).toBe(askCallsBefore);
+
+      await user.clear(input);
+      await user.type(input, "!");
+      expect(screen.getByRole("listbox", { name: "Ask commands" })).toBeTruthy();
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryByRole("listbox", { name: "Ask commands" })).toBeNull();
+
+      await user.clear(input);
+      await user.type(input, "Plain question");
+      fireEvent.keyDown(input, { key: "Enter" });
+      await waitFor(() => expect(aiRequests.length).toBe(askCallsBefore + 1));
+      expect(aiRequests.at(-1).question).toBe("Plain question");
+    });
+
+    it("accepts a suggestion with the mouse without submitting or executing the command", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await selectConversation(user, "First conversation");
+      await screen.findByText("First saved question");
+      const input = questionInput();
+      const askCallsBefore = aiRequests.length;
+      const historyBefore = JSON.parse(notes.get("first").content).length;
+
+      await user.type(input, "!rem");
+      await user.click(screen.getByRole("option", { name: /!remember/i }));
+      await user.type(input, "saved tail");
+      expect(input.value).toBe("!remember saved tail");
+      expect(document.activeElement).toBe(input);
+      expect(aiRequests.length).toBe(askCallsBefore);
+      expect(JSON.parse(notes.get("first").content)).toHaveLength(historyBefore);
+    });
+
+    it("inserts a newline on Shift+Enter when autocomplete is inactive", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByLabelText("Ask shortcuts");
+      const input = questionInput();
+      await user.type(input, "Line one");
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      expect(input.value).toBe("Line one\n");
+    });
+
+    it("hides disabled commands from suggestions", async () => {
+      settings.remember_command_enabled = false;
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByLabelText("Ask shortcuts");
+      await user.type(questionInput(), "!");
+      expect(screen.queryByRole("listbox", { name: "Ask commands" })).toBeNull();
+    });
+  });
+
   it("handles !remember without adding Ask turns to conversation history", async () => {
     const user = userEvent.setup();
     renderApp();
@@ -1119,9 +1224,9 @@ describe("active conversation restoration", () => {
     await user.click(screen.getByRole("button", { name: /Flashcards/ }));
     const dialog = await screen.findByRole("dialog", { name: "Flashcards" });
     expect(dialog).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Saved decks" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Decks" })).toBeTruthy();
     expect(screen.getByText(/No saved flashcard decks yet/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "New Flashcards" }));
+    await user.click(screen.getByRole("button", { name: "New Flashcard" }));
     expect(screen.getByRole("heading", { name: /Step 1 — Select source notes/ })).toBeTruthy();
 
     const noteCheckbox = await screen.findByRole("checkbox", { name: /Study note/ });
@@ -1175,7 +1280,7 @@ describe("active conversation restoration", () => {
     await user.click(screen.getByRole("button", { name: "Save approved deck" }));
     await screen.findByText("Approved deck saved to Notes.");
     expect(createdNotes).toHaveLength(1);
-    expect(createdNotes[0].category).toBe("flashcards");
+    expect(createdNotes[0].category).toBe("_flashcards");
     expect(JSON.parse(createdNotes[0].content).cards).toEqual([
       {
         question: "Edited question",
@@ -1254,9 +1359,9 @@ describe("active conversation restoration", () => {
     expect(screen.queryByRole("button", { name: "Edit deck: Ordinary tagged note" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete deck: Ordinary tagged note" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Open deck: Biology cards" }));
-    expect(screen.getByRole("heading", { name: "Saved deck" })).toBeTruthy();
-    expect(screen.getByLabelText("Question / front").value).toBe("Q1");
-    expect(screen.getByLabelText("Question / front").readOnly).toBe(true);
+    expect(screen.getByText("Q1")).toBeTruthy();
+    expect(screen.queryByLabelText("Question / front")).toBeNull();
+    expect(screen.getByText("Click to reveal answer")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Edit deck" }));
     await user.clear(screen.getByLabelText("Deck title"));
     await user.type(screen.getByLabelText("Deck title"), "Biology review");
@@ -1264,6 +1369,8 @@ describe("active conversation restoration", () => {
     await user.type(screen.getByLabelText("Question / front"), "Updated question");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Deck changes saved.")).toBeTruthy();
+    expect(screen.getByText("Updated question")).toBeTruthy();
+    expect(screen.queryByLabelText("Question / front")).toBeNull();
     expect(notes.get("deck-a").title).toBe("Biology review");
     expect(JSON.parse(notes.get("deck-a").content).cards[0].question).toBe("Updated question");
 
@@ -1319,11 +1426,11 @@ describe("active conversation restoration", () => {
     await screen.findByRole("textbox", { name: "Question" });
     await openFlashcards(user);
     expect(await screen.findByText(/No saved flashcard decks yet/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "New Flashcards" }));
+    await user.click(screen.getByRole("button", { name: "New Flashcard" }));
     expect(await screen.findByText(/No saved notes are available/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Next" }).disabled).toBe(true);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.getByRole("heading", { name: "Saved decks" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Decks" })).toBeTruthy();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Flashcards" })).toBeNull();
     expect(createdNotes).toHaveLength(0);
@@ -1341,7 +1448,7 @@ describe("active conversation restoration", () => {
     await act(async () => {
       notesGate.resolve();
     });
-    expect(await screen.findByRole("button", { name: "New Flashcards" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "New Flashcard" })).toBeTruthy();
   });
 
   it("shows generation errors without saving a deck", async () => {

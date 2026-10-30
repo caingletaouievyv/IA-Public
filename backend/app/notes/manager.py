@@ -9,6 +9,14 @@ import uuid
 
 # Conversation histories stored as notes with this category (same table; excluded from Notes UI meta).
 HISTORY_CATEGORY = "_history"
+# Flashcard decks (Flashcards UI); legacy saves used category "flashcards".
+FLASHCARD_DECK_CATEGORY = "_flashcards"
+LEGACY_FLASHCARD_DECK_CATEGORY = "flashcards"
+
+
+def is_flashcard_deck_category(category) -> bool:
+    value = (category or "").strip()
+    return value in (FLASHCARD_DECK_CATEGORY, LEGACY_FLASHCARD_DECK_CATEGORY)
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(_BACKEND_DIR, "data")
@@ -106,7 +114,13 @@ def delete_note(note_id: str, user_id: str) -> bool:
 def get_categories(user_id: str):
     """Distinct categories from user's notes, sorted. Excludes history category."""
     notes = load_notes(user_id)
-    cats = {str(n.get("category") or "").strip() for n in notes if (n.get("category") or "").strip() and (n.get("category") or "").strip() != HISTORY_CATEGORY}
+    cats = {
+        str(n.get("category") or "").strip()
+        for n in notes
+        if (n.get("category") or "").strip()
+        and (n.get("category") or "").strip() != HISTORY_CATEGORY
+        and not is_flashcard_deck_category(n.get("category"))
+    }
     return sorted(cats)
 
 def get_tags(user_id: str):

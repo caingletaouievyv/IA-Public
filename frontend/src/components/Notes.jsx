@@ -1,8 +1,10 @@
 // IA/frontend/src/components/Notes.jsx
-// Notes: list with search; Select All / Unselect All; bulk delete. Click card → view/edit. Add note menu. Excludes _history. Auto-refresh when list visible (visibility + interval).
+// Notes: list with search; Select All / Unselect All; bulk delete. Click card → view/edit. Single Add note form (optional PDF extract). Excludes _history and flashcard decks. Auto-refresh when list visible (visibility + interval).
 
 import { useState, useEffect, useRef } from "react";
-import { listNotes, createNote, createNoteFromImages, extractPdfText, updateNote, deleteNote, getNotesMeta } from "../api";
+import { listNotes, createNote, extractPdfText, updateNote, deleteNote, getNotesMeta } from "../api";
+import { isManageNotesExcludedCategory } from "../noteCategories.js";
+import AskOverlay from "./AskOverlay.jsx";
 
 /** Must match backend NOTES_MAX_CONTENT_CHARS (POST /notes/ and PDF extract). */
 const NOTE_MAX_CONTENT_CHARS = 512_000;
@@ -51,7 +53,14 @@ function resolveTagToAdd(inputVal, suggestions) {
   return t;
 }
 
-export default function Notes({ isSelectionMode = false, selectedIds = [], onSelect = null, onCloseSelection = null }) {
+export default function Notes({
+  isSelectionMode = false,
+  selectedIds = [],
+  onSelect = null,
+  onCloseSelection = null,
+  focusNoteId = null,
+  onFocusNoteHandled = null,
+}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -63,20 +72,13 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   const [noteTagInput, setNoteTagInput] = useState("");
   const [noteLoading, setNoteLoading] = useState(false);
   const [noteResult, setNoteResult] = useState(null);
-  const [imgTitle, setImgTitle] = useState("");
-  const [imgCategory, setImgCategory] = useState("math");
-  const [imgFiles, setImgFiles] = useState([]);
-  const [imgLoading, setImgLoading] = useState(false);
-  const [imgResult, setImgResult] = useState(null);
-  const [pdfTitle, setPdfTitle] = useState("");
-  const [pdfCategory, setPdfCategory] = useState("");
-  const [pdfFile, setPdfFile] = useState(null);
-  const [pdfReviewText, setPdfReviewText] = useState("");
-  const [pdfExtracted, setPdfExtracted] = useState(false);
-  const [pdfExtractLoading, setPdfExtractLoading] = useState(false);
-  const [pdfSaveLoading, setPdfSaveLoading] = useState(false);
-  const [pdfResult, setPdfResult] = useState(null);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [showPdfImportDialog, setShowPdfImportDialog] = useState(false);
+  const [pendingPdfFile, setPendingPdfFile] = useState(null);
+  const [pdfImportDialogError, setPdfImportDialogError] = useState(null);
+  const [contentImportMessage, setContentImportMessage] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const pdfFileInputRef = useRef(null);
+  const [focusNoteMissMessage, setFocusNoteMissMessage] = useState(null);
   const [viewingNoteId, setViewingNoteId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [editCategory, setEditCategory] = useState("");
@@ -92,11 +94,32 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   const [meta, setMeta] = useState({ categories: [], tags: [] });
   const [tagsDropdown, setTagsDropdown] = useState({ open: false, index: 0, filter: "", inputId: null });
   const [categoryDropdown, setCategoryDropdown] = useState({ open: false, index: 0, inputId: null });
-  const addMenuRef = useRef(null);
 
   useEffect(() => {
     loadNotesList(setData, setLoading, setError);
   }, []);
+
+  useEffect(() => {
+    if (!focusNoteId) return;
+    loadNotesList(setData, setLoading, setError);
+  }, [focusNoteId]);
+
+  useEffect(() => {
+    if (!focusNoteId || data === null || loading) return;
+    const match = (Array.isArray(data) ? data : []).find((note) => note.id === focusNoteId);
+    if (!match) {
+      setFocusNoteMissMessage("That note could not be found. It may have been deleted or is not in your list.");
+      onFocusNoteHandled?.();
+      return;
+    }
+    setFocusNoteMissMessage(null);
+    setViewingNoteId(focusNoteId);
+    setAddFormMode(null);
+    onFocusNoteHandled?.();
+    requestAnimationFrame(() => {
+      document.getElementById(`note-card-${focusNoteId}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }, [focusNoteId, data, loading, onFocusNoteHandled]);
 
   useEffect(() => {
     if (isSelectionMode) setSelectedNoteIds(new Set(selectedIds));
@@ -108,18 +131,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
       .catch(() => setMeta({ categories: [], tags: [] }));
   }, [data]);
 
-  useEffect(() => {
-    if (!addMenuOpen) return;
-    const close = (e) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setAddMenuOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [addMenuOpen]);
-
   const notesArray = Array.isArray(data) ? data : [];
-  /** Exclude _history notes; History panel owns those. */
-  const notesForDisplay = notesArray.filter((n) => (n.category || "") !== "_history");
+  /** Exclude internal categories (_history, flashcard decks); History / Flashcards own those. */
+  const notesForDisplay = notesArray.filter((n) => !isManageNotesExcludedCategory(n.category));
   const isFormOpen = addFormMode != null;
   const viewingNote = viewingNoteId ? notesArray.find((n) => n.id === viewingNoteId) : null;
   const isViewingNote = viewingNote != null;
@@ -138,22 +152,34 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   const openNoteForm = () => {
     setAddFormMode((m) => (m === "note" ? null : "note"));
     setNoteResult(null);
+    setContentImportMessage(null);
+    setPdfImportDialogError(null);
+    setShowPdfImportDialog(false);
     setNoteCategory("");
     setNoteTagsArray([]);
     setNoteTagInput("");
+    setPendingPdfFile(null);
   };
-  const openFromImagesForm = () => {
-    setAddFormMode("from-images");
-    setImgResult(null);
-    setAddMenuOpen(false);
+
+  const closePdfImportDialog = () => {
+    if (importLoading) return;
+    setShowPdfImportDialog(false);
+    setPdfImportDialogError(null);
+    setPendingPdfFile(null);
   };
-  const openFromPdfForm = () => {
-    setAddFormMode("from-pdf");
-    setPdfResult(null);
-    setPdfFile(null);
-    setPdfReviewText("");
-    setPdfExtracted(false);
-    setAddMenuOpen(false);
+
+  const openPdfImportDialog = () => {
+    setPdfImportDialogError(null);
+    setShowPdfImportDialog(true);
+  };
+
+  const appendImportedText = (text) => {
+    const chunk = (text || "").trim();
+    if (!chunk) return;
+    setNoteContent((previous) => {
+      const base = (previous || "").trim();
+      return base ? `${base}\n\n${chunk}` : chunk;
+    });
   };
 
   const openTagsDropdown = (inputId, value) => {
@@ -212,19 +238,11 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   };
   const applyCategorySuggestion = (cat) => {
     if (categoryDropdown.inputId === "noteCategory") setNoteCategory(cat);
-    else if (categoryDropdown.inputId === "imgCategory") setImgCategory(cat);
-    else if (categoryDropdown.inputId === "pdfCategory") setPdfCategory(cat);
     else if (categoryDropdown.inputId === "editCategory") setEditCategory(cat);
     setCategoryDropdown((p) => ({ ...p, open: false }));
   };
   const filteredCategorySuggestionsNewNote = (meta.categories || [])
     .filter((c) => c.toLowerCase().startsWith((noteCategory || "").trim().toLowerCase()))
-    .slice(0, 10);
-  const filteredCategorySuggestionsImg = (meta.categories || [])
-    .filter((c) => c.toLowerCase().startsWith((imgCategory || "").trim().toLowerCase()))
-    .slice(0, 10);
-  const filteredCategorySuggestionsPdf = (meta.categories || [])
-    .filter((c) => c.toLowerCase().startsWith((pdfCategory || "").trim().toLowerCase()))
     .slice(0, 10);
   const filteredCategorySuggestionsEdit = (meta.categories || [])
     .filter((c) => c.toLowerCase().startsWith((editCategory || "").trim().toLowerCase()))
@@ -232,19 +250,15 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
   const filteredCategorySuggestions =
     categoryDropdown.inputId === "noteCategory"
       ? filteredCategorySuggestionsNewNote
-      : categoryDropdown.inputId === "imgCategory"
-        ? filteredCategorySuggestionsImg
-        : categoryDropdown.inputId === "pdfCategory"
-          ? filteredCategorySuggestionsPdf
-          : filteredCategorySuggestionsEdit;
+      : filteredCategorySuggestionsEdit;
 
   const handleCreateNote = async (e) => {
     e.preventDefault();
     const title = (noteTitle || "").trim();
     const category = (noteCategory || "").trim();
     const content = (noteContent || "").trim();
-    if (!title || !category || !content) {
-      setNoteResult({ error: "Title, category, and content are required." });
+    if (!title || !category) {
+      setNoteResult({ error: "Title and category are required." });
       return;
     }
     if (content.length > NOTE_MAX_CONTENT_CHARS) {
@@ -268,6 +282,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
       setNoteContent("");
       setNoteTagsArray([]);
       setNoteTagInput("");
+      setPendingPdfFile(null);
+      setContentImportMessage(null);
+      setShowPdfImportDialog(false);
       setAddFormMode(null);
       loadNotesList(setData, setLoading, setError);
     } catch (err) {
@@ -277,155 +294,57 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     }
   };
 
-  const handleExtractPdf = async (e) => {
-    e.preventDefault();
-    if (!pdfFile) {
-      setPdfResult({ error: "Select a PDF file." });
+  const handleExtractPdfIntoContent = async (e) => {
+    e?.preventDefault?.();
+    if (!pendingPdfFile) {
+      setPdfImportDialogError("Select a PDF file first.");
       return;
     }
-    setPdfResult(null);
-    setPdfExtractLoading(true);
-    setPdfExtracted(false);
-    setPdfReviewText("");
+    setPdfImportDialogError(null);
+    setImportLoading(true);
     try {
       const form = new FormData();
-      form.append("file", pdfFile);
+      form.append("file", pendingPdfFile);
       const res = await extractPdfText(form);
       const text = (res.text || "").trim();
       if (!text) {
-        setPdfResult({ error: "No text was extracted from this PDF." });
+        setPdfImportDialogError("No text was extracted from this PDF.");
         return;
       }
-      setPdfReviewText(text);
-      setPdfExtracted(true);
-      setPdfResult({ success: true, detail: `Extracted ${res.char_count ?? text.length} characters from ${res.page_count ?? "?"} page(s). Review below, then save.` });
+      appendImportedText(text);
+      const pageCount = res.page_count ?? 1;
+      const pageLabel = pageCount === 1 ? "1 page" : `${pageCount} pages`;
+      setContentImportMessage(`PDF text imported — ${pageLabel}.`);
+      setShowPdfImportDialog(false);
+      setPendingPdfFile(null);
+      setPdfImportDialogError(null);
     } catch (err) {
-      setPdfResult({ error: err.message });
+      setPdfImportDialogError(err.message);
     } finally {
-      setPdfExtractLoading(false);
+      setImportLoading(false);
     }
   };
 
-  const pdfReviewCharCount = (pdfReviewText || "").length;
-  const pdfReviewOverLimit = pdfReviewCharCount > NOTE_MAX_CONTENT_CHARS;
-
   const noteContentCharCount = (noteContent || "").length;
   const noteContentOverLimit = noteContentCharCount > NOTE_MAX_CONTENT_CHARS;
+  const formBusy = noteLoading || importLoading;
   const noteSubmitDisabled =
-    noteLoading
+    formBusy
     || !noteTitle.trim()
     || !noteCategory.trim()
-    || !noteContent.trim()
     || noteContentOverLimit;
-  const showNoteTitleHint = !noteLoading && !noteTitle.trim();
-  const showNoteCategoryHint = !noteLoading && !noteCategory.trim();
-  const showNoteContentHint = !noteLoading && !noteContent.trim();
-  const showNoteContentLimitErr = !noteLoading && noteContentOverLimit;
+  const showNoteTitleHint = !formBusy && !noteTitle.trim();
+  const showNoteCategoryHint = !formBusy && !noteCategory.trim();
+  const showNoteContentLimitErr = !formBusy && noteContentOverLimit;
 
-  const imgSubmitDisabled = imgLoading || !imgFiles.length;
-  const showImgFilesHint = !imgLoading && !imgFiles.length;
-
-  const pdfExtractDisabled = pdfExtractLoading || !pdfFile;
-  const showPdfFileHint = !pdfExtractLoading && !pdfFile;
-
-  const pdfSaveDisabled =
-    pdfSaveLoading
-    || !pdfTitle.trim()
-    || !pdfCategory.trim()
-    || !pdfReviewText.trim()
-    || pdfReviewOverLimit;
-  const showPdfTitleHint = pdfExtracted && !pdfSaveLoading && !pdfTitle.trim();
-  const showPdfCategoryHint = pdfExtracted && !pdfSaveLoading && !pdfCategory.trim();
-  const showPdfReviewHint = pdfExtracted && !pdfSaveLoading && !pdfReviewText.trim() && !pdfReviewOverLimit;
-
-  const noteToolbarHint = noteSubmitDisabled && !noteLoading
+  const noteToolbarHint = noteSubmitDisabled && !formBusy
     ? (noteContentOverLimit
       ? `Shorten content to ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters or fewer.`
       : missingForActionHint([
           { missing: !noteTitle.trim(), label: "title" },
           { missing: !noteCategory.trim(), label: "category" },
-          { missing: !noteContent.trim(), label: "content" },
-        ]))
+        ], { minCount: 1 }))
     : null;
-  const pdfSaveToolbarHint = pdfSaveDisabled && !pdfSaveLoading && !pdfReviewOverLimit
-    ? missingForActionHint([
-        { missing: !pdfTitle.trim(), label: "title" },
-        { missing: !pdfCategory.trim(), label: "category" },
-        { missing: !pdfReviewText.trim(), label: "extracted text" },
-      ])
-    : null;
-
-  const handleSavePdfNote = async (e) => {
-    e.preventDefault();
-    const title = (pdfTitle || "").trim();
-    const category = (pdfCategory || "").trim();
-    const content = (pdfReviewText || "").trim();
-    if (!title || !category) {
-      setPdfResult({ error: "Title and category are required." });
-      return;
-    }
-    if (!pdfExtracted || !content) {
-      setPdfResult({ error: "Extract text from the PDF before saving." });
-      return;
-    }
-    if (content.length > NOTE_MAX_CONTENT_CHARS) {
-      setPdfResult({
-        error: `Note content exceeds the ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit.`,
-      });
-      return;
-    }
-    setPdfResult(null);
-    setPdfSaveLoading(true);
-    try {
-      const created = await createNote({ title, category, content, tags: [] });
-      if (isSelectionMode && created?.id) {
-        setSelectedNoteIds((previous) => new Set([...previous, created.id]));
-        setAddFormMode(null);
-      }
-      setPdfTitle("");
-      setPdfCategory("");
-      setPdfFile(null);
-      setPdfReviewText("");
-      setPdfExtracted(false);
-      setAddFormMode(null);
-      loadNotesList(setData, setLoading, setError);
-    } catch (err) {
-      setPdfResult({ error: err.message });
-    } finally {
-      setPdfSaveLoading(false);
-    }
-  };
-
-  const handleFromImages = async (e) => {
-    e.preventDefault();
-    if (!imgFiles.length) {
-      setImgResult({ error: "Select at least one image." });
-      return;
-    }
-    setImgResult(null);
-    setImgLoading(true);
-    try {
-      const form = new FormData();
-      form.append("title", imgTitle || "From images");
-      form.append("category", (imgCategory || "").trim() || "general");
-      imgFiles.forEach((f) => form.append("files", f));
-      const res = await createNoteFromImages(form);
-      const note = res.note || res;
-      const appended = res.appended === true;
-      setImgResult({ success: true, note, appended });
-      if (isSelectionMode && note?.id) {
-        setSelectedNoteIds((previous) => new Set([...previous, note.id]));
-        setAddFormMode(null);
-      }
-      setImgFiles([]);
-      if (!appended) setImgTitle("");
-      loadNotesList(setData, setLoading, setError);
-    } catch (err) {
-      setImgResult({ error: err.message });
-    } finally {
-      setImgLoading(false);
-    }
-  };
 
   const showList = !isFormOpen && !isViewingNote;
   const showBackToList = isFormOpen || isViewingNote;
@@ -449,13 +368,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     ? "Your notes"
     : addFormMode === "note"
       ? "New note"
-      : addFormMode === "from-images"
-        ? "Add note from images"
-        : addFormMode === "from-pdf"
-          ? "Add note from PDF"
-          : isViewingNote
-          ? (editTitle || viewingNote?.title || "Untitled")
-          : "Your notes";
+      : isViewingNote
+        ? (editTitle || viewingNote?.title || "Untitled")
+        : "Your notes";
   const searchLower = (searchQuery || "").trim().toLowerCase();
   const filteredNotes = searchLower
     ? notesForDisplay.filter((n) => {
@@ -467,11 +382,9 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
     setAddFormMode(null);
     setViewingNoteId(null);
     setNoteResult(null);
-    setImgResult(null);
-    setPdfResult(null);
-    setPdfFile(null);
-    setPdfReviewText("");
-    setPdfExtracted(false);
+    setContentImportMessage(null);
+    setShowPdfImportDialog(false);
+    setPendingPdfFile(null);
     if (!isSelectionMode) setSelectedNoteIds(new Set());
   };
 
@@ -586,50 +499,6 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                         <NotesToolbarHint text={noteToolbarHint} />
                       </>
                     )}
-                    {addFormMode === "from-images" && (
-                      <>
-                        <button
-                          type="submit"
-                          form="notes-from-images-form"
-                          className="button-primary"
-                          disabled={imgSubmitDisabled}
-                        >
-                          {imgLoading ? "…" : "Add from images"}
-                        </button>
-                      </>
-                    )}
-                    {addFormMode === "from-pdf" && (
-                      pdfExtracted ? (
-                        <>
-                          <button
-                            type="submit"
-                            form="notes-from-pdf-save-form"
-                            className="button-primary"
-                            disabled={pdfSaveDisabled}
-                          >
-                            {pdfSaveLoading ? "…" : "Save note"}
-                          </button>
-                          <NotesToolbarHint
-                            text={
-                              pdfReviewOverLimit && !pdfSaveLoading
-                                ? `Shorten content to ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters or fewer.`
-                                : pdfSaveToolbarHint
-                            }
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="submit"
-                            form="notes-from-pdf-extract-form"
-                            className="button-primary"
-                            disabled={pdfExtractDisabled}
-                          >
-                            {pdfExtractLoading ? "…" : "Extract text"}
-                          </button>
-                        </>
-                      )
-                    )}
                   </>
                 )}
               </div>
@@ -697,56 +566,6 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                       <NotesToolbarHint text={noteToolbarHint} />
                     </>
                   )}
-                  {addFormMode === "from-images" && (
-                    <>
-                      <button
-                        type="submit"
-                        form="notes-from-images-form"
-                        className="button-primary"
-                        disabled={imgSubmitDisabled}
-                        aria-label="Add note from images"
-                        title="Add note from images"
-                      >
-                        {imgLoading ? "…" : "Add from images"}
-                      </button>
-                    </>
-                  )}
-                  {addFormMode === "from-pdf" && (
-                    pdfExtracted ? (
-                      <>
-                        <button
-                          type="submit"
-                          form="notes-from-pdf-save-form"
-                          className="button-primary"
-                          disabled={pdfSaveDisabled}
-                          aria-label="Save note from PDF"
-                          title="Save note"
-                        >
-                          {pdfSaveLoading ? "…" : "Save note"}
-                        </button>
-                        <NotesToolbarHint
-                          text={
-                            pdfReviewOverLimit && !pdfSaveLoading
-                              ? `Shorten content to ${NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters or fewer.`
-                              : pdfSaveToolbarHint
-                          }
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="submit"
-                          form="notes-from-pdf-extract-form"
-                          className="button-primary"
-                          disabled={pdfExtractDisabled}
-                          aria-label="Extract text from PDF"
-                          title="Extract text"
-                        >
-                          {pdfExtractLoading ? "…" : "Extract text"}
-                        </button>
-                      </>
-                    )
-                  )}
                 </div>
               ) : showList && selectedNoteIds.size > 0 ? (
                 <button
@@ -760,49 +579,14 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                   {bulkDeleteLoading ? "Deleting…" : `Delete (${selectedNoteIds.size})`}
                 </button>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    className="button-subtle ask-shortcut notes-list-add-btn"
-                    onClick={openNoteForm}
-                    aria-expanded={false}
-                  >
-                    Add note
-                  </button>
-                  <div className="notes-add-dropdown" ref={addMenuRef}>
-                    <button
-                      type="button"
-                      className="button-icon button-subtle notes-add-chevron"
-                      onClick={() => setAddMenuOpen((o) => !o)}
-                      aria-expanded={addMenuOpen}
-                      aria-haspopup="true"
-                      aria-label="More note options"
-                      title="More note options"
-                    >
-                      <span className="notes-add-chevron__icon" aria-hidden>▼</span>
-                    </button>
-                    {addMenuOpen && (
-                      <div className="notes-add-menu" role="menu">
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="button-subtle notes-add-menu__item"
-                          onClick={openFromImagesForm}
-                        >
-                          Add from images
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="button-subtle notes-add-menu__item"
-                          onClick={openFromPdfForm}
-                        >
-                          Add from PDF
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </>
+                <button
+                  type="button"
+                  className="button-subtle ask-shortcut notes-list-add-btn"
+                  onClick={openNoteForm}
+                  aria-expanded={addFormMode === "note"}
+                >
+                  Add note
+                </button>
               )}
             </div>}
           </div>
@@ -840,7 +624,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
 
         {addFormMode === "note" && (
           <div className="notes-add-panel">
-            <form id="notes-new-note-form" onSubmit={handleCreateNote} className={`form--compact ${noteLoading ? "loading" : ""}`}>
+            <form id="notes-new-note-form" onSubmit={handleCreateNote} className={`form--compact ${formBusy ? "loading" : ""}`}>
               <label htmlFor="noteTitle">Title</label>
               <input
                 id="noteTitle"
@@ -848,7 +632,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                 placeholder="e.g. Meeting notes"
                 value={noteTitle}
                 onChange={(e) => setNoteTitle(e.target.value)}
-                disabled={noteLoading}
+                disabled={formBusy}
                 aria-invalid={showNoteTitleHint || undefined}
                 aria-describedby={showNoteTitleHint ? "noteTitle-hint" : undefined}
               />
@@ -884,7 +668,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                       setCategoryDropdown((p) => ({ ...p, index: Math.max(0, p.index - 1) }));
                     }
                   }}
-                  disabled={noteLoading}
+                  disabled={formBusy}
                   autoComplete="off"
                   aria-invalid={showNoteCategoryHint || undefined}
                   aria-describedby={showNoteCategoryHint ? "noteCategory-hint" : undefined}
@@ -908,30 +692,51 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
               <NotesFieldHint show={showNoteCategoryHint} id="noteCategory-hint">
                 Category is required.
               </NotesFieldHint>
-              <label htmlFor="noteContent">
-                Content
-                {" — "}
-                {noteContentCharCount.toLocaleString()} / {NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters
-              </label>
+              <div className="notes-field-label-row">
+                <label htmlFor="noteContent" id="noteContent-label">
+                  Content
+                  {" — "}
+                  {noteContentCharCount.toLocaleString()} / {NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters
+                </label>
+                <button
+                  type="button"
+                  className="button-subtle ask-shortcut notes-import-pdf-trigger"
+                  aria-haspopup="dialog"
+                  aria-expanded={showPdfImportDialog}
+                  disabled={formBusy}
+                  onClick={openPdfImportDialog}
+                >
+                  <svg className="notes-import-pdf-trigger__icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <path fill="currentColor" d="M6 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7.414a2 2 0 0 0-.586-1.414l-3.414-3.414A2 2 0 0 0 11.586 2H6zm4 1.414L14.586 8H11a1 1 0 0 1-1-1V3.414zM6 3h4v4a2 2 0 0 0 2 2h4v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3z" />
+                  </svg>
+                  Import PDF
+                </button>
+              </div>
+              {contentImportMessage ? (
+                <p id="noteContent-import-msg" className="notes-content-import-msg success-msg" role="status">
+                  {contentImportMessage}
+                </p>
+              ) : null}
               <textarea
                 id="noteContent"
                 placeholder="Note content…"
                 value={noteContent}
-                onChange={(e) => setNoteContent(e.target.value)}
-                disabled={noteLoading}
-                rows={4}
-                aria-invalid={showNoteContentHint || showNoteContentLimitErr || undefined}
+                onChange={(e) => {
+                  setNoteContent(e.target.value);
+                  if (contentImportMessage) setContentImportMessage(null);
+                }}
+                disabled={formBusy}
+                rows={8}
+                aria-labelledby="noteContent-label"
+                aria-invalid={showNoteContentLimitErr || undefined}
                 aria-describedby={
-                  showNoteContentHint
-                    ? "noteContent-hint"
-                    : showNoteContentLimitErr
-                      ? "noteContent-limit"
+                  showNoteContentLimitErr
+                    ? "noteContent-limit"
+                    : contentImportMessage
+                      ? "noteContent-import-msg"
                       : undefined
                 }
               />
-              <NotesFieldHint show={showNoteContentHint} id="noteContent-hint">
-                Content is required.
-              </NotesFieldHint>
               {showNoteContentLimitErr && (
                 <p id="noteContent-limit" className="out out--compact err" role="alert">
                   Note content exceeds the {NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit. Shorten the text before saving.
@@ -975,7 +780,7 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
                       setTagsDropdown((p) => ({ ...p, index: Math.max(0, p.index - 1) }));
                     }
                   }}
-                  disabled={noteLoading}
+                  disabled={formBusy}
                   autoComplete="off"
                 />
                 {tagsDropdown.open && tagsDropdown.inputId === "noteTags" && filteredTagSuggestions.length > 0 && (
@@ -998,223 +803,6 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
             {noteResult && (
               <div className={`out out--compact ${noteResult.error ? "err" : "success-msg"}`}>
                 {noteResult.error || "Note added."}
-              </div>
-            )}
-          </div>
-        )}
-
-        {addFormMode === "from-images" && (
-          <div className="notes-add-panel">
-            <form id="notes-from-images-form" onSubmit={handleFromImages} className={`form--compact ${imgLoading ? "loading" : ""}`}>
-              <label htmlFor="imgTitle">Title</label>
-              <input
-                id="imgTitle"
-                type="text"
-                placeholder="e.g. Math"
-                value={imgTitle}
-                onChange={(e) => setImgTitle(e.target.value)}
-                disabled={imgLoading}
-              />
-              <label htmlFor="imgCategory">Category</label>
-              <div className="notes-category-wrap">
-                <input
-                  id="imgCategory"
-                  type="text"
-                  placeholder="e.g. math"
-                  value={imgCategory}
-                  onChange={(e) => {
-                    setImgCategory(e.target.value);
-                    setCategoryDropdown((p) => ({ ...p, open: true, index: 0, inputId: "imgCategory" }));
-                  }}
-                  onFocus={() => openCategoryDropdown("imgCategory")}
-                  onBlur={() => setTimeout(() => setCategoryDropdown((p) => ({ ...p, open: false })), 150)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") setCategoryDropdown((p) => ({ ...p, open: false }));
-                    if (e.key === "Enter" && categoryDropdown.open && categoryDropdown.inputId === "imgCategory" && filteredCategorySuggestionsImg[categoryDropdown.index]) {
-                      e.preventDefault();
-                      applyCategorySuggestion(filteredCategorySuggestionsImg[categoryDropdown.index]);
-                    }
-                    if (!categoryDropdown.open || categoryDropdown.inputId !== "imgCategory") return;
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      setCategoryDropdown((p) => ({ ...p, index: Math.min(p.index + 1, filteredCategorySuggestionsImg.length - 1) }));
-                    }
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      setCategoryDropdown((p) => ({ ...p, index: Math.max(0, p.index - 1) }));
-                    }
-                  }}
-                  disabled={imgLoading}
-                  autoComplete="off"
-                />
-                {categoryDropdown.open && categoryDropdown.inputId === "imgCategory" && filteredCategorySuggestionsImg.length > 0 && (
-                  <ul className="notes-category-suggestions" role="listbox">
-                    {filteredCategorySuggestionsImg.map((c, i) => (
-                      <li
-                        key={c}
-                        role="option"
-                        aria-selected={i === categoryDropdown.index}
-                        className={i === categoryDropdown.index ? "notes-category-suggestions__item is-selected" : "notes-category-suggestions__item"}
-                        onMouseDown={(e) => { e.preventDefault(); applyCategorySuggestion(c); }}
-                      >
-                        {c}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <label htmlFor="imgFiles">Images</label>
-              <input
-                id="imgFiles"
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => setImgFiles(Array.from(e.target.files || []))}
-                disabled={imgLoading}
-                aria-invalid={showImgFilesHint || undefined}
-                aria-describedby={showImgFilesHint ? "imgFiles-hint" : undefined}
-              />
-              <NotesFieldHint show={showImgFilesHint} id="imgFiles-hint">
-                Select at least one image to add from images.
-              </NotesFieldHint>
-            </form>
-            {imgResult && (
-              <div className={`out out--compact ${imgResult.error ? "err" : "success-msg"}`}>
-                {imgResult.error ||
-                  (imgResult.success &&
-                    (imgResult.appended
-                      ? `Added to: ${imgResult.note?.title}`
-                      : `Created: ${imgResult.note?.title}`))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {addFormMode === "from-pdf" && (
-          <div className="notes-add-panel">
-            <form id="notes-from-pdf-extract-form" onSubmit={handleExtractPdf} className={`form--compact ${pdfExtractLoading ? "loading" : ""}`}>
-              <label htmlFor="pdfTitle">Title</label>
-              <input
-                id="pdfTitle"
-                type="text"
-                placeholder="e.g. Biology — Unit 3"
-                value={pdfTitle}
-                onChange={(e) => setPdfTitle(e.target.value)}
-                disabled={pdfExtractLoading || pdfSaveLoading}
-                aria-invalid={showPdfTitleHint || undefined}
-                aria-describedby={showPdfTitleHint ? "pdfTitle-hint" : undefined}
-              />
-              <NotesFieldHint show={showPdfTitleHint} id="pdfTitle-hint">
-                Title is required before saving.
-              </NotesFieldHint>
-              <label htmlFor="pdfCategory">Category</label>
-              <div className="notes-category-wrap">
-                <input
-                  id="pdfCategory"
-                  type="text"
-                  placeholder="e.g. science"
-                  value={pdfCategory}
-                  onChange={(e) => {
-                    setPdfCategory(e.target.value);
-                    setCategoryDropdown((p) => ({ ...p, open: true, index: 0, inputId: "pdfCategory" }));
-                  }}
-                  onFocus={() => openCategoryDropdown("pdfCategory")}
-                  onBlur={() => setTimeout(() => setCategoryDropdown((p) => ({ ...p, open: false })), 150)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") setCategoryDropdown((p) => ({ ...p, open: false }));
-                    if (e.key === "Enter" && categoryDropdown.open && categoryDropdown.inputId === "pdfCategory" && filteredCategorySuggestionsPdf[categoryDropdown.index]) {
-                      e.preventDefault();
-                      applyCategorySuggestion(filteredCategorySuggestionsPdf[categoryDropdown.index]);
-                    }
-                    if (!categoryDropdown.open || categoryDropdown.inputId !== "pdfCategory") return;
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      setCategoryDropdown((p) => ({ ...p, index: Math.min(p.index + 1, filteredCategorySuggestionsPdf.length - 1) }));
-                    }
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      setCategoryDropdown((p) => ({ ...p, index: Math.max(0, p.index - 1) }));
-                    }
-                  }}
-                  disabled={pdfExtractLoading || pdfSaveLoading}
-                  autoComplete="off"
-                  aria-invalid={showPdfCategoryHint || undefined}
-                  aria-describedby={showPdfCategoryHint ? "pdfCategory-hint" : undefined}
-                />
-                {categoryDropdown.open && categoryDropdown.inputId === "pdfCategory" && filteredCategorySuggestionsPdf.length > 0 && (
-                  <ul className="notes-category-suggestions" role="listbox">
-                    {filteredCategorySuggestionsPdf.map((c, i) => (
-                      <li
-                        key={c}
-                        role="option"
-                        aria-selected={i === categoryDropdown.index}
-                        className={i === categoryDropdown.index ? "notes-category-suggestions__item is-selected" : "notes-category-suggestions__item"}
-                        onMouseDown={(e) => { e.preventDefault(); applyCategorySuggestion(c); }}
-                      >
-                        {c}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <NotesFieldHint show={showPdfCategoryHint} id="pdfCategory-hint">
-                Category is required before saving.
-              </NotesFieldHint>
-              <label htmlFor="pdfFile">PDF</label>
-              <input
-                id="pdfFile"
-                type="file"
-                accept="application/pdf,.pdf"
-                onChange={(e) => {
-                  const file = (e.target.files || [])[0] || null;
-                  setPdfFile(file);
-                  setPdfExtracted(false);
-                  setPdfReviewText("");
-                }}
-                disabled={pdfExtractLoading || pdfSaveLoading}
-                aria-invalid={showPdfFileHint || undefined}
-                aria-describedby={showPdfFileHint ? "pdfFile-hint" : undefined}
-              />
-              <NotesFieldHint show={showPdfFileHint} id="pdfFile-hint">
-                Select a PDF file to extract text.
-              </NotesFieldHint>
-            </form>
-            {pdfExtracted && (
-              <form id="notes-from-pdf-save-form" onSubmit={handleSavePdfNote} className={`form--compact ${pdfSaveLoading ? "loading" : ""}`}>
-                <label htmlFor="pdfReviewText">
-                  Extracted text (review and edit)
-                  {" — "}
-                  {pdfReviewCharCount.toLocaleString()} / {NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters
-                </label>
-                <textarea
-                  id="pdfReviewText"
-                  placeholder="Extracted text will appear here…"
-                  value={pdfReviewText}
-                  onChange={(e) => setPdfReviewText(e.target.value)}
-                  disabled={pdfSaveLoading}
-                  rows={12}
-                  aria-invalid={pdfReviewOverLimit || showPdfReviewHint || undefined}
-                  aria-describedby={
-                    pdfReviewOverLimit
-                      ? "pdfReviewText-limit"
-                      : showPdfReviewHint
-                        ? "pdfReviewText-hint"
-                        : undefined
-                  }
-                />
-                <NotesFieldHint show={showPdfReviewHint} id="pdfReviewText-hint">
-                  Extracted text is required. Edit the text above or extract again from your PDF.
-                </NotesFieldHint>
-                {pdfReviewOverLimit && (
-                  <p id="pdfReviewText-limit" className="out out--compact err" role="alert">
-                    Note content exceeds the {NOTE_MAX_CONTENT_CHARS.toLocaleString()} character limit. Shorten the text before saving.
-                  </p>
-                )}
-              </form>
-            )}
-            {pdfResult && (
-              <div className={`out out--compact ${pdfResult.error ? "err" : "success-msg"}`}>
-                {pdfResult.error || pdfResult.detail || "Done."}
               </div>
             )}
           </div>
@@ -1357,18 +945,24 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
 
         {showList && (
           <>
+            {focusNoteMissMessage ? (
+              <div className="out out--compact err" role="alert">
+                {focusNoteMissMessage}
+              </div>
+            ) : null}
             {loading && data === null && (
               <p className="notes-list-empty">Loading…</p>
             )}
             {!loading && notesForDisplay.length === 0 && data !== null && (
-              <p className="notes-list-empty">{isSelectionMode ? "No notes yet." : "No notes yet. Click “Add note” or ▼ to add one."}</p>
+              <p className="notes-list-empty">{isSelectionMode ? "No notes yet." : "No notes yet. Click “Add note” to create one."}</p>
             )}
             {notesForDisplay.length > 0 && (
               <ul className="notes-list">
                 {filteredNotes.slice(0, 100).map((n) => (
                   <li
                     key={n.id}
-                    className={`note-card ${selectedNoteIds.has(n.id) ? "note-card--selected" : ""}`}
+                    id={`note-card-${n.id}`}
+                    className={`note-card ${selectedNoteIds.has(n.id) ? "note-card--selected" : ""}${viewingNoteId === n.id ? " note-card--active" : ""}`}
                     role="button"
                     tabIndex={0}
                     onClick={() => {
@@ -1429,6 +1023,85 @@ export default function Notes({ isSelectionMode = false, selectedIds = [], onSel
         )}
 
       {error && <div className="out out--compact err">{error}</div>}
+
+      {showPdfImportDialog && (
+        <AskOverlay
+          title="Import PDF"
+          onClose={closePdfImportDialog}
+          showManage={false}
+          canClose={!importLoading}
+          closeText="Cancel"
+        >
+          <div className="notes-pdf-import-dialog">
+            <p className="flashcards-help">
+              Choose a PDF to extract text into Content. The original file is not stored with the note.
+            </p>
+            <input
+              ref={pdfFileInputRef}
+              id="notePdfFilePick"
+              type="file"
+              accept="application/pdf,.pdf"
+              className="notes-pdf-import-dialog__file-input"
+              disabled={importLoading}
+              aria-label="PDF file"
+              onChange={(e) => {
+                const file = (e.target.files || [])[0] || null;
+                setPendingPdfFile(file);
+                setPdfImportDialogError(null);
+              }}
+            />
+            {!pendingPdfFile ? (
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={importLoading}
+                onClick={() => pdfFileInputRef.current?.click()}
+              >
+                Choose PDF file
+              </button>
+            ) : (
+              <div className="notes-import-file" role="group" aria-label="Selected PDF">
+                <span className="notes-import-file__name">{pendingPdfFile.name}</span>
+                <button
+                  type="button"
+                  className="button-subtle notes-import-file__remove"
+                  disabled={importLoading}
+                  onClick={() => {
+                    setPendingPdfFile(null);
+                    setPdfImportDialogError(null);
+                    if (pdfFileInputRef.current) pdfFileInputRef.current.value = "";
+                  }}
+                >
+                  Remove
+                </button>
+                <button
+                  type="button"
+                  className="button-subtle"
+                  disabled={importLoading}
+                  onClick={() => pdfFileInputRef.current?.click()}
+                >
+                  Change
+                </button>
+              </div>
+            )}
+            {pdfImportDialogError ? (
+              <div className="out out--compact err" role="alert">
+                {pdfImportDialogError}
+              </div>
+            ) : null}
+            <div className="notes-pdf-import-dialog__actions">
+              <button
+                type="button"
+                className="button-primary"
+                disabled={importLoading || !pendingPdfFile}
+                onClick={handleExtractPdfIntoContent}
+              >
+                {importLoading ? "Extracting…" : "Extract PDF text"}
+              </button>
+            </div>
+          </div>
+        </AskOverlay>
+      )}
     </section>
   );
 }

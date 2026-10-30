@@ -3,7 +3,7 @@
 import json
 
 from app.ai.client import call_ai
-from app.notes.manager import HISTORY_CATEGORY, get_note
+from app.notes.manager import HISTORY_CATEGORY, get_note, is_flashcard_deck_category
 
 MAX_FLASHCARDS = 30
 MAX_SELECTED_NOTES = 20
@@ -82,7 +82,11 @@ def generate_flashcards(user_id: str, data: object) -> list[dict]:
     total_characters = 0
     for note_id in options["note_ids"]:
         note = get_note(note_id, user_id)
-        if not note or note.get("category") == HISTORY_CATEGORY:
+        if (
+            not note
+            or note.get("category") == HISTORY_CATEGORY
+            or is_flashcard_deck_category(note.get("category"))
+        ):
             raise ValueError("A selected source note is unavailable")
         title = note.get("title") if isinstance(note.get("title"), str) else "Untitled"
         content = note.get("content") if isinstance(note.get("content"), str) else ""

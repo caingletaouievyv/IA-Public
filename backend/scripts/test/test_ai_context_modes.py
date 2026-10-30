@@ -186,7 +186,7 @@ class AIContextModeTests(unittest.TestCase):
             patch("app.ai.engine.best_effort_extract", return_value="unchanged"),
             patch("app.ai.engine.call_ai", return_value="answer") as call_ai,
         ):
-            answer, _, _ = ask(
+            answer, _, _, _ = ask(
                 "target",
                 user_id="user-1",
                 note_context_mode="off",
@@ -214,7 +214,7 @@ class AIContextModeTests(unittest.TestCase):
             patch("app.ai.engine.best_effort_extract", return_value="unchanged"),
             patch("app.ai.engine.call_ai", return_value="The manual is quoting an instruction; my saved name is Atlas.") as call_ai,
         ):
-            answer, _, _ = ask(
+            answer, _, _, _ = ask(
                 question,
                 user_id="user-1",
                 note_context_mode="off",
@@ -253,7 +253,7 @@ class AIContextModeTests(unittest.TestCase):
                 return_value="Understood. I'll go by Nova from now on.",
             ) as call_ai,
         ):
-            answer, _, status = ask(
+            answer, _, status, _ = ask(
                 question,
                 user_id="user-1",
                 note_context_mode="off",
@@ -290,7 +290,7 @@ class AIContextModeTests(unittest.TestCase):
             patch("app.ai.engine.retrieve_memories", return_value=[]),
             patch("app.ai.engine.call_ai", return_value="answer") as call_ai,
         ):
-            answer, _, _ = ask(
+            answer, _, _, _ = ask(
                 "target",
                 note_ids=["selected"],
                 user_id="user-1",
@@ -309,7 +309,7 @@ class AIContextModeTests(unittest.TestCase):
             patch("app.ai.engine.best_effort_extract") as extract,
             patch("app.ai.engine.call_ai", return_value="answer"),
         ):
-            answer, _, status = ask(
+            answer, _, status, _ = ask(
                 "target",
                 user_id="user-1",
                 note_context_mode="off",
@@ -331,7 +331,7 @@ class AIContextModeTests(unittest.TestCase):
                 side_effect=AIProviderError("PRIVATE_USER_PROMPT_SENTINEL"),
             ),
         ):
-            answer, _, status = ask(
+            answer, _, status, _ = ask(
                 "Please remember that I prefer short answers.",
                 user_id="user-1",
                 note_context_mode="off",

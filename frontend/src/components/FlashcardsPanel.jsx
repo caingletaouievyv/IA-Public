@@ -1,5 +1,5 @@
 // IA/frontend/src/components/FlashcardsPanel.jsx
-// Browse, generate, and edit flashcard decks stored as user-owned Notes.
+// Deck library, study mode, and edit/generate flows for flashcard decks stored as Notes.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,12 +9,17 @@ import {
   listNotes,
   updateNote,
 } from "../api";
+import {
+  FLASHCARD_DECK_CATEGORY,
+  HISTORY_CATEGORY,
+  isFlashcardDeckCategory,
+} from "../noteCategories.js";
 
 const MAX_CARDS = 30;
 const MAX_SELECTED_NOTES = 20;
 
 function isFlashcardDeck(note) {
-  return note?.category === "flashcards";
+  return isFlashcardDeckCategory(note?.category);
 }
 
 function parseDeckCards(note) {
@@ -59,6 +64,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [activeDeckId, setActiveDeckId] = useState(null);
   const [editingDeck, setEditingDeck] = useState(false);
+  const [answerRevealed, setAnswerRevealed] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,7 +79,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
       .then((result) => {
         if (!cancelled) {
           setNotes(Array.isArray(result)
-            ? result.filter((note) => note?.id && note.category !== "_history")
+            ? result.filter((note) => note?.id && (note.category || "") !== HISTORY_CATEGORY)
             : []);
         }
       })
@@ -88,7 +94,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
 
   const decks = useMemo(() => notes.filter(isFlashcardDeck), [notes]);
   const sourceNotes = useMemo(
-    () => notes.filter((note) => note.category !== "_history" && !isFlashcardDeck(note)),
+    () => notes.filter((note) => !isFlashcardDeck(note)),
     [notes],
   );
   const filteredSourceNotes = useMemo(() => {
@@ -110,6 +116,11 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
     if (!busyRef.current) onClose();
   };
 
+  const goToCardIndex = (nextIndex) => {
+    setCurrentCardIndex(nextIndex);
+    setAnswerRevealed(false);
+  };
+
   const startNewDeck = () => {
     setSelectedNoteIds(new Set());
     setSearchQuery("");
@@ -123,6 +134,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
     setCurrentCardIndex(0);
     setActiveDeckId(null);
     setEditingDeck(true);
+    setAnswerRevealed(false);
     setError(null);
     setSuccess(null);
     setStage("sources");
@@ -182,6 +194,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
       setCurrentCardIndex(0);
       setActiveDeckId(null);
       setEditingDeck(true);
+      setAnswerRevealed(false);
       setStage("review");
     } catch (generationError) {
       setError(generationError.message || "Could not generate flashcards.");
@@ -191,7 +204,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
     }
   };
 
-  const openDeck = (note, edit = false) => {
+  const openDeckForStudy = (note) => {
     const cards = parseDeckCards(note);
     if (!cards) {
       setError("This saved deck has invalid card data and cannot be opened.");
@@ -201,11 +214,40 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
     setCurrentCardIndex(0);
     setDeckTitle(note.title || "Flashcards");
     setActiveDeckId(note.id);
-    setEditingDeck(edit);
+    setEditingDeck(false);
+    setAnswerRevealed(false);
+    setDeleteConfirmationId(null);
+    setError(null);
+    setSuccess(null);
+    setStage("study");
+  };
+
+  const openDeckForEdit = (note) => {
+    const cards = parseDeckCards(note);
+    if (!cards) {
+      setError("This saved deck has invalid card data and cannot be opened.");
+      return;
+    }
+    setDraft(cards);
+    setCurrentCardIndex(0);
+    setDeckTitle(note.title || "Flashcards");
+    setActiveDeckId(note.id);
+    setEditingDeck(true);
+    setAnswerRevealed(false);
     setDeleteConfirmationId(null);
     setError(null);
     setSuccess(null);
     setStage("review");
+  };
+
+  const cancelEditingSavedDeck = () => {
+    const note = decks.find((deck) => deck.id === activeDeckId);
+    if (!note) {
+      setStage("decks");
+      setEditingDeck(false);
+      return;
+    }
+    openDeckForStudy(note);
   };
 
   const updateCard = (cardId, field, value) => {
@@ -228,12 +270,13 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
       setError("Add a deck title and complete every question and answer before saving.");
       return;
     }
+    const wasUpdate = Boolean(activeDeckId);
     setMutationBusy(true);
     setError(null);
     setSuccess(null);
     const noteData = {
       title: deckTitle.trim().slice(0, 100),
-      category: "flashcards",
+      category: FLASHCARD_DECK_CATEGORY,
       tags: ["flashcards"],
       content: JSON.stringify({
         version: 1,
@@ -253,7 +296,9 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
       ]);
       setActiveDeckId(savedNote.id);
       setEditingDeck(false);
-      setSuccess(activeDeckId ? "Deck changes saved." : "Approved deck saved to Notes.");
+      setAnswerRevealed(false);
+      setSuccess(wasUpdate ? "Deck changes saved." : "Approved deck saved to Notes.");
+      setStage("study");
     } catch (saveError) {
       setError(saveError.message || "Could not save the deck.");
     } finally {
@@ -286,13 +331,10 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
     <div className="flashcards-panel">
       {stage === "decks" && (
         <>
-          <div className="flashcards-stage-heading">
-            <div>
-              <h3>Saved decks</h3>
-              <p className="flashcards-help">Open a deck to review it, or create a new one from your notes.</p>
-            </div>
+          <div className="flashcards-library-header">
+            <h3 className="flashcards-library-header__title">Decks</h3>
             <button type="button" className="button-primary" onClick={startNewDeck} disabled={busy}>
-              New Flashcards
+              New Flashcard
             </button>
           </div>
           {notesLoading ? (
@@ -302,62 +344,154 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
           ) : decks.length === 0 ? (
             <p className="notes-list-empty">No saved flashcard decks yet. Create one from your notes.</p>
           ) : (
-            <ul className="flashcards-deck-list">
-              {decks.map((deck) => (
-                <li className="flashcards-deck-row" key={deck.id}>
-                  <div className="flashcards-deck-info">
-                    <strong>{deck.title || "Untitled deck"}</strong>
-                    <span>{parseDeckCards(deck)?.length ?? "Unavailable"} cards</span>
-                  </div>
-                  <div className="flashcards-deck-actions">
-                    <button
-                      type="button"
-                      className="button-subtle"
-                      onClick={() => openDeck(deck)}
-                      disabled={busy}
-                      aria-label={`Open deck: ${deck.title || "Untitled deck"}`}
-                    >
-                      Open
-                    </button>
-                    <button
-                      type="button"
-                      className="button-subtle"
-                      onClick={() => openDeck(deck, true)}
-                      disabled={busy}
-                      aria-label={`Edit deck: ${deck.title || "Untitled deck"}`}
-                    >
-                      Edit
-                    </button>
-                    {deleteConfirmationId === deck.id ? (
-                      <>
-                        <span className="flashcards-delete-prompt">Delete this deck?</span>
-                        <button type="button" className="button-danger" onClick={() => deleteDeck(deck)} disabled={busy}>
-                          {busy ? "Deleting…" : "Confirm delete"}
-                        </button>
-                        <button type="button" className="button-subtle" onClick={() => setDeleteConfirmationId(null)} disabled={busy}>
-                          Keep
-                        </button>
-                      </>
-                    ) : (
+            <ul className="flashcards-deck-grid">
+              {decks.map((deck) => {
+                const cardCountLabel = parseDeckCards(deck)?.length ?? null;
+                return (
+                  <li className="flashcards-deck-card" key={deck.id}>
+                    <div className="flashcards-deck-card__body">
+                      <p className="flashcards-deck-card__title">{deck.title || "Untitled deck"}</p>
+                      <p className="flashcards-deck-card__meta">
+                        {cardCountLabel == null ? "Unavailable" : `${cardCountLabel} ${cardCountLabel === 1 ? "card" : "cards"}`}
+                      </p>
+                    </div>
+                    <div className="flashcards-deck-card__actions">
                       <button
                         type="button"
-                        className="button-danger"
-                        onClick={() => setDeleteConfirmationId(deck.id)}
+                        className="button-subtle"
+                        onClick={() => openDeckForStudy(deck)}
                         disabled={busy}
-                        aria-label={`Delete deck: ${deck.title || "Untitled deck"}`}
+                        aria-label={`Open deck: ${deck.title || "Untitled deck"}`}
                       >
-                        Delete
+                        Open
                       </button>
-                    )}
-                  </div>
-                </li>
-              ))}
+                      <button
+                        type="button"
+                        className="button-subtle"
+                        onClick={() => openDeckForEdit(deck)}
+                        disabled={busy}
+                        aria-label={`Edit deck: ${deck.title || "Untitled deck"}`}
+                      >
+                        Edit
+                      </button>
+                      {deleteConfirmationId === deck.id ? (
+                        <div className="flashcards-deck-card__delete-confirm" role="group" aria-label="Confirm delete">
+                          <span className="flashcards-delete-prompt">Delete this deck?</span>
+                          <button type="button" className="button-danger" onClick={() => deleteDeck(deck)} disabled={busy}>
+                            {busy ? "Deleting…" : "Confirm delete"}
+                          </button>
+                          <button type="button" className="button-subtle" onClick={() => setDeleteConfirmationId(null)} disabled={busy}>
+                            Keep
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="button-danger"
+                          onClick={() => setDeleteConfirmationId(deck.id)}
+                          disabled={busy}
+                          aria-label={`Delete deck: ${deck.title || "Untitled deck"}`}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
-          {success && <p className="out" role="status">{success}</p>}
+          {success && <p className="out success-msg" role="status">{success}</p>}
           {error && <p className="out err" role="alert">{error}</p>}
-          <div className="flashcards-actions flashcards-actions--footer">
-            <button type="button" className="button-subtle" onClick={close} disabled={busy}>Close</button>
+        </>
+      )}
+
+      {stage === "study" && (
+        <>
+          <div className="flashcards-study__deck-title-block">
+            <span className="flashcards-study__deck-label">Deck Title:</span>
+            <span className="flashcards-study__deck-name">{deckTitle || "Untitled deck"}</span>
+          </div>
+          {currentCard ? (
+            <section className="flashcards-study" aria-label="Flashcard study">
+              <h4 className="flashcards-study__heading">Question</h4>
+              <div className="flashcards-study__question-card">
+                <p className="flashcards-study__question-text">{currentCard.question}</p>
+              </div>
+              <div className="flashcards-study__nav">
+                <button
+                  type="button"
+                  className="button-subtle flashcards-study__nav-btn"
+                  aria-label="Previous card"
+                  onClick={() => goToCardIndex(Math.max(0, currentCardIndex - 1))}
+                  disabled={currentCardIndex === 0}
+                >
+                  ←
+                </button>
+                <span className="flashcards-study__nav-count" aria-live="polite">
+                  Card {currentCardIndex + 1} of {draft.length}
+                </span>
+                <button
+                  type="button"
+                  className="button-subtle flashcards-study__nav-btn"
+                  aria-label="Next card"
+                  onClick={() => goToCardIndex(Math.min(draft.length - 1, currentCardIndex + 1))}
+                  disabled={currentCardIndex >= draft.length - 1}
+                >
+                  →
+                </button>
+              </div>
+              <h4 className="flashcards-study__heading">Answer</h4>
+              <button
+                type="button"
+                className={`flashcards-study__answer-reveal${answerRevealed ? " is-revealed" : ""}`}
+                aria-expanded={answerRevealed}
+                aria-controls="flashcards-study-answer-region"
+                aria-label={answerRevealed ? "Hide answer" : "Reveal answer"}
+                onClick={() => setAnswerRevealed((revealed) => !revealed)}
+              >
+                {answerRevealed ? (
+                  <span id="flashcards-study-answer-region" className="flashcards-study__answer-text">
+                    {currentCard.answer}
+                  </span>
+                ) : (
+                  <span id="flashcards-study-answer-region" className="flashcards-study__answer-placeholder">
+                    Click to reveal answer
+                  </span>
+                )}
+              </button>
+            </section>
+          ) : (
+            <p className="notes-list-empty">This deck has no cards.</p>
+          )}
+          {error && <p className="out err" role="alert">{error}</p>}
+          {success && <p className="out success-msg" role="status">{success}</p>}
+          <div className="flashcards-actions flashcards-actions--footer flashcards-actions--footer-split">
+            <button
+              type="button"
+              className="button-subtle"
+              onClick={() => {
+                setStage("decks");
+                setError(null);
+                setSuccess(null);
+              }}
+              disabled={busy}
+            >
+              Back to decks
+            </button>
+            <div className="flashcards-actions__right">
+              <button
+                type="button"
+                className="button-subtle"
+                onClick={() => {
+                  const note = notes.find((item) => item.id === activeDeckId);
+                  if (note) openDeckForEdit(note);
+                }}
+                disabled={busy || !activeDeckId}
+              >
+                Edit deck
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -506,7 +640,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
         <>
           <div className="flashcards-stage-heading">
             <div>
-              <h3>{isSavedDeck ? (editingDeck ? "Edit saved deck" : "Saved deck") : "Step 3 — Review generated cards"}</h3>
+              <h3>{isSavedDeck ? "Edit saved deck" : "Step 3 — Review generated cards"}</h3>
               {!isSavedDeck && <p className="flashcards-help">This draft is not saved until you approve it.</p>}
             </div>
           </div>
@@ -574,16 +708,20 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
             <p className="notes-list-empty">No cards remain. Go back to the generation options to create a new draft.</p>
           )}
           {error && <p className="out err" role="alert">{error}</p>}
-          {success && <p className="out" role="status">{success}</p>}
-          <div className="flashcards-actions flashcards-actions--footer">
+          {success && <p className="out success-msg" role="status">{success}</p>}
+          <div
+            className={`flashcards-actions flashcards-actions--footer${
+              isSavedDeck ? " flashcards-actions--footer-cluster" : ""
+            }`}
+          >
             {isSavedDeck ? (
               <button
                 type="button"
                 className="button-subtle"
-                onClick={() => setStage("decks")}
+                onClick={cancelEditingSavedDeck}
                 disabled={busy}
               >
-                Back to decks
+                Back to study
               </button>
             ) : (
               <button type="button" className="button-subtle" onClick={() => setStage("options")} disabled={busy}>
@@ -591,13 +729,8 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
               </button>
             )}
             <div className="flashcards-actions__right">
-              {!canEdit && (
-                <button type="button" className="button-subtle" onClick={() => setEditingDeck(true)}>
-                  Edit deck
-                </button>
-              )}
               {canEdit && isSavedDeck && editingDeck && (
-                <button type="button" className="button-subtle" onClick={() => openDeck(decks.find((deck) => deck.id === activeDeckId) || {})} disabled={busy}>
+                <button type="button" className="button-subtle" onClick={cancelEditingSavedDeck} disabled={busy}>
                   Cancel editing
                 </button>
               )}

@@ -178,7 +178,7 @@ class DiagnosticsTests(unittest.TestCase):
     def test_successful_ask_returns_operation_id(self):
         user_id = str(uuid.uuid4())
         operation_id = "ask-success-op"
-        with patch.object(ai_routes, "ask", return_value=("answer text", 12, "disabled")):
+        with patch.object(ai_routes, "ask", return_value=("answer text", 12, "disabled", None)):
             response = self.client.post(
                 "/ai/ask",
                 json={"question": "hello", "request_id": operation_id},
@@ -191,7 +191,7 @@ class DiagnosticsTests(unittest.TestCase):
 
     def test_successful_ask_does_not_persist_diagnostic(self):
         user_id = str(uuid.uuid4())
-        with patch.object(ai_routes, "ask", return_value=("answer text", 12, "disabled")):
+        with patch.object(ai_routes, "ask", return_value=("answer text", 12, "disabled", None)):
             response = self.client.post(
                 "/ai/ask",
                 json={"question": "hello", "request_id": "ask-no-diagnostic"},

@@ -86,6 +86,12 @@ export default function App() {
   const [askHistoryFocused, setAskHistoryFocused] = useState(false);
   const [manageInitialSection, setManageInitialSection] = useState("notes");
   const [managePageKey, setManagePageKey] = useState(0);
+  const [manageFocusNoteId, setManageFocusNoteId] = useState(() => {
+    if (currentPath() !== "/manage") return null;
+    const params = new URLSearchParams(window.location.search);
+    const noteId = (params.get("note") || "").trim();
+    return noteId || null;
+  });
   const [suggestionAction, setSuggestionAction] = useState(null);
   const [session, setSession] = useState(null);
   const [sessionLoading, setSessionLoading] = useState(() => Boolean(getToken()));
@@ -127,6 +133,24 @@ export default function App() {
     setManageInitialSection("memory");
     navigate("/manage");
   };
+  const openCreatedNote = useCallback((noteId) => {
+    const id = (noteId || "").trim();
+    if (!id) return;
+    setManageFocusNoteId(id);
+    setManageInitialSection("notes");
+    const nextPath = `/manage?note=${encodeURIComponent(id)}`;
+    if (window.location.pathname + window.location.search !== nextPath) {
+      window.history.pushState(null, "", nextPath);
+    }
+    setAskHistoryFocused(false);
+    setPath("/manage");
+  }, []);
+  const clearManageNoteFocus = useCallback(() => {
+    setManageFocusNoteId(null);
+    if (window.location.pathname === "/manage" && window.location.search) {
+      window.history.replaceState(null, "", "/manage");
+    }
+  }, []);
   const openUserMessageOverlay = useCallback((content, onSave) => {
     setAskOverlay({
       type: "userMessage",
@@ -189,10 +213,22 @@ export default function App() {
     const onPopState = () => {
       setAskHistoryFocused(false);
       setPath(currentPath());
+      if (currentPath() === "/manage") {
+        const params = new URLSearchParams(window.location.search);
+        const noteId = (params.get("note") || "").trim();
+        setManageFocusNoteId(noteId || null);
+      }
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  useEffect(() => {
+    if (path !== "/manage") return;
+    const params = new URLSearchParams(window.location.search);
+    const noteId = (params.get("note") || "").trim();
+    if (noteId) setManageFocusNoteId(noteId);
+  }, [path]);
 
   useEffect(() => {
     const onUnauth = () => setAuthToken(null);
@@ -297,9 +333,15 @@ export default function App() {
             onHistoryFocusChange={setAskHistoryFocused}
             suggestionAction={suggestionAction}
             onSuggestionActionConsumed={consumeSuggestionAction}
+            onOpenCreatedNote={openCreatedNote}
           />
         ) : activePath === "/manage" ? (
-          <Manage key={managePageKey} initialSection={manageInitialSection} />
+          <Manage
+            key={managePageKey}
+            initialSection={manageInitialSection}
+            focusNoteId={manageFocusNoteId}
+            onFocusNoteHandled={clearManageNoteFocus}
+          />
         ) : activePath === "/debug" ? (
           <DebugContext />
         ) : adminPathPendingRole ? (

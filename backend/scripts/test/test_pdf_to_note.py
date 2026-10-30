@@ -221,5 +221,58 @@ class PdfExtractRouteTests(unittest.TestCase):
         self.assertIsNotNone(stored)
 
 
+class ImageExtractRouteTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.notes_data_patch = patch.object(notes_manager, "DATA_DIR", cls.temp_dir.name)
+        cls.notes_data_patch.start()
+        cls.app = create_app()
+        cls.app.config.update(TESTING=True, RATELIMIT_ENABLED=False)
+        cls.client = cls.app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.notes_data_patch.stop()
+        cls.temp_dir.cleanup()
+
+    def user_id(self):
+        return str(uuid.uuid4())
+
+    def headers(self, user_id):
+        token = jwt.encode(
+            {
+                "sub": user_id,
+                "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1),
+            },
+            config.JWT_SECRET,
+            algorithm=config.JWT_ALGORITHM,
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    @patch("app.notes.routes.extract_text_from_images", return_value="OCR sample text")
+    def test_extract_images_returns_text_without_creating_note(self, _mock_ocr):
+        user_id = self.user_id()
+        response = self.client.post(
+            "/notes/from-images/extract",
+            data={"files": (io.BytesIO(b"fake-png"), "scan.png")},
+            headers=self.headers(user_id),
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["text"], "OCR sample text")
+        self.assertEqual(body["char_count"], len("OCR sample text"))
+        self.assertEqual(notes_manager.load_notes(user_id), [])
+
+    def test_extract_images_requires_auth(self):
+        response = self.client.post(
+            "/notes/from-images/extract",
+            data={"files": (io.BytesIO(b"x"), "a.png")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

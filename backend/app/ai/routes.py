@@ -184,7 +184,7 @@ def ask_ai():
     try:
         ask_started_at = time.perf_counter()
         logger.info("ai_ask ask_start")
-        answer, tokens, memory_status = ask(
+        answer, tokens, memory_status, notes_action = ask(
             question,
             note_ids=note_ids,
             note_context_mode=note_context_mode,
@@ -200,10 +200,10 @@ def ask_ai():
             memory_enabled=memory_enabled,
             memory_status=memory_status,
         ))
-        result = _attach_operation_id(
-            {"answer": answer, "tokens_estimated": tokens, "memory_status": memory_status},
-            operation_id,
-        )
+        payload = {"answer": answer, "tokens_estimated": tokens, "memory_status": memory_status}
+        if notes_action:
+            payload["notes_action"] = notes_action
+        result = _attach_operation_id(payload, operation_id)
         complete_operation(user_id, operation_id, result)
         return jsonify(result), 200
     except AIProviderError as error:

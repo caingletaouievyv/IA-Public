@@ -95,15 +95,16 @@ class ActivityRouteTests(unittest.TestCase):
     def test_flashcard_deck_events_are_distinct_and_history_is_excluded(self):
         user_id = self.user_id()
         headers = self.headers(user_id)
-        deck = self.client.post(
-            "/notes/",
-            json=self.note_payload(category="flashcards"),
-            headers=headers,
-        )
-        self.assertEqual(deck.status_code, 201)
-        deck_id = deck.get_json()["id"]
-        self.client.put(f"/notes/{deck_id}", json={"title": "Updated deck"}, headers=headers)
-        self.client.delete(f"/notes/{deck_id}", headers=headers)
+        for deck_category in ("flashcards", "_flashcards"):
+            deck = self.client.post(
+                "/notes/",
+                json=self.note_payload(category=deck_category),
+                headers=headers,
+            )
+            self.assertEqual(deck.status_code, 201)
+            deck_id = deck.get_json()["id"]
+            self.client.put(f"/notes/{deck_id}", json={"title": "Updated deck"}, headers=headers)
+            self.client.delete(f"/notes/{deck_id}", headers=headers)
 
         history = self.client.post(
             "/notes/",
@@ -118,6 +119,9 @@ class ActivityRouteTests(unittest.TestCase):
         self.assertEqual(
             [event["event_type"] for event in events],
             [
+                "flashcard_deck.deleted",
+                "flashcard_deck.updated",
+                "flashcard_deck.created",
                 "flashcard_deck.deleted",
                 "flashcard_deck.updated",
                 "flashcard_deck.created",

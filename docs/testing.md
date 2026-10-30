@@ -69,6 +69,7 @@ python -m scripts.test.test_ai_context_modes
 python -m scripts.test.test_ai_credits
 python -m scripts.test.test_memories
 python -m scripts.test.test_remember_command
+python -m scripts.test.test_ai_notes_actions
 python -m scripts.test.test_understanding_gaps
 python -m scripts.test.test_diagnostics
 python -m scripts.test.test_auth_roles
@@ -90,7 +91,7 @@ python -m scripts.test.test_pdf_to_note
 
 `test_seed_render_demo.py` uses isolated temporary JSON stores to verify production environment and enable-flag rejection, missing/weak password rejection, refusal and non-modification of a pre-claimed `demo` account, marked-account rerun idempotence, sample-note creation, and preservation of the seeded account's password, role, settings, credit balance, and customized notes.
 
-`python -m scripts.test.test_flashcards` verifies authenticated generation, selected-note ownership, request/card validation, provider grounding input, and credit refund on malformed provider output. Frontend component tests cover the Ask Shortcuts placement/toggle, saved deck listing/open/edit/delete confirmation, the complete new-deck flow, searchable source selection and the 20-note limit, back-navigation state retention, one-card review/edit/navigation/removal, generation without automatic persistence, explicit create/update, and close prevention while saving.
+`python -m scripts.test.test_flashcards` verifies authenticated generation, selected-note ownership, request/card validation, provider grounding input, and credit refund on malformed provider output. Frontend component tests cover the Ask Shortcuts placement/toggle, deck library listing, study mode (answer reveal and navigation reset), saved deck open/edit/delete confirmation, the complete new-deck flow, searchable source selection and the 20-note limit, back-navigation state retention, one-card review/edit/navigation/removal, generation without automatic persistence, explicit create/update, and close prevention while saving (`FlashcardsPanel.test.jsx` and `activeConversation.test.jsx`).
 
 `test_memories.py` also verifies extraction routing with mocked provider calls: supported standalone persistent assistant-name updates and recognized standalone temporary name commands skip extraction, while ambiguous and compound messages use the structured extraction request. Compound durable candidates are checked independently, and temporary, quoted, hypothetical, reported, and negated assistant-name candidates are rejected. These tests establish deterministic routing and validation behavior, not semantic accuracy from a live provider.
 
@@ -124,6 +125,7 @@ This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it
 | Memory isolation/CRUD | `python -m scripts.test.test_memories` | Cross-user list/edit/delete/clear cannot access another account's records |
 | Memory extraction/retrieval | `python -m scripts.test.test_memories` and `test_ai_context_modes` | Grounded bounded records, explicit remember/forget, deduplication/update, relevance, and independent prompt section; Off skips both |
 | Ask !remember command | `python -m scripts.test.test_remember_command` and frontend `activeConversation.test.jsx` | Case-insensitive parse, no AI/credits/history append, settings gates, validation, save/update/unchanged/cap outcomes |
+| Ask command autocomplete | `node --test src/askCommands.test.js` and `activeConversation.test.jsx` (`Ask command autocomplete`) | Registry filtering, prefix-only detection, keyboard/mouse acceptance, no submit-on-accept, disabled commands hidden, Shift+Enter newline |
 | Memory failure behavior | `python -m scripts.test.test_ai_context_modes` | Extraction failure leaves normal Ask answer intact and returns unavailable status |
 | Context request validation | Send invalid modes, malformed `note_ids`, or non-object JSON | 400 before operation claim or credit charge; no provider call |
 | Default retrieval | Default config / `MEMORY_RETRIEVAL=text` | Deterministic lexical retrieval; no SentenceTransformer model load |
@@ -131,8 +133,8 @@ This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it
 | Credits and idempotency | Use `test_ai_credits.py` | Charge, insufficient-balance 402, role bypass, refunds, completed retry result reuse, distinct operation IDs, and per-user operation isolation match behavior |
 | Rewarded ads | Use `test_ai_credits.py` | Auth is required; caller-supplied reward IDs cannot grant outside explicit development/test mode |
 | JWT startup validation | Use `test_ai_credits.py` | Missing, weak, and placeholder secrets fail app creation without logging the secret |
-| Images | Notes UI or multipart `/notes/from-images` | 201; Tesseract required |
-| PDF import | `python -m scripts.test.test_pdf_to_note` or Manage → Add from PDF | 200 extract; save via `POST /notes/`; encrypted/blank/oversized rejected |
+| Images | Multipart `/notes/from-images` or `/notes/from-images/extract` (API only; Manage Add note has no image UI) | 201 or 200 extract; Tesseract required |
+| PDF import | `python -m scripts.test.test_pdf_to_note` or Manage → Add note → **Import PDF** overlay | 200 extract; save via `POST /notes/`; encrypted/blank/oversized rejected |
 
 ## Frontend component tests
 
@@ -161,12 +163,12 @@ npm --prefix .\frontend run build
 - Select a conversation in Ask, save a new turn, navigate to Manage, then return to Ask; verify the same conversation title and latest saved turns load. Start a new conversation and repeat the navigation; verify the new empty conversation stays active instead of reopening the previous one.
 - Select Notes for context and set Notes mode to Selected or Automatic. Navigate to Manage and back; verify the mode and selected Note count remain, then submit a question and verify it uses the intended Notes. Log out or switch accounts and verify the previous account's selected IDs are not applied.
 - Direct-load and refresh `/ask`, `/manage`, `/debug`, `/settings`, `/admin/users`, and `/admin/diagnostics`; verify each returns the SPA and renders the correct page (or redirects to `/ask` when the role is not allowed).
-- On `/manage`, switch among Notes, Conversations, and Memory. Verify Notes and Conversations expose the existing CRUD interfaces, Notes excludes `_history`, and Memory loads persisted per-user records with working edit/delete/clear controls and setting status.
+- On `/manage`, switch among Notes, Conversations, and Memory. Verify Notes and Conversations expose the existing CRUD interfaces, Notes excludes `_history` and flashcard decks (`_flashcards` and legacy `flashcards`), and Memory loads persisted per-user records with working edit/delete/clear controls and setting status.
 - Verify logout and an unauthorized API response return to `/login`.
 - Open Ask and enter a draft. Open and close Notes/History; verify the draft and existing conversation remain intact.
 - Verify the Ask shortcuts open the in-place History and Notes selectors; selecting an item closes the selector without navigating away from `/ask`. Ask selectors remain selection-only; saved-content CRUD is in Manage.
 - Cancel Notes selection and verify the existing note context is unchanged. Select notes and confirm; verify the selected context updates.
-- Verify the Notes selector is selection-only: no Add note or Add from images shortcuts appear there. Confirm selected notes update Ask context, and verify Manage retains note creation and image import.
+- Verify the Notes selector is selection-only: no Add note shortcuts appear there. Confirm selected notes update Ask context, and verify Manage retains unified **Add note** (PDF extract optional; image OCR UI temporarily disabled).
 - Verify Manage → Conversations retains title editing and single/bulk delete. In the Ask selector, start a new conversation and select an existing conversation.
 - Verify a new or unset Ask context-source preference shows Conversation, Notes, and Memory only. In Settings → Ask Context Sources, verify all seven entries have their existing icons and descriptions, Conversation stays checked/disabled, and toggling another source immediately saves.
 - In Settings → Ask, turn **Show Ask labels** off and immediately navigate to Ask, including while the checkbox shows Saving; confirm labels never appear in the initial toolbar. Repeat with labels enabled and navigate away/back to confirm the saved preference is honored. Using Focus must not change this setting.

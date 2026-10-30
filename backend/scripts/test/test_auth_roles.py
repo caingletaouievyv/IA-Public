@@ -144,7 +144,7 @@ class AuthRoleTests(unittest.TestCase):
                     "ai_ask",
                     f"drain-{role}-{index}",
                 )
-            with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled")):
+            with patch.object(ai_routes, "ask", return_value=("answer", 3, "disabled", None)):
                 response = self.client.post(
                     "/ai/ask",
                     json={"question": "hello"},
