@@ -349,6 +349,47 @@ class FlashcardRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
 
+    def test_provider_request_failure_returns_failed_status_without_saving(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Study", "Source text.")
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+        from app.ai.client import AIProviderError
+
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", side_effect=AIProviderError("groq request failed")),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
+            response = self.client.post(
+                "/ai/flashcards/generate",
+                json=self.request_data(note["id"], card_count=2, request_id="provider-fail"),
+                headers=self.headers(user_id),
+            )
+
+        self.assertEqual(response.status_code, 502)
+        payload = response.get_json()
+        self.assertEqual(payload.get("status"), "failed")
+        self.assertEqual(payload.get("error"), "Flashcard provider request failed.")
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
+
+    def test_unexpected_worker_failure_returns_generic_failed_status(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Study", "Source text.")
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+
+        with (
+            patch("app.ai.flashcards.generate_flashcard_batch", side_effect=RuntimeError("boom")),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
+            response = self.client.post(
+                "/ai/flashcards/generate",
+                json=self.request_data(note["id"], card_count=2, request_id="unexpected-fail"),
+                headers=self.headers(user_id),
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json().get("error"), "Flashcard generation failed.")
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
+
     def test_polling_does_not_charge_again(self):
         user_id = self.user_id()
         note = self.add_note(user_id, "Study", "Source text.")

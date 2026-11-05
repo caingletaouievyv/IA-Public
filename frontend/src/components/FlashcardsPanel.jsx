@@ -713,69 +713,93 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
         <>
           <div className="flashcards-stage-heading">
             <div>
-              <h3>{isSavedDeck ? "Edit saved deck" : "Step 3 — Review generated cards"}</h3>
-              {!isSavedDeck && <p className="flashcards-help">This draft is not saved until you approve it.</p>}
+              <h3>{isSavedDeck ? "Edit saved deck" : "Review deck"}</h3>
+              {!isSavedDeck && (
+                <p className="flashcards-help">This draft is not saved until you approve it.</p>
+              )}
             </div>
           </div>
-          <label htmlFor="flashcards-deck-title">Deck title</label>
-          <input
-            id="flashcards-deck-title"
-            maxLength={100}
-            value={deckTitle}
-            onChange={(event) => { setDeckTitle(event.target.value); setSuccess(null); }}
-            disabled={!canEdit || busy}
-          />
+          <div className="flashcards-study__deck-title-block">
+            <label className="flashcards-study__deck-label" htmlFor="flashcards-deck-title">
+              Deck Title:
+            </label>
+            {canEdit ? (
+              <input
+                id="flashcards-deck-title"
+                className="flashcards-study__deck-title-input"
+                aria-label="Deck title"
+                maxLength={100}
+                value={deckTitle}
+                onChange={(event) => { setDeckTitle(event.target.value); setSuccess(null); }}
+                disabled={busy}
+              />
+            ) : (
+              <span className="flashcards-study__deck-name">{deckTitle || "Untitled deck"}</span>
+            )}
+          </div>
           {currentCard ? (
-            <section className="flashcards-review" aria-label="Flashcard review">
-              <div className="flashcards-review__navigation">
+            <section className="flashcards-study" aria-label={isSavedDeck ? "Edit flashcard deck" : "Review generated flashcards"}>
+              <h4 className="flashcards-study__heading">Question</h4>
+              <div className="flashcards-study__question-card">
+                <label className="visually-hidden" htmlFor={`flashcard-question-${currentCard.id}`}>
+                  Question / front
+                </label>
+                {canEdit ? (
+                  <textarea
+                    id={`flashcard-question-${currentCard.id}`}
+                    className="flashcards-study__question-edit"
+                    value={currentCard.question}
+                    onChange={(event) => updateCard(currentCard.id, "question", event.target.value)}
+                    disabled={busy}
+                    rows={3}
+                  />
+                ) : (
+                  <p className="flashcards-study__question-text">{currentCard.question}</p>
+                )}
+              </div>
+              <div className="flashcards-study__nav">
                 <button
                   type="button"
-                  className="button-subtle"
+                  className="button-subtle flashcards-study__nav-btn"
                   aria-label="Previous card"
-                  onClick={() => setCurrentCardIndex((index) => Math.max(0, index - 1))}
-                  disabled={currentCardIndex === 0}
+                  onClick={() => goToCardIndex(Math.max(0, currentCardIndex - 1))}
+                  disabled={currentCardIndex === 0 || busy}
                 >
                   ←
                 </button>
-                <span aria-live="polite">Card {currentCardIndex + 1} of {draft.length}</span>
+                <span className="flashcards-study__nav-count" aria-live="polite">
+                  Card {currentCardIndex + 1} of {draft.length}
+                </span>
                 <button
                   type="button"
-                  className="button-subtle"
+                  className="button-subtle flashcards-study__nav-btn"
                   aria-label="Next card"
-                  onClick={() => setCurrentCardIndex((index) => Math.min(draft.length - 1, index + 1))}
-                  disabled={currentCardIndex >= draft.length - 1}
+                  onClick={() => goToCardIndex(Math.min(draft.length - 1, currentCardIndex + 1))}
+                  disabled={currentCardIndex >= draft.length - 1 || busy}
                 >
                   →
                 </button>
               </div>
-              <article className="flashcards-review__card">
-                <h4>Card front — question</h4>
-                <label htmlFor={`flashcard-question-${currentCard.id}`}>Question / front</label>
-                <textarea
-                  id={`flashcard-question-${currentCard.id}`}
-                  value={currentCard.question}
-                  onChange={(event) => updateCard(currentCard.id, "question", event.target.value)}
-                  readOnly={!canEdit || busy}
-                />
-                <h4>Card back — answer</h4>
-                <label htmlFor={`flashcard-answer-${currentCard.id}`}>Answer / back</label>
-                <textarea
-                  id={`flashcard-answer-${currentCard.id}`}
-                  value={currentCard.answer}
-                  onChange={(event) => updateCard(currentCard.id, "answer", event.target.value)}
-                  readOnly={!canEdit || busy}
-                />
-                {canEdit && (
-                  <button
-                    type="button"
-                    className="button-danger"
-                    onClick={() => removeCard(currentCard.id)}
+              <h4 className="flashcards-study__heading">Answer</h4>
+              <div className={`flashcards-study__answer-reveal is-revealed flashcards-study__answer-edit${canEdit ? "" : ""}`}>
+                <label className="visually-hidden" htmlFor={`flashcard-answer-${currentCard.id}`}>
+                  Answer / back
+                </label>
+                {canEdit ? (
+                  <textarea
+                    id={`flashcard-answer-${currentCard.id}`}
+                    className="flashcards-study__answer-text"
+                    value={currentCard.answer}
+                    onChange={(event) => updateCard(currentCard.id, "answer", event.target.value)}
                     disabled={busy}
-                  >
-                    Remove this card
-                  </button>
+                    rows={3}
+                  />
+                ) : (
+                  <span className="flashcards-study__answer-text">{currentCard.answer}</span>
                 )}
-                {canEdit && (
+              </div>
+              {canEdit && (
+                <div className="flashcards-study__card-tools">
                   <button
                     type="button"
                     className="button-subtle"
@@ -784,8 +808,16 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
                   >
                     Add card
                   </button>
-                )}
-              </article>
+                  <button
+                    type="button"
+                    className="button-danger"
+                    onClick={() => removeCard(currentCard.id)}
+                    disabled={busy}
+                  >
+                    Remove this card
+                  </button>
+                </div>
+              )}
             </section>
           ) : (
             <p className="notes-list-empty">No cards remain. Go back to the generation options to create a new draft.</p>
@@ -793,7 +825,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
           {error && <p className="out err" role="alert">{error}</p>}
           {success && <p className="out success-msg" role="status">{success}</p>}
           <div
-            className={`flashcards-actions flashcards-actions--footer${
+            className={`flashcards-actions flashcards-actions--footer flashcards-actions--footer-split${
               isSavedDeck ? " flashcards-actions--footer-cluster" : ""
             }`}
           >

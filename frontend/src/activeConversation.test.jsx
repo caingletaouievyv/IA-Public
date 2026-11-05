@@ -1261,7 +1261,7 @@ describe("active conversation restoration", () => {
       generationGate.resolve();
     });
 
-    expect(await screen.findByRole("heading", { name: /Step 3 — Review generated cards/ })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: /Review deck/ })).toBeTruthy();
     expect(screen.getByText("Card 1 of 2")).toBeTruthy();
     expect(flashcardRequests).toHaveLength(1);
     expect(flashcardRequests[0].note_ids).toEqual(["note-a"]);

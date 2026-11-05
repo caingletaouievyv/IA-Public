@@ -8,15 +8,19 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FlashcardsPanel from "./components/FlashcardsPanel.jsx";
 
-vi.mock("./api.js", () => ({
-  listNotes: vi.fn(),
-  createNote: vi.fn(),
-  updateNote: vi.fn(),
-  deleteNote: vi.fn(),
-  generateFlashcards: vi.fn(),
-}));
+vi.mock("./api.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    listNotes: vi.fn(),
+    createNote: vi.fn(),
+    updateNote: vi.fn(),
+    deleteNote: vi.fn(),
+    generateFlashcards: vi.fn(),
+  };
+});
 
-import { listNotes } from "./api.js";
+import { listNotes, generateFlashcards } from "./api.js";
 
 const deckCardsJson = JSON.stringify({
   version: 1,
@@ -122,5 +126,39 @@ describe("FlashcardsPanel deck library and study mode", () => {
     await user.click(screen.getByRole("button", { name: "Edit deck" }));
     await user.click(screen.getByRole("button", { name: "Add card" }));
     expect(screen.getByText("Card 3 of 3")).toBeTruthy();
+  });
+
+  it("generated draft review matches study and edit deck layout", async () => {
+    const user = userEvent.setup();
+    generateFlashcards.mockResolvedValue({
+      cards: [
+        { question: "Draft Q?", answer: "Draft A." },
+        { question: "Draft Q2?", answer: "Draft A2." },
+      ],
+      operation_id: "gen-op",
+    });
+    listNotes.mockResolvedValue([
+      newDeckNote,
+      { id: "note-a", title: "Biology", category: "study", content: "Cells.", tags: [] },
+    ]);
+    render(<FlashcardsPanel onClose={() => {}} />);
+    await waitFor(() => expect(listNotes).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "New Flashcard" }));
+    await user.click(screen.getByRole("checkbox", { name: /Biology/ }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.clear(screen.getByLabelText("Number of cards"));
+    await user.type(screen.getByLabelText("Number of cards"), "2");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Review deck" })).toBeTruthy();
+    });
+    expect(screen.getByText("Deck Title:")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Question" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Answer" })).toBeTruthy();
+    expect(screen.getByText("Card 1 of 2")).toBeTruthy();
+    expect(screen.getByLabelText("Question / front").value).toBe("Draft Q?");
+    expect(screen.getByLabelText("Answer / back").value).toBe("Draft A.");
+    expect(screen.getByRole("button", { name: "Save approved deck" })).toBeTruthy();
   });
 });

@@ -73,6 +73,7 @@ def start_flashcard_generation(app, user_id: str, operation_id: str, options: di
 
     def runner() -> None:
         with app.app_context():
+            last_batch = 0
             try:
                 if not operation_is_pending_guarded(user_id, operation_id):
                     return
@@ -81,6 +82,8 @@ def start_flashcard_generation(app, user_id: str, operation_id: str, options: di
                     return operation_is_pending_guarded(user_id, operation_id)
 
                 def on_progress(current_batch, total, card_count):
+                    nonlocal last_batch
+                    last_batch = current_batch
                     _persist_progress(
                         user_id,
                         operation_id,
@@ -92,20 +95,47 @@ def start_flashcard_generation(app, user_id: str, operation_id: str, options: di
                     source_notes,
                     progress_callback=on_progress,
                     pending_check=pending_check,
+                    operation_id=operation_id,
                 )
                 if not operation_is_pending_guarded(user_id, operation_id):
                     return
-                complete_operation(user_id, operation_id, {"cards": cards})
+                if not complete_operation(user_id, operation_id, {"cards": cards}):
+                    logger.warning(
+                        "flashcard_complete_skipped user_id=%s operation_id=%s last_batch=%s",
+                        user_id,
+                        operation_id,
+                        last_batch,
+                    )
             except FlashcardJobStopped:
                 return
             except ValueError as error:
+                logger.warning(
+                    "flashcard_job_failed user_id=%s operation_id=%s last_batch=%s stage=request_validation error=%s",
+                    user_id,
+                    operation_id,
+                    last_batch,
+                    str(error),
+                )
                 fail_flashcard_operation(user_id, operation_id, str(error))
             except FlashcardGenerationError as error:
+                logger.warning(
+                    "flashcard_job_failed user_id=%s operation_id=%s last_batch=%s stage=generation error=%s",
+                    user_id,
+                    operation_id,
+                    last_batch,
+                    str(error),
+                )
                 fail_flashcard_operation(user_id, operation_id, str(error))
             except Exception as error:
                 report_understanding_gap("flashcards.generation_failed", error, user_id=user_id)
+                logger.exception(
+                    "flashcard_job_failed user_id=%s operation_id=%s last_batch=%s stage=unexpected error_type=%s",
+                    user_id,
+                    operation_id,
+                    last_batch,
+                    type(error).__name__,
+                )
                 fail_flashcard_operation(user_id, operation_id, "Flashcard generation failed.")
-                logger.exception("flashcard_generation_failed user_id=%s operation_id=%s", user_id, operation_id)
             finally:
                 _clear_thread(user_id, operation_id)
 
