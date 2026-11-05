@@ -5,6 +5,7 @@ from app.ai.client import AIProviderError
 from app.ai.engine import ask
 from app.ai.routes import _parse_memory_context_mode, _parse_note_context_mode
 from app.memory import manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 
 
 def note(note_id, title, content):
@@ -18,6 +19,15 @@ def note(note_id, title, content):
 
 
 class AIContextModeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        install_notes_database()
+        ensure_note_owner("user-1")
+
+    @classmethod
+    def tearDownClass(cls):
+        close_notes_database()
+
     def setUp(self):
         manager.intent_cache.cache.clear()
         self.notes = [

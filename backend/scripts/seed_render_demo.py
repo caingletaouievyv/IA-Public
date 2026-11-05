@@ -2,8 +2,7 @@
 
 import os
 import sys
-import json
-import tempfile
+import uuid
 from pathlib import Path
 
 # Load the repository-root .env before importing configuration, matching the existing seed command.
@@ -13,9 +12,13 @@ if dotenv.exists():
     from dotenv import load_dotenv
     load_dotenv(dotenv)
 
+from sqlalchemy.exc import IntegrityError
+from werkzeug.security import generate_password_hash
+
 from scripts.seed_user import seed_demo_data
-from app.auth import manager as auth_manager
-from app.auth.manager import create_user, find_user_by_username
+from app.auth import repository
+from app.auth.repository import AccountConflict, AccountStoreError
+from app.auth.roles import ROLE_USER
 
 SEED_ENABLED_ENV = "RENDER_DEMO_SEED_ENABLED"
 SEED_PASSWORD_ENV = "SEED_USER_PASSWORD"
@@ -43,71 +46,44 @@ def validate_render_seed_configuration(environ: dict[str, str] | None = None) ->
 
 def seed_render_demo(environ: dict[str, str] | None = None) -> dict:
     password = validate_render_seed_configuration(environ)
-    marker_path = Path(auth_manager.DATA_DIR) / SEED_MARKER_FILENAME
-    user = find_user_by_username(DEMO_USERNAME)
-    marker_user_id = _load_seed_marker(marker_path)
-    created = False
-
-    if user:
-        if marker_user_id != user.get("user_id"):
-            raise RuntimeError(
-                "Refusing to seed an existing demo account not verified as created by "
-                "the Render demo seeder."
-            )
-    else:
-        if marker_user_id is not None:
-            raise RuntimeError(
-                "Render demo seed marker exists but the demo account is missing; "
-                "refusing to recreate it automatically."
-            )
-        user = create_user(DEMO_USERNAME, password)
-        if not user:
-            raise RuntimeError("Could not create the demo account; it may have been registered concurrently.")
-        _save_seed_marker(marker_path, user["user_id"])
-        created = True
-
+    created = _ensure_demo_account(password)
     return seed_demo_data(DEMO_USERNAME, password, created=created)
 
 
-def _load_seed_marker(marker_path: Path) -> str | None:
+def _ensure_demo_account(password: str) -> bool:
+    """Create the demo user and its singleton marker in one transaction."""
     try:
-        with marker_path.open(encoding="utf-8") as marker_file:
-            marker = json.load(marker_file)
-    except FileNotFoundError:
-        return None
-    except (OSError, ValueError) as error:
-        raise RuntimeError("Render demo seed marker is unreadable; refusing to seed.") from error
-
-    if (
-        not isinstance(marker, dict)
-        or marker.get("username") != DEMO_USERNAME
-        or not isinstance(marker.get("user_id"), str)
-        or not marker["user_id"]
-    ):
-        raise RuntimeError("Render demo seed marker is invalid; refusing to seed.")
-    return marker["user_id"]
-
-
-def _save_seed_marker(marker_path: Path, user_id: str) -> None:
-    marker_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=marker_path.parent,
-            prefix=".render-demo-seed-",
-            suffix=".tmp",
-            delete=False,
-        ) as marker_file:
-            temp_path = Path(marker_file.name)
-            json.dump({"username": DEMO_USERNAME, "user_id": user_id}, marker_file)
-            marker_file.flush()
-            os.fsync(marker_file.fileno())
-        os.replace(temp_path, marker_path)
-    finally:
-        if temp_path is not None and temp_path.exists():
-            temp_path.unlink()
+        with repository.auth_session() as session:
+            repository.lock_user_table(session)
+            user = repository.find_by_username(session, DEMO_USERNAME)
+            marker_user_id = repository.demo_marker_user_id(session)
+            if user:
+                if marker_user_id != user.user_id:
+                    raise RuntimeError(
+                        "Refusing to seed an existing demo account not verified as created by "
+                        "the Render demo seeder."
+                    )
+                return False
+            if marker_user_id is not None:
+                raise RuntimeError(
+                    "Render demo seed marker exists but the demo account is missing; "
+                    "refusing to recreate it automatically."
+                )
+            created = repository.insert_user(
+                session,
+                user_id=str(uuid.uuid4()),
+                username=DEMO_USERNAME,
+                password_hash=generate_password_hash(password),
+                role=ROLE_USER,
+            )
+            repository.insert_demo_marker(session, created.user_id)
+            return True
+    except (IntegrityError, AccountConflict):
+        raise RuntimeError(
+            "Could not create the demo account; it may have been registered concurrently."
+        ) from None
+    except AccountStoreError as error:
+        raise RuntimeError("Could not create the demo account.") from error
 
 
 def main() -> None:

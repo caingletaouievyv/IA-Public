@@ -12,10 +12,21 @@ import jwt
 
 from app import config, create_app
 from app.settings import manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 
 
 def test_context_source_preferences_persist_per_user_and_merge():
+    install_notes_database()
+    try:
+        _assert_context_preferences_merge()
+    finally:
+        close_notes_database()
+
+
+def _assert_context_preferences_merge():
     with tempfile.TemporaryDirectory() as data_dir, patch.object(manager, "DATA_DIR", data_dir):
+        ensure_note_owner("user-one")
+        ensure_note_owner("user-two")
         manager.save_settings("user-one", {"theme": "dark"})
         saved = manager.save_settings(
             "user-one",
@@ -39,6 +50,14 @@ def test_context_source_preferences_persist_per_user_and_merge():
 
 
 def test_ai_suggestions_setting_defaults_on_and_persists_per_user():
+    install_notes_database()
+    try:
+        _assert_ai_suggestions_default()
+    finally:
+        close_notes_database()
+
+
+def _assert_ai_suggestions_default():
     with tempfile.TemporaryDirectory() as data_dir, patch.object(manager, "DATA_DIR", data_dir):
         app = create_app()
         app.config.update(TESTING=True, RATELIMIT_ENABLED=False)
@@ -55,7 +74,7 @@ def test_ai_suggestions_setting_defaults_on_and_persists_per_user():
             )
             return {"Authorization": "Bearer " + token}
 
-        first_user = str(uuid.uuid4())
+        first_user = ensure_note_owner(str(uuid.uuid4()))
         second_user = str(uuid.uuid4())
         self_user = headers(first_user)
         self_other = headers(second_user)

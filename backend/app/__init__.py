@@ -22,6 +22,8 @@ def create_app():
     maybe_provision_main_admin_on_startup()
     app = Flask(__name__)
     limiter.init_app(app)
+    from app.db import init_app as init_database
+    init_database(app)
     if CORS_ORIGINS:
         CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
 

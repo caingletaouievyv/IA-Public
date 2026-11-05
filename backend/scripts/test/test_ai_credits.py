@@ -23,24 +23,19 @@ from app.auth.roles import ROLE_ADMIN
 from app.credits import manager as credit_manager
 from app.credits import routes as credit_routes
 from app.settings import manager as settings_manager
+from scripts.test.notes_db import ensure_note_owner
+from scripts.test.auth_db import close_sqlite_auth_database, install_sqlite_auth_database
 
 
 class AICreditTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
+        install_sqlite_auth_database()
         cls.data_dir_patch = patch.object(credit_manager, "DATA_DIR", cls.temp_dir.name)
         cls.data_dir_patch.start()
         cls.settings_dir_patch = patch.object(settings_manager, "DATA_DIR", cls.temp_dir.name)
         cls.settings_dir_patch.start()
-        cls.auth_dir_patch = patch.object(auth_manager, "DATA_DIR", cls.temp_dir.name)
-        cls.auth_dir_patch.start()
-        cls.users_file_patch = patch.object(
-            auth_manager,
-            "USERS_FILE",
-            os.path.join(cls.temp_dir.name, "users.json"),
-        )
-        cls.users_file_patch.start()
         cls.reward_env_patch = patch.object(credit_routes, "APP_ENV", "test")
         cls.reward_env_patch.start()
         cls.app = create_app()
@@ -50,9 +45,8 @@ class AICreditTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.reward_env_patch.stop()
-        cls.users_file_patch.stop()
-        cls.auth_dir_patch.stop()
         cls.settings_dir_patch.stop()
+        close_sqlite_auth_database()
         cls.data_dir_patch.stop()
         cls.temp_dir.cleanup()
 
@@ -60,7 +54,7 @@ class AICreditTests(unittest.TestCase):
         limiter.reset()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id):
         token = jwt.encode(
@@ -101,19 +95,17 @@ class AICreditTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
 
         user_id = response.get_json()["user_id"]
-        account_path = credit_manager._credits_path(user_id)
-        self.assertFalse(os.path.exists(account_path))
+        self.assertFalse(credit_manager.account_exists(user_id))
 
         account = credit_manager.get_credit_account(user_id)
-        self.assertTrue(os.path.exists(account_path))
+        self.assertTrue(credit_manager.account_exists(user_id))
         self.assertEqual(account["credit_balance"], max(0, config.AI_CREDIT_INITIAL_BALANCE))
         self.assertEqual(account["ledger"][0]["reason"], "initial_balance")
 
     def test_registration_succeeds_when_credit_store_initialization_would_fail(self):
         username = f"credit-store-failure-{uuid.uuid4()}"
-        with patch.object(
-            credit_manager,
-            "_save_account",
+        with patch(
+            "app.credits.repository.locked_credits",
             side_effect=OSError("credit store unavailable"),
         ):
             response = self.client.post(
@@ -123,7 +115,7 @@ class AICreditTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
         user_id = response.get_json()["user_id"]
-        self.assertFalse(os.path.exists(credit_manager._credits_path(user_id)))
+        self.assertFalse(credit_manager.account_exists(user_id))
         self.assertIsNotNone(auth_manager.find_user_by_id(user_id))
 
         login = self.client.post(

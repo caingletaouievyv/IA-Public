@@ -5,6 +5,7 @@ import tempfile
 from unittest.mock import patch
 
 from scripts import seed_user
+from scripts.test.auth_db import close_sqlite_auth_database, install_sqlite_auth_database
 from app.auth import manager as auth_manager
 from app.credits import manager as credit_manager
 from app.notes import manager as notes_manager
@@ -26,6 +27,7 @@ def test_seed_user_adds_only_missing_notes_for_existing_user():
         patch.object(seed_user, "create_user") as create_user,
         patch.object(seed_user, "load_notes", return_value=[existing_note]),
         patch.object(seed_user, "add_note") as add_note,
+        patch.object(seed_user, "get_credit_account"),
     ):
         result = seed_user.seed_user()
 
@@ -48,6 +50,7 @@ def test_seed_user_second_run_adds_no_duplicates():
         patch.object(seed_user, "find_user_by_username", return_value=existing_user),
         patch.object(seed_user, "load_notes", return_value=notes),
         patch.object(seed_user, "add_note") as add_note,
+        patch.object(seed_user, "get_credit_account"),
     ):
         result = seed_user.seed_user()
 
@@ -56,13 +59,19 @@ def test_seed_user_second_run_adds_no_duplicates():
 
 
 def test_seed_user_preserves_existing_notes_settings_and_credit_balance():
+    install_sqlite_auth_database()
+    try:
+        _assert_seed_preserves_existing_data()
+    finally:
+        close_sqlite_auth_database()
+
+
+def _assert_seed_preserves_existing_data():
     with tempfile.TemporaryDirectory() as data_dir:
         with (
             patch.object(seed_user, "APP_ENV", "test"),
             patch.object(seed_user, "SEED_USERNAME", "demo-preservation-test"),
             patch.object(seed_user, "SEED_PASSWORD", "test-seed-password-123"),
-            patch.object(auth_manager, "DATA_DIR", data_dir),
-            patch.object(auth_manager, "USERS_FILE", os.path.join(data_dir, "users.json")),
             patch.object(notes_manager, "DATA_DIR", data_dir),
             patch.object(settings_manager, "DATA_DIR", data_dir),
             patch.object(credit_manager, "DATA_DIR", data_dir),
@@ -101,13 +110,19 @@ def test_seed_user_preserves_existing_notes_settings_and_credit_balance():
 
 
 def test_seed_user_initializes_credit_for_new_demo_account():
+    install_sqlite_auth_database()
+    try:
+        _assert_new_demo_credit_account()
+    finally:
+        close_sqlite_auth_database()
+
+
+def _assert_new_demo_credit_account():
     with tempfile.TemporaryDirectory() as data_dir:
         with (
             patch.object(seed_user, "APP_ENV", "test"),
             patch.object(seed_user, "SEED_USERNAME", "demo-new-credit-test"),
             patch.object(seed_user, "SEED_PASSWORD", "test-seed-password-123"),
-            patch.object(auth_manager, "DATA_DIR", data_dir),
-            patch.object(auth_manager, "USERS_FILE", os.path.join(data_dir, "users.json")),
             patch.object(notes_manager, "DATA_DIR", data_dir),
             patch.object(credit_manager, "DATA_DIR", data_dir),
             patch.object(credit_manager, "AI_CREDIT_INITIAL_BALANCE", 67),

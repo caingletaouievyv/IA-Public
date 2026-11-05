@@ -5,10 +5,8 @@ import datetime
 import json
 import os
 import sys
-import tempfile
 import unittest
 import uuid
-from unittest.mock import patch
 
 os.environ.setdefault("JWT_SECRET", "ia-unit-test-jwt-secret-with-enough-variety-2026")
 
@@ -20,29 +18,20 @@ from app import create_app, limiter
 from app import config
 from app.auth import manager as auth_manager
 from app.auth.roles import ROLE_ADMIN, ROLE_MAIN_ADMIN, ROLE_USER
+from scripts.test.auth_db import close_sqlite_auth_database, install_sqlite_auth_database
 
 
 class AdminUserManagementTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp_dir = tempfile.TemporaryDirectory()
-        cls.auth_patch = patch.object(auth_manager, "DATA_DIR", cls.temp_dir.name)
-        cls.users_patch = patch.object(
-            auth_manager,
-            "USERS_FILE",
-            os.path.join(cls.temp_dir.name, "users.json"),
-        )
-        cls.auth_patch.start()
-        cls.users_patch.start()
+        install_sqlite_auth_database()
         cls.app = create_app()
         cls.app.config.update(TESTING=True)
         cls.client = cls.app.test_client()
 
     @classmethod
     def tearDownClass(cls):
-        cls.users_patch.stop()
-        cls.auth_patch.stop()
-        cls.temp_dir.cleanup()
+        close_sqlite_auth_database()
 
     def setUp(self):
         limiter.reset()
@@ -132,7 +121,6 @@ class AdminUserManagementTests(unittest.TestCase):
     def test_promotion_rejects_admin_main_admin_and_missing_users(self):
         main_admin_id = self.add_user("owner", ROLE_MAIN_ADMIN)
         admin_id = self.add_user("operator", ROLE_ADMIN)
-        main_id = self.add_user("main-copy", ROLE_MAIN_ADMIN)
 
         missing = self.client.post(
             f"/admin/users/{uuid.uuid4()}/promote",
@@ -146,12 +134,13 @@ class AdminUserManagementTests(unittest.TestCase):
         )
         self.assertEqual(reject_admin.status_code, 400)
 
+        # A second main_admin row cannot be stored. Promote the existing owner instead.
         reject_main = self.client.post(
-            f"/admin/users/{main_id}/promote",
+            f"/admin/users/{main_admin_id}/promote",
             headers=self.headers(main_admin_id),
         )
         self.assertEqual(reject_main.status_code, 400)
-        self.assertEqual(auth_manager.get_user_role(main_id), ROLE_MAIN_ADMIN)
+        self.assertEqual(auth_manager.get_user_role(main_admin_id), ROLE_MAIN_ADMIN)
 
     def test_main_admin_can_demote_admin_to_user(self):
         main_admin_id = self.add_user("owner", ROLE_MAIN_ADMIN)
@@ -168,8 +157,6 @@ class AdminUserManagementTests(unittest.TestCase):
     def test_demotion_rejects_user_main_admin_missing_and_self(self):
         main_admin_id = self.add_user("owner", ROLE_MAIN_ADMIN)
         user_id = self.add_user("member", ROLE_USER)
-        other_main_id = self.add_user("main-copy", ROLE_MAIN_ADMIN)
-        admin_id = self.add_user("operator", ROLE_ADMIN)
 
         missing = self.client.post(
             f"/admin/users/{uuid.uuid4()}/demote",
@@ -182,13 +169,6 @@ class AdminUserManagementTests(unittest.TestCase):
             headers=self.headers(main_admin_id),
         )
         self.assertEqual(reject_user.status_code, 400)
-
-        reject_main = self.client.post(
-            f"/admin/users/{other_main_id}/demote",
-            headers=self.headers(main_admin_id),
-        )
-        self.assertEqual(reject_main.status_code, 400)
-        self.assertEqual(auth_manager.get_user_role(other_main_id), ROLE_MAIN_ADMIN)
 
         self_demote = self.client.post(
             f"/admin/users/{main_admin_id}/demote",

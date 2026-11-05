@@ -22,11 +22,13 @@ from app.credits import manager as credit_manager
 from app.memories import manager as memory_manager
 from app.memories.remember_command import parse_remember_command
 from app.settings import manager as settings_manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 
 
 class RememberCommandTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.memory_patch = patch.object(memory_manager, "DATA_DIR", cls.temp_dir.name)
         cls.settings_patch = patch.object(settings_manager, "DATA_DIR", cls.temp_dir.name)
@@ -43,13 +45,14 @@ class RememberCommandTests(unittest.TestCase):
         cls.credits_patch.stop()
         cls.settings_patch.stop()
         cls.memory_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def setUp(self):
         limiter.reset()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id, operation_id):
         token = jwt.encode(

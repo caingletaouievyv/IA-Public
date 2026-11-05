@@ -30,24 +30,18 @@ from app.auth.roles import ROLE_ADMIN, ROLE_MAIN_ADMIN, ROLE_USER
 from app.common.understanding_gaps import report_understanding_gap
 from app.credits import manager as credit_manager
 from app.diagnostics import manager as diagnostics_manager
+from scripts.test.auth_db import close_sqlite_auth_database, install_sqlite_auth_database
 
 
 class AuthRoleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
+        install_sqlite_auth_database()
         cls.diagnostics_patch = patch.object(diagnostics_manager, "DATA_DIR", cls.temp_dir.name)
         cls.credits_patch = patch.object(credit_manager, "DATA_DIR", cls.temp_dir.name)
-        cls.auth_patch = patch.object(auth_manager, "DATA_DIR", cls.temp_dir.name)
-        cls.users_patch = patch.object(
-            auth_manager,
-            "USERS_FILE",
-            os.path.join(cls.temp_dir.name, "users.json"),
-        )
         cls.diagnostics_patch.start()
         cls.credits_patch.start()
-        cls.auth_patch.start()
-        cls.users_patch.start()
         auth_manager._save_users([])
         cls.app = create_app()
         cls.app.config.update(TESTING=True)
@@ -55,10 +49,9 @@ class AuthRoleTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.users_patch.stop()
-        cls.auth_patch.stop()
         cls.credits_patch.stop()
         cls.diagnostics_patch.stop()
+        close_sqlite_auth_database()
         cls.temp_dir.cleanup()
 
     def setUp(self):
@@ -115,12 +108,6 @@ class AuthRoleTests(unittest.TestCase):
         self.assertEqual(payload["role"], ROLE_USER)
 
     def test_diagnostics_events_allows_admin_and_main_admin(self):
-        report_understanding_gap(
-            "ask.operation_failed",
-            RuntimeError("PRIVATE_ERROR_SENTINEL"),
-            user_id=str(uuid.uuid4()),
-        )
-
         normal_id = str(uuid.uuid4())
         self.seed_user(normal_id, "normal", ROLE_USER)
         denied = self.client.get("/diagnostics/events", headers=self.headers(normal_id))
@@ -129,9 +116,16 @@ class AuthRoleTests(unittest.TestCase):
         for role in (ROLE_ADMIN, ROLE_MAIN_ADMIN):
             operator_id = str(uuid.uuid4())
             self.seed_user(operator_id, f"op-{role}", role)
+            report_understanding_gap(
+                "ask.operation_failed",
+                RuntimeError("PRIVATE_ERROR_SENTINEL"),
+                user_id=operator_id,
+            )
             allowed = self.client.get("/diagnostics/events", headers=self.headers(operator_id))
             self.assertEqual(allowed.status_code, 200, role)
-            self.assertNotIn("PRIVATE_ERROR_SENTINEL", json.dumps(allowed.get_json()))
+            payload = allowed.get_json()
+            self.assertGreaterEqual(len(payload["events"]), 1)
+            self.assertNotIn("PRIVATE_ERROR_SENTINEL", json.dumps(payload))
 
     def test_admin_roles_bypass_ask_credits(self):
         for role in (ROLE_ADMIN, ROLE_MAIN_ADMIN):

@@ -14,11 +14,13 @@ import jwt
 from app import config, create_app
 from app.activity import manager as activity_manager
 from app.settings import manager as settings_manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 
 
 class AISuggestionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.activity_dir_patch = patch.object(activity_manager, "DATA_DIR", cls.temp_dir.name)
         cls.settings_dir_patch = patch.object(settings_manager, "DATA_DIR", cls.temp_dir.name)
@@ -32,6 +34,7 @@ class AISuggestionTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.settings_dir_patch.stop()
         cls.activity_dir_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def headers(self, user_id):
@@ -46,7 +49,7 @@ class AISuggestionTests(unittest.TestCase):
         return {"Authorization": "Bearer " + token}
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def add_recent_events(self, user_id, *event_types):
         for event_type in event_types:

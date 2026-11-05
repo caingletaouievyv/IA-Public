@@ -48,7 +48,7 @@ changing a rule or prompt.
 
 Observed fallback and failure paths call `report_understanding_gap()` with an
 allow-listed code. When a `user_id` is available, the same call also appends a
-bounded, content-free diagnostic record under `backend/data/diagnostics_<hash>.json`.
+bounded, content-free diagnostic record in PostgreSQL `diagnostic_events`. Legacy diagnostics JSON files are not read or written.
 These records include timestamps, feature, code, category, fallback, exception
 class, provider/model metadata, and the Ask `operation_id` when the request
 context is active. They never store prompts, answers, note text, or provider
@@ -83,8 +83,7 @@ a bounded local review queue; they are not a full conversation archive or
 external telemetry service.
 
 Prompt-bearing retrieval diagnostics are disabled by default:
-`FAISS_LOG_SCORES`, `INTENT_CACHE_LOG_HITS`, and `LOG_DROPPED_NOTES` default to
-false. `MEMORY_ANALYTICS_ENABLED` also defaults to false; enabling it persists
+`INTENT_CACHE_LOG_HITS` and `LOG_DROPPED_NOTES` default to false. `MEMORY_ANALYTICS_ENABLED` also defaults to false; enabling it persists
 queries and included/dropped note titles locally, so use only with appropriate
 test data and access controls. Do not paste raw logs or user content into this
 register, issues, or test fixtures.

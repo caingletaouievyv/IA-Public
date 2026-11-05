@@ -1,20 +1,15 @@
 # IA/backend/app/memory/embeddings.py
-"""Embedding-based semantic recall. All-note path uses get_relevant_notes_subset (temp index per request); get_relevant_notes + vector_cache reserved for optional single-user persistent cache."""
+"""Semantic note recall. Each search builds a temporary FAISS index and discards it."""
 
 import faiss
 import numpy as np
-import hashlib
 import re
-import logging
-from app.memory.cache import vector_cache
-from app.config import FAISS_LOG_SCORES, FAISS_SCORE_LOG_PATH
-from datetime import datetime
 from app.memory.chunker import chunk_text
 
-logger = logging.getLogger(__name__)
 model = None
 DIM = 384
 STOPWORDS = {"the", "a", "an", "of", "to", "is", "about", "me", "tell", "find", "show", "number"}
+
 
 def _get_model():
     global model
@@ -23,52 +18,15 @@ def _get_model():
         model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     return model
 
+
 def encode_texts(texts: list):
     """Encode to vectors; L2-normalize for cosine similarity."""
     emb = np.array(_get_model().encode(texts), dtype="float32")
     return emb / np.linalg.norm(emb, axis=1, keepdims=True)
 
-def store_note_embeddings(notes: list):
-    """Chunk each note; encode; append to FAISS index + note_map."""
-    if not notes:
-        return
-    texts = []
-    meta = []
-    for n in notes:
-        for chunk in chunk_text(n["content"]):
-            text = f"{n['title']} {n.get('category','')} {' '.join(n.get('tags', []))} {chunk}"
-            texts.append(text)
-            meta.append(n)
-    embeddings = encode_texts(texts)
-    vector_cache.add_embeddings(embeddings, meta)
-
-def compute_notes_fingerprint(notes):
-    """Stable hash from id+updated_at; change invalidates FAISS cache."""
-    base = "|".join(f"{n['id']}:{n['updated_at']}" for n in notes)
-    return hashlib.md5(base.encode()).hexdigest()
-
-def get_relevant_notes(query: str, notes: list, top_n: int = 5, preserve_numbers=False):
-    """Persistent FAISS cache (single fingerprint). Unused in current multi-user flow; manager uses get_relevant_notes_subset for both all-notes and subset."""
-    if not notes:
-        return []
-    new_fp = compute_notes_fingerprint(notes)
-    old_fp = vector_cache._load_fingerprint()
-    if new_fp != old_fp:
-        vector_cache.clear()
-        store_note_embeddings(notes)
-        vector_cache._save_cache(fingerprint=new_fp)
-    query = normalize_query(query, preserve_numbers=preserve_numbers)
-    query_emb = encode_texts([query])
-    logger.debug(f"FAISS index size: {vector_cache.index.ntotal}")
-    results = vector_cache.search(query_emb, top_n)
-    results = sorted(results, key=lambda x: x[0], reverse=True)
-    best_score = results[0][0] if results else None
-    if best_score is not None:
-        log_faiss_score(query, best_score, len(results))
-    return results
 
 def get_relevant_notes_subset(query: str, notes: list, top_n: int = 5, preserve_numbers=False):
-    """Search only within given notes using a temporary FAISS index; do not touch global cache. Return (score, note) list, one per note (best score per note)."""
+    """Search only the given notes with a temporary index. Return the best score per note."""
     if not notes:
         return []
     texts = []
@@ -97,6 +55,7 @@ def get_relevant_notes_subset(query: str, notes: list, top_n: int = 5, preserve_
     results = sorted(best_per_note.values(), key=lambda x: x[0], reverse=True)[:top_n]
     return results
 
+
 def normalize_query(text: str, preserve_numbers=False) -> str:
     """Lowercase; optionally strip digits; remove stopwords."""
     text = text.lower()
@@ -104,11 +63,3 @@ def normalize_query(text: str, preserve_numbers=False) -> str:
         text = re.sub(r"\d+", "", text)
     words = [w for w in text.split() if w not in STOPWORDS]
     return " ".join(words)
-
-def log_faiss_score(query, best_dist, returned_count):
-    """Append one line to FAISS score log if enabled."""
-    if not FAISS_LOG_SCORES:
-        return
-    with open(FAISS_SCORE_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.utcnow().isoformat()},{best_dist:.4f},{returned_count},\"{query}\"\n")
-

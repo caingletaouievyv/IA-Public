@@ -1,69 +1,46 @@
 # IA/backend/app/notes/delete_pending.py
-# Per-user pending note deletion confirmation (exact title match).
+# Per-user pending note deletion. The row lives in PostgreSQL and is not a JSON file.
 
-import hashlib
-import json
-import os
-import threading
-import time
+from app.notes import pending_repository as repository
 
-from app.notes import manager as notes_manager
-
-_STORE_LOCK = threading.RLock()
 TTL_SECONDS = 900
-
-
-def _pending_path(user_id: str) -> str:
-    user_key = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
-    return os.path.join(notes_manager.DATA_DIR, f"notes_delete_pending_{user_key}.json")
 
 
 def set_pending_delete(user_id: str, note_id: str, expected_title: str) -> dict:
     if not user_id or not note_id or not (expected_title or "").strip():
         raise ValueError("Pending delete requires user_id, note_id, and expected_title")
-    payload = {
-        "note_id": note_id,
-        "expected_title": expected_title,
-        "created_at": time.time(),
-        "expires_at": time.time() + TTL_SECONDS,
-    }
-    with _STORE_LOCK:
-        os.makedirs(notes_manager.DATA_DIR, exist_ok=True)
-        with open(_pending_path(user_id), "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2)
-    return payload
+    with repository.pending_session() as session:
+        return repository.save_delete(
+            session,
+            user_id,
+            note_id=note_id,
+            expected_title=expected_title,
+            ttl_seconds=TTL_SECONDS,
+        )
 
 
 def get_pending_delete(user_id: str) -> dict | None:
     if not user_id:
         return None
-    with _STORE_LOCK:
-        path = _pending_path(user_id)
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            return None
-        if not isinstance(payload, dict):
-            return None
-        if time.time() > float(payload.get("expires_at") or 0):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-            return None
-        return payload
+    with repository.pending_session() as session:
+        return repository.load_pending(session, user_id, repository.KIND_DELETE)
+
+
+def consume_pending_delete(user_id: str, *, match_title: str | None = None) -> dict | None:
+    """Delete the live delete confirmation. A second consumer receives nothing."""
+    if not user_id:
+        return None
+    with repository.pending_session() as session:
+        return repository.consume_pending(
+            session,
+            user_id,
+            repository.KIND_DELETE,
+            match_title=match_title,
+        )
 
 
 def clear_pending_delete(user_id: str) -> None:
     if not user_id:
         return
-    with _STORE_LOCK:
-        path = _pending_path(user_id)
-        if os.path.exists(path):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+    with repository.pending_session() as session:
+        repository.clear_pending(session, user_id, repository.KIND_DELETE)

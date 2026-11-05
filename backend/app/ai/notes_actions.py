@@ -9,8 +9,14 @@ from pydantic import ValidationError
 from app.ai.client import call_ai
 from app.ai.feature_catalog import answer_feature_question
 from app.common.understanding_gaps import report_understanding_gap
-from app.notes.create_pending import clear_pending_create, get_pending_create, set_pending_create
-from app.notes.delete_pending import clear_pending_delete, get_pending_delete, set_pending_delete
+from app.notes.create_pending import (
+    clear_pending_create,
+    consume_pending_create,
+    get_pending_create,
+    restore_pending_create,
+    set_pending_create,
+)
+from app.notes.delete_pending import consume_pending_delete, get_pending_delete, set_pending_delete
 from app.notes.manager import (
     HISTORY_CATEGORY,
     add_note,
@@ -81,7 +87,8 @@ def _handle_pending_delete_confirmation(user_id: str, question: str) -> dict | N
         return None
 
     if _is_cancel_delete_message(question):
-        clear_pending_delete(user_id)
+        if consume_pending_delete(user_id) is None:
+            return None
         return {
             "status": "cancelled",
             "action": "delete_note",
@@ -100,10 +107,13 @@ def _handle_pending_delete_confirmation(user_id: str, question: str) -> dict | N
             ),
         }
 
-    note_id = pending.get("note_id")
+    # The confirmation row is gone before the note write, so a second request cannot delete it too.
+    consumed = consume_pending_delete(user_id, match_title=typed)
+    if consumed is None:
+        return None
+    note_id = consumed.get("note_id")
     note = get_note(note_id, user_id) if note_id else None
     if note is None:
-        clear_pending_delete(user_id)
         return {
             "status": "failed",
             "action": "delete_note",
@@ -111,7 +121,6 @@ def _handle_pending_delete_confirmation(user_id: str, question: str) -> dict | N
         }
     current_title = note.get("title") or "Untitled"
     if current_title != expected:
-        clear_pending_delete(user_id)
         return {
             "status": "failed",
             "action": "delete_note",
@@ -122,13 +131,11 @@ def _handle_pending_delete_confirmation(user_id: str, question: str) -> dict | N
         }
 
     if not delete_note(note_id, user_id):
-        clear_pending_delete(user_id)
         return {
             "status": "failed",
             "action": "delete_note",
             "message": "The note could not be deleted.",
         }
-    clear_pending_delete(user_id)
     return {
         "status": "executed",
         "action": "delete_note",
@@ -385,7 +392,8 @@ def _handle_pending_create(user_id: str, question: str) -> dict | None:
         return None
 
     if _is_cancel_delete_message(question):
-        clear_pending_create(user_id)
+        if consume_pending_create(user_id) is None:
+            return None
         return {
             "status": "cancelled",
             "action": "create_note",
@@ -398,9 +406,17 @@ def _handle_pending_create(user_id: str, question: str) -> dict | None:
     need_content = pending.get("need_content") and content is None and not allow_empty
 
     if not need_title and not need_content:
-        outcome = _execute_create_note(user_id, title or "Untitled", content or "", category)
-        if outcome.get("status") == "executed":
-            clear_pending_create(user_id)
+        consumed = consume_pending_create(user_id)
+        if consumed is None:
+            return None
+        # Note creation runs after the confirmation transaction commits.
+        try:
+            outcome = _execute_create_note(user_id, title or "Untitled", content or "", category)
+        except Exception:
+            restore_pending_create(user_id, consumed)
+            raise
+        if outcome.get("status") != "executed":
+            restore_pending_create(user_id, consumed)
         return outcome
 
     set_pending_create(

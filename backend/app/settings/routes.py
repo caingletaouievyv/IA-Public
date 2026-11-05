@@ -4,6 +4,7 @@
 from flask import Blueprint, request, jsonify
 from app.common.auth import require_auth
 from app.settings.manager import get_settings, save_settings
+from app.settings.repository import SettingsStoreError
 
 bp = Blueprint("settings", __name__)
 
@@ -12,7 +13,10 @@ def get_settings_route():
     user_id, auth_err = require_auth()
     if auth_err:
         return auth_err
-    settings = get_settings(user_id)
+    try:
+        settings = get_settings(user_id)
+    except SettingsStoreError:
+        return jsonify({"error": "Failed to load settings"}), 500
     settings.setdefault("memory_enabled", False)
     settings.setdefault("ai_suggestions_enabled", True)
     settings.setdefault("remember_command_enabled", True)
@@ -32,5 +36,8 @@ def put_settings_route():
         return jsonify({"error": "'ai_suggestions_enabled' must be a boolean"}), 400
     if "remember_command_enabled" in data and not isinstance(data["remember_command_enabled"], bool):
         return jsonify({"error": "'remember_command_enabled' must be a boolean"}), 400
-    updated = save_settings(user_id, data)
+    try:
+        updated = save_settings(user_id, data)
+    except SettingsStoreError:
+        return jsonify({"error": "Failed to save settings"}), 500
     return jsonify(updated)

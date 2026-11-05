@@ -1,6 +1,7 @@
 # IA/backend/app/notes/routes.py
 # Notes CRUD: per-user (Phase 8). Create, list, get, update, delete; create from images.
 
+import json
 import logging
 
 from flask import Blueprint, request, jsonify
@@ -8,8 +9,10 @@ from pydantic import ValidationError
 from app import limiter
 from app.config import NOTES_MAX_CONTENT_CHARS
 from app.activity.manager import record_activity
+from app.activity.repository import ActivityStoreError
 from app.common.auth import require_auth, auth_debug
 from app.notes.manager import (
+    NoteStoreError,
     add_note,
     update_note,
     get_notes_list,
@@ -24,6 +27,16 @@ from app.notes.image_to_note import extract_text_from_images, process_images_to_
 from app.notes.pdf_extract import PdfExtractError, extract_text_from_pdf
 
 logger = logging.getLogger(__name__)
+
+
+def _validation_response(error: ValidationError):
+    """Return the existing validation payload. Fall back when a validator exception is not JSON."""
+    payload = error.errors()
+    try:
+        json.dumps(payload)
+    except TypeError:
+        payload = json.loads(error.json())
+    return jsonify({"error": payload}), 400
 
 
 def _model_to_dict(model, exclude_none=False):
@@ -47,7 +60,7 @@ def _record_note_activity(user_id: str, action: str, note: dict | None, previous
         return
     try:
         record_activity(user_id, event_type)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, ActivityStoreError) as error:
         logger.error(
             "activity_event_write_failed event_type=%s error_type=%s",
             event_type,
@@ -70,6 +83,8 @@ def notes_meta():
         return auth_err
     try:
         return jsonify({"categories": get_categories(user_id), "tags": get_tags(user_id)})
+    except NoteStoreError:
+        return jsonify({"error": "Failed to load meta", "detail": "Could not access notes."}), 500
     except Exception as e:
         return jsonify({"error": "Failed to load meta", "detail": str(e)}), 500
 
@@ -81,7 +96,7 @@ def create_note():
         data = request.get_json()
         note_in = NoteCreate(**data)
     except ValidationError as e:
-        return jsonify({"error": e.errors()}), 400
+        return _validation_response(e)
     if len(note_in.content) > NOTES_MAX_CONTENT_CHARS:
         return jsonify({
             "error": f"Note content exceeds the {NOTES_MAX_CONTENT_CHARS:,} character limit.",
@@ -164,6 +179,8 @@ def create_note_from_images():
         return jsonify({"note": note, "appended": appended}), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    except NoteStoreError:
+        return jsonify({"error": "Could not access notes."}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -182,6 +199,8 @@ def list_notes():
             tag=request.args.get("tag"),
             limit=limit,
         )
+    except NoteStoreError:
+        return jsonify({"error": "Failed to load notes", "detail": "Could not access notes."}), 500
     except Exception as e:
         return jsonify({"error": "Failed to load notes", "detail": str(e)}), 500
     return jsonify(notes)
@@ -203,7 +222,7 @@ def edit_note(note_id):
         data = request.get_json()
         note_update = NoteUpdate(**data)
     except ValidationError as e:
-        return jsonify({"error": e.errors()}), 400
+        return _validation_response(e)
     previous_note = get_note(note_id, user_id)
     updated_note = update_note(note_id, _model_to_dict(note_update, exclude_none=True), user_id)
     if updated_note:

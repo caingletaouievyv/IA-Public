@@ -1,5 +1,5 @@
 # IA/backend/app/diagnostics/routes.py
-"""Authenticated diagnostic feedback and admin-only event review."""
+# Authenticated diagnostic feedback and admin-only event review.
 
 import logging
 
@@ -13,6 +13,7 @@ from app.common.auth import require_auth
 from app.common.understanding_gaps import report_user_feedback
 from app.credits.manager import has_completed_operation
 from app.diagnostics import manager
+from app.diagnostics.repository import DiagnosticsStoreError
 from app.diagnostics.schemas import DiagnosticFeedbackRequest
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def submit_feedback():
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
-    except (OSError, ValueError):
+    except (OSError, DiagnosticsStoreError):
         logger.exception("diagnostics_feedback_write_failed")
         return jsonify({"error": "Failed to record feedback"}), 500
 
@@ -71,6 +72,6 @@ def list_events():
 
     try:
         return jsonify({"events": manager.list_events_admin(limit=limit)}), 200
-    except (OSError, ValueError):
+    except (OSError, ValueError, DiagnosticsStoreError):
         logger.exception("diagnostics_events_read_failed")
         return jsonify({"error": "Failed to load diagnostic events"}), 500

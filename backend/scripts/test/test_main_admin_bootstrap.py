@@ -26,6 +26,7 @@ from app.auth.main_admin import (
     load_marker,
 )
 from app.auth.roles import ROLE_ADMIN, ROLE_MAIN_ADMIN, ROLE_USER
+from scripts.test.auth_db import close_sqlite_auth_database, install_sqlite_auth_database
 
 
 def bootstrap_env(username: str, secret: str = "x" * 8) -> dict[str, str]:
@@ -58,19 +59,11 @@ class MainAdminBootstrapTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
-        cls.data_dir_patch = patch.object(auth_manager, "DATA_DIR", cls.temp_dir.name)
-        cls.users_file_patch = patch.object(
-            auth_manager,
-            "USERS_FILE",
-            os.path.join(cls.temp_dir.name, "users.json"),
-        )
-        cls.data_dir_patch.start()
-        cls.users_file_patch.start()
+        install_sqlite_auth_database()
 
     @classmethod
     def tearDownClass(cls):
-        cls.users_file_patch.stop()
-        cls.data_dir_patch.stop()
+        close_sqlite_auth_database()
         cls.temp_dir.cleanup()
 
     def setUp(self):

@@ -1,10 +1,12 @@
 # IA/backend/app/credits/routes.py
+# Rewarded-ad grants. Credit rows stay in PostgreSQL.
 
 from flask import Blueprint, jsonify, request
 
 from app.common.auth import require_auth
 from app.config import APP_ENV, REWARDED_AD_CREDIT_AMOUNT
-from app.credits.manager import grant_credits, get_credit_account
+from app.credits.manager import get_credit_account, grant_credits
+from app.credits.repository import CreditStoreError
 
 bp = Blueprint("credits", __name__)
 
@@ -34,14 +36,16 @@ def rewarded_ad():
         return jsonify({"error": "reward_id required"}), 400
     reward_id = reward_id.strip()
 
-    was_already_granted = _has_reward(get_credit_account(user_id), reward_id)
     try:
+        was_already_granted = _has_reward(get_credit_account(user_id), reward_id)
         account = grant_credits(
             user_id,
             REWARDED_AD_CREDIT_AMOUNT,
             "rewarded_ad",
             reward_id,
         )
+    except CreditStoreError:
+        return jsonify({"error": "Failed to update credits"}), 500
     except ValueError as exc:
         return jsonify({"error": "reward_id conflict", "message": str(exc)}), 409
 

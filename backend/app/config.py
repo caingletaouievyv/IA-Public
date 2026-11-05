@@ -14,6 +14,15 @@ JWT_ALGORITHM = "HS256"
 JWT_EXP_DAYS = int(os.getenv("JWT_EXP_DAYS", "7"))
 APP_ENV = (os.getenv("APP_ENV") or "production").strip().lower()
 
+
+def database_url() -> str:
+    """Return DATABASE_URL from the current environment.
+
+    Read on each call. A value captured at import would stay stale when tests
+    or Alembic change the environment later.
+    """
+    return (os.getenv("DATABASE_URL") or "").strip()
+
 # Local development only: optional Main Admin auto-seed (password read in main_admin; not stored here).
 IA_AUTO_SEED_MAIN_ADMIN = _bool_env("IA_AUTO_SEED_MAIN_ADMIN", False)
 IA_AUTO_SEED_MAIN_ADMIN_USERNAME = (os.getenv("IA_AUTO_SEED_MAIN_ADMIN_USERNAME") or "").strip()
@@ -62,8 +71,6 @@ MEMORY_RETRIEVAL = os.getenv("MEMORY_RETRIEVAL", "text").strip().lower()
 # Lexical scores are normalized to 0..1 and use thresholds separate from FAISS scores.
 TEXT_RETRIEVAL_THRESHOLD_LOOKUP = float(os.getenv("TEXT_RETRIEVAL_THRESHOLD_LOOKUP", 0.20))
 TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY = float(os.getenv("TEXT_RETRIEVAL_THRESHOLD_EXPLORATORY", 0.20))
-FAISS_LOG_SCORES = _bool_env("FAISS_LOG_SCORES", False)
-FAISS_SCORE_LOG_PATH = os.getenv("FAISS_SCORE_LOG_PATH", "data/faiss_scores.log")
 # Thresholds from scripts/analyze_memory_analytics; override in .env (docs/project.md FAISS tuning).
 FAISS_THRESHOLD_LOOKUP = float(os.getenv("FAISS_THRESHOLD_LOOKUP", 0.54))
 FAISS_THRESHOLD_EXPLORATORY = float(os.getenv("FAISS_THRESHOLD_EXPLORATORY", 0.649))

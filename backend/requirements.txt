@@ -31,6 +31,11 @@ flask-cors>=4.0
 # Auth: JWT for login (no API secret in UI)
 PyJWT>=2.8
 
+# PostgreSQL foundation (no tables yet). Backend DATABASE_URL only.
+sqlalchemy>=2,<3
+psycopg[binary]>=3.2
+alembic>=1.13
+
 # Notes from images (OCR); requires Tesseract installed on system
 Pillow>=10.0
 pytesseract>=0.3.10

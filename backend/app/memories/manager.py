@@ -1,28 +1,28 @@
-"""Per-user persistent memory records and relevance retrieval."""
+# IA/backend/app/memories/manager.py
+# Per-user memories in PostgreSQL. Memory JSON files are not read or written.
 
 import datetime
-import hashlib
 import json
 import logging
 import os
 import re
-import tempfile
-import threading
 import uuid
 
+from app.common.understanding_gaps import report_understanding_gap
 from app.memory.text_retrieval import normalize_query
 from app.memory.utils import estimate_tokens
-from app.common.understanding_gaps import report_understanding_gap
+from app.memories.repository import list_memories as list_memory_rows
+from app.memories.repository import locked_memories, memories_session, replace_memories
 
 logger = logging.getLogger(__name__)
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Kept so existing patches still bind. Memory rows do not use this directory.
 DATA_DIR = os.path.join(_BACKEND_DIR, "data")
 MAX_MEMORY_LENGTH = 500
 MAX_MEMORIES = 100
 MAX_RETRIEVED_MEMORIES = 8
 MEMORY_TOKEN_BUDGET = 180
 
-_STORE_LOCK = threading.RLock()
 _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", re.IGNORECASE),
     re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]{16,}", re.IGNORECASE),
@@ -60,11 +60,9 @@ def _record_key(memory: dict) -> str | None:
     return _memory_key(memory.get("text"))
 
 
-def _memory_path(user_id: str) -> str:
+def _require_user(user_id: str) -> None:
     if not isinstance(user_id, str) or not user_id:
         raise ValueError("user_id required for memory storage")
-    user_key = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
-    return os.path.join(DATA_DIR, f"memories_{user_key}.json")
 
 
 def _now() -> str:
@@ -99,38 +97,17 @@ def validate_memory_text(value: object, *, explicit_remember: bool = False) -> s
 
 
 def load_memories(user_id: str) -> list[dict]:
-    path = _memory_path(user_id)
-    with _STORE_LOCK:
-        if not os.path.exists(path):
-            return []
-        with open(path, encoding="utf-8") as handle:
-            memories = json.load(handle)
-    if not isinstance(memories, list):
-        raise ValueError("Stored memory data is invalid")
-    return [item for item in memories if isinstance(item, dict)]
+    """Return this user's memories in stored order."""
+    _require_user(user_id)
+    with memories_session() as session:
+        return list_memory_rows(session, user_id)
 
 
 def _save_memories(user_id: str, memories: list[dict]) -> None:
-    path = _memory_path(user_id)
-    os.makedirs(DATA_DIR, exist_ok=True)
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=DATA_DIR,
-            prefix=".memories-",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temp_path = handle.name
-            json.dump(memories, handle, ensure_ascii=False, indent=2)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.unlink(temp_path)
+    """Replace this user's memories, preserving order and any ids already on the items."""
+    _require_user(user_id)
+    with memories_session() as session:
+        replace_memories(session, user_id, memories)
 
 
 def list_memories(user_id: str) -> list[dict]:
@@ -142,8 +119,9 @@ def add_or_update_memories(
     candidates: list[dict],
     delete_ids: list[str] | None = None,
 ) -> dict[str, int]:
-    with _STORE_LOCK:
-        memories = load_memories(user_id)
+    _require_user(user_id)
+    with locked_memories(user_id) as session:
+        memories = list_memory_rows(session, user_id)
         existing_by_id = {item.get("id"): item for item in memories if item.get("id")}
         deleted = set(delete_ids or ())
         kept = []
@@ -239,7 +217,7 @@ def add_or_update_memories(
 
         removed_count = len(memories) - len(kept)
         if added_count or updated_count or removed_count:
-            _save_memories(user_id, kept)
+            replace_memories(session, user_id, kept)
         return {"added": added_count, "updated": updated_count, "removed": removed_count}
 
 
@@ -284,8 +262,9 @@ def save_remember_command(user_id: str, text: str) -> dict:
 def update_memory(user_id: str, memory_id: str, value: object) -> dict | None:
     text = validate_memory_text(value, explicit_remember=True)
     normalized = _normalize(text)
-    with _STORE_LOCK:
-        memories = load_memories(user_id)
+    _require_user(user_id)
+    with locked_memories(user_id) as session:
+        memories = list_memory_rows(session, user_id)
         target = next((item for item in memories if item.get("id") == memory_id), None)
         if target is None:
             return None
@@ -305,36 +284,39 @@ def update_memory(user_id: str, memory_id: str, value: object) -> dict | None:
         elif target.get("key") == _ASSISTANT_NAME_KEY:
             target.pop("key", None)
         target["updated_at"] = _now()
-        _save_memories(user_id, memories)
+        replace_memories(session, user_id, memories)
         return target
 
 
 def delete_memory(user_id: str, memory_id: str) -> bool:
-    with _STORE_LOCK:
-        memories = load_memories(user_id)
+    _require_user(user_id)
+    with locked_memories(user_id) as session:
+        memories = list_memory_rows(session, user_id)
         kept = [item for item in memories if item.get("id") != memory_id]
         if len(kept) == len(memories):
             return False
-        _save_memories(user_id, kept)
+        replace_memories(session, user_id, kept)
         return True
 
 
 def delete_memory_if_unchanged(user_id: str, memory_id: str, expected_text: str) -> bool:
-    with _STORE_LOCK:
-        memories = load_memories(user_id)
+    _require_user(user_id)
+    with locked_memories(user_id) as session:
+        memories = list_memory_rows(session, user_id)
         target = next((item for item in memories if item.get("id") == memory_id), None)
         if target is None or target.get("text") != expected_text:
             return False
         memories.remove(target)
-        _save_memories(user_id, memories)
+        replace_memories(session, user_id, memories)
         return True
 
 
 def clear_memories(user_id: str) -> int:
-    with _STORE_LOCK:
-        memories = load_memories(user_id)
+    _require_user(user_id)
+    with locked_memories(user_id) as session:
+        memories = list_memory_rows(session, user_id)
         if memories:
-            _save_memories(user_id, [])
+            replace_memories(session, user_id, [])
         return len(memories)
 
 

@@ -17,11 +17,13 @@ from app.ai.engine import ask
 from app.ai.notes_actions import attempt_notes_action
 from app.notes import create_pending, delete_pending
 from app.notes import manager as notes_manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 
 
 class AINotesActionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.notes_patch = patch.object(notes_manager, "DATA_DIR", cls.temp_dir.name)
         cls.notes_patch.start()
@@ -32,13 +34,14 @@ class AINotesActionTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.notes_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def setUp(self):
         limiter.reset()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id, operation_id="notes-action"):
         token = jwt.encode(
@@ -235,13 +238,11 @@ class AINotesActionTests(unittest.TestCase):
         user_id = self.user_id()
         note = self.seed_note(user_id, title="Expire")
         delete_pending.set_pending_delete(user_id, note["id"], "Expire")
-        pending = delete_pending.get_pending_delete(user_id)
-        pending["expires_at"] = 1
-        path = delete_pending._pending_path(user_id)
-        import json
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(pending, handle)
+        future = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+            seconds=delete_pending.TTL_SECONDS + 5
+        )
         with (
+            patch("app.notes.pending_repository._now", return_value=future),
             patch("app.ai.notes_actions.interpret_notes_plan") as interpret,
             patch("app.ai.engine.call_ai", return_value="Unrelated answer"),
         ):

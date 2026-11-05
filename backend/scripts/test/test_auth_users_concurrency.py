@@ -1,13 +1,11 @@
 # IA/backend/scripts/test/test_auth_users_concurrency.py
-# Process-local locking for users.json read-modify-write paths.
+# Concurrent account writes. SQLite serializes them in-process; it does not prove PostgreSQL safety.
 
 import os
 import sys
-import tempfile
 import threading
 import unittest
 import uuid
-from unittest.mock import patch
 
 os.environ.setdefault("JWT_SECRET", "ia-unit-test-jwt-secret-with-enough-variety-2026")
 
@@ -15,26 +13,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from app.auth import manager as auth_manager
 from app.auth.roles import ROLE_ADMIN, ROLE_USER, normalize_role
+from scripts.test.auth_db import close_sqlite_auth_database, install_sqlite_auth_database
 
 
 class AuthUsersConcurrencyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp_dir = tempfile.TemporaryDirectory()
-        cls.data_dir_patch = patch.object(auth_manager, "DATA_DIR", cls.temp_dir.name)
-        cls.users_file_patch = patch.object(
-            auth_manager,
-            "USERS_FILE",
-            os.path.join(cls.temp_dir.name, "users.json"),
-        )
-        cls.data_dir_patch.start()
-        cls.users_file_patch.start()
+        install_sqlite_auth_database()
 
     @classmethod
     def tearDownClass(cls):
-        cls.users_file_patch.stop()
-        cls.data_dir_patch.stop()
-        cls.temp_dir.cleanup()
+        close_sqlite_auth_database()
 
     def setUp(self):
         auth_manager._save_users([])

@@ -23,7 +23,7 @@ from app.auth.main_admin import (
 def main() -> None:
     operator_secret = getpass("Main Admin bootstrap secret: ")
     operator_initial_password = None
-    if not auth_manager._load_users():
+    if auth_manager.store_is_empty():
         configured_password = (os.environ.get(BOOTSTRAP_INITIAL_PASSWORD_ENV) or "").strip()
         if configured_password:
             operator_initial_password = getpass("Confirm initial Main Admin password: ")

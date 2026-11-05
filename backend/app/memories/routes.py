@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from app.common.auth import require_auth
 from app.memories import manager
+from app.memories.repository import MemoryStoreError
 
 bp = Blueprint("memories", __name__)
 
@@ -31,6 +32,8 @@ def edit_memory(memory_id):
         updated = manager.update_memory(user_id, memory_id, data["text"])
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
+    except MemoryStoreError:
+        return jsonify({"error": "Failed to update memory"}), 500
     if updated is None:
         return jsonify({"error": "Memory not found"}), 404
     return jsonify(updated)
@@ -41,7 +44,11 @@ def remove_memory(memory_id):
     user_id, auth_err = require_auth()
     if auth_err:
         return auth_err
-    if not manager.delete_memory(user_id, memory_id):
+    try:
+        deleted = manager.delete_memory(user_id, memory_id)
+    except MemoryStoreError:
+        return jsonify({"error": "Failed to delete memory"}), 500
+    if not deleted:
         return jsonify({"error": "Memory not found"}), 404
     return jsonify({"message": "Memory deleted"})
 
@@ -51,4 +58,8 @@ def clear_memories():
     user_id, auth_err = require_auth()
     if auth_err:
         return auth_err
-    return jsonify({"deleted": manager.clear_memories(user_id)})
+    try:
+        deleted = manager.clear_memories(user_id)
+    except MemoryStoreError:
+        return jsonify({"error": "Failed to clear memories"}), 500
+    return jsonify({"deleted": deleted})

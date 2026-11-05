@@ -15,11 +15,13 @@ import jwt
 from app import create_app, config
 from app.credits import manager as credit_manager
 from app.notes import manager as notes_manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 
 
 class FlashcardRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.notes_data_patch = patch.object(notes_manager, "DATA_DIR", cls.temp_dir.name)
         cls.credits_data_patch = patch.object(credit_manager, "DATA_DIR", cls.temp_dir.name)
@@ -36,10 +38,11 @@ class FlashcardRouteTests(unittest.TestCase):
         cls.role_patch.stop()
         cls.credits_data_patch.stop()
         cls.notes_data_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id):
         token = jwt.encode(

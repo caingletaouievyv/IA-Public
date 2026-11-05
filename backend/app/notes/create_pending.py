@@ -1,21 +1,11 @@
 # IA/backend/app/notes/create_pending.py
-# Per-user pending note creation (follow-up after Ask clarification).
+# Per-user pending note creation. The row lives in PostgreSQL and is not a JSON file.
 
-import hashlib
-import json
-import os
-import threading
-import time
+import datetime
 
-from app.notes import manager as notes_manager
+from app.notes import pending_repository as repository
 
-_STORE_LOCK = threading.RLock()
 TTL_SECONDS = 900
-
-
-def _pending_path(user_id: str) -> str:
-    user_key = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
-    return os.path.join(notes_manager.DATA_DIR, f"notes_create_pending_{user_key}.json")
 
 
 def set_pending_create(
@@ -28,51 +18,61 @@ def set_pending_create(
 ) -> dict:
     if not user_id:
         raise ValueError("Pending create requires user_id")
-    payload = {
-        "need_title": bool(need_title),
-        "need_content": bool(need_content),
-        "title": (title or "").strip() or None,
-        "category": (category or "").strip() or "general",
-        "created_at": time.time(),
-        "expires_at": time.time() + TTL_SECONDS,
-    }
-    with _STORE_LOCK:
-        os.makedirs(notes_manager.DATA_DIR, exist_ok=True)
-        with open(_pending_path(user_id), "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2)
-    return payload
+    cleaned_title = (title or "").strip() or None
+    cleaned_category = (category or "").strip() or "general"
+    with repository.pending_session() as session:
+        return repository.save_create(
+            session,
+            user_id,
+            need_title=bool(need_title),
+            need_content=bool(need_content),
+            title=cleaned_title,
+            category=cleaned_category,
+            ttl_seconds=TTL_SECONDS,
+        )
 
 
 def get_pending_create(user_id: str) -> dict | None:
     if not user_id:
         return None
-    with _STORE_LOCK:
-        path = _pending_path(user_id)
-        if not os.path.exists(path):
-            return None
-        try:
-            with open(path, encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            return None
-        if not isinstance(payload, dict):
-            return None
-        if time.time() > float(payload.get("expires_at") or 0):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-            return None
-        return payload
+    with repository.pending_session() as session:
+        return repository.load_pending(session, user_id, repository.KIND_CREATE)
+
+
+def consume_pending_create(user_id: str) -> dict | None:
+    """Delete the live create confirmation. A second consumer receives nothing."""
+    if not user_id:
+        return None
+    with repository.pending_session() as session:
+        return repository.consume_pending(session, user_id, repository.KIND_CREATE)
+
+
+def restore_pending_create(user_id: str, payload: dict) -> None:
+    """Put a consumed create confirmation back when note creation did not succeed."""
+    if not user_id or not payload:
+        return
+    with repository.pending_session() as session:
+        repository.save_create(
+            session,
+            user_id,
+            need_title=bool(payload.get("need_title")),
+            need_content=bool(payload.get("need_content")),
+            title=payload.get("title"),
+            category=payload.get("category") or "general",
+            ttl_seconds=TTL_SECONDS,
+            created_at=_from_epoch(payload.get("created_at")),
+            expires_at=_from_epoch(payload.get("expires_at")),
+        )
 
 
 def clear_pending_create(user_id: str) -> None:
     if not user_id:
         return
-    with _STORE_LOCK:
-        path = _pending_path(user_id)
-        if os.path.exists(path):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+    with repository.pending_session() as session:
+        repository.clear_pending(session, user_id, repository.KIND_CREATE)
+
+
+def _from_epoch(value) -> datetime.datetime | None:
+    if value is None:
+        return None
+    return datetime.datetime.fromtimestamp(float(value), datetime.timezone.utc)

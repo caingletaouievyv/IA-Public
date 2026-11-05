@@ -1,10 +1,12 @@
-"""Authenticated suggestion event context API."""
+# IA/backend/app/activity/routes.py
+# GET /activity/: newest suggestion events for the authenticated user.
 
 import logging
 
 from flask import Blueprint, jsonify, request
 
 from app.activity import manager
+from app.activity.repository import ActivityStoreError
 from app.common.auth import require_auth
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,6 @@ def get_activity():
 
     try:
         return jsonify(manager.list_activity(user_id, limit))
-    except (OSError, ValueError):
+    except (OSError, ValueError, ActivityStoreError):
         logger.exception("activity_history_read_failed")
         return jsonify({"error": "Failed to load suggestion context"}), 500

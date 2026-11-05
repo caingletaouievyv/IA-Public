@@ -28,4 +28,5 @@ WORKDIR /app/backend
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 120 run:app"]
+# Migrations run in /app/backend. Gunicorn starts only if upgrade succeeds.
+CMD ["sh", "-c", "alembic upgrade head && gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 120 run:app"]

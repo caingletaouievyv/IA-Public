@@ -17,6 +17,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app import create_app, config
 from app.notes import manager as notes_manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 from app.notes import pdf_extract
 from app.notes.pdf_extract import PdfExtractError, extract_text_from_pdf
 
@@ -130,6 +131,7 @@ class PdfExtractUnitTests(unittest.TestCase):
 class PdfExtractRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.notes_data_patch = patch.object(notes_manager, "DATA_DIR", cls.temp_dir.name)
         cls.notes_data_patch.start()
@@ -140,10 +142,11 @@ class PdfExtractRouteTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.notes_data_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id):
         token = jwt.encode(
@@ -224,6 +227,7 @@ class PdfExtractRouteTests(unittest.TestCase):
 class ImageExtractRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.notes_data_patch = patch.object(notes_manager, "DATA_DIR", cls.temp_dir.name)
         cls.notes_data_patch.start()
@@ -234,10 +238,11 @@ class ImageExtractRouteTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.notes_data_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id):
         token = jwt.encode(

@@ -16,11 +16,13 @@ import jwt
 from app import create_app, config
 from app.activity import manager as activity_manager
 from app.notes import manager as notes_manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 
 
 class ActivityRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.activity_data_patch = patch.object(activity_manager, "DATA_DIR", cls.temp_dir.name)
         cls.notes_data_patch = patch.object(notes_manager, "DATA_DIR", cls.temp_dir.name)
@@ -34,10 +36,11 @@ class ActivityRouteTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.notes_data_patch.stop()
         cls.activity_data_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id):
         token = jwt.encode(
@@ -195,21 +198,9 @@ class ActivityRouteTests(unittest.TestCase):
         )
         self.assertEqual(self.client.get("/activity/?limit=0", headers=headers).status_code, 400)
 
-    def test_concurrent_writes_and_transient_replace_permission_error(self):
+    def test_concurrent_writes_keep_every_event(self):
         user_id = self.user_id()
-        replace = os.replace
-        replace_attempts = 0
-
-        def fail_first_replace(source, destination):
-            nonlocal replace_attempts
-            replace_attempts += 1
-            if replace_attempts == 1:
-                raise PermissionError("transient Windows file lock")
-            return replace(source, destination)
-
-        with patch("app.activity.manager.os.replace", side_effect=fail_first_replace):
-            initial_event = activity_manager.record_activity(user_id, "note.created")
-        self.assertEqual(replace_attempts, 2)
+        initial_event = activity_manager.record_activity(user_id, "note.created")
 
         with ThreadPoolExecutor(max_workers=12) as executor:
             events = list(

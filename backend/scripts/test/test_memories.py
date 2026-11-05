@@ -20,12 +20,14 @@ from app import config
 from app.credits import manager as credit_manager
 from app.memories import extraction, manager
 from app.notes import manager as notes_manager
+from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
 from app.settings import manager as settings_manager
 
 
 class MemoryFeatureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        install_notes_database()
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.memory_data_patch = patch.object(manager, "DATA_DIR", cls.temp_dir.name)
         cls.settings_data_patch = patch.object(settings_manager, "DATA_DIR", cls.temp_dir.name)
@@ -45,10 +47,11 @@ class MemoryFeatureTests(unittest.TestCase):
         cls.notes_data_patch.stop()
         cls.settings_data_patch.stop()
         cls.memory_data_patch.stop()
+        close_notes_database()
         cls.temp_dir.cleanup()
 
     def user_id(self):
-        return str(uuid.uuid4())
+        return ensure_note_owner(str(uuid.uuid4()))
 
     def headers(self, user_id):
         token = jwt.encode(
