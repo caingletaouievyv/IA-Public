@@ -88,10 +88,19 @@ def apply_claim(session, user_id: str, operation_id: str, pending_ttl_seconds: i
     row = _operation(session, user_id, operation_id)
     if row is not None and row.status == "completed":
         return {"status": "completed", "result": _copy(row.result or {})}
+    if row is not None and row.status == "failed":
+        return {"status": "failed", "result": _copy(row.result or {})}
     if row is not None and row.status == "pending":
         started = float(row.started_at or 0)
         if time.time() - started < pending_ttl_seconds:
-            return {"status": "pending"}
+            return {"status": "pending", "result": _copy(row.result or {})}
+        if not _is_flashcard_generation_result(row.result):
+            row.status = "pending"
+            row.started_at = time.time()
+            row.result = None
+            session.flush()
+            return {"status": "claimed"}
+        return {"status": "pending", "result": _copy(row.result or {}), "expired": True}
     now = time.time()
     if row is None:
         session.add(
@@ -111,24 +120,17 @@ def apply_claim(session, user_id: str, operation_id: str, pending_ttl_seconds: i
     return {"status": "claimed"}
 
 
-def apply_complete(session, user_id: str, operation_id: str, result: dict) -> None:
+def apply_complete(session, user_id: str, operation_id: str, result: dict) -> bool:
+    """Mark pending as completed. Returns True only when the transition occurred."""
     stored = _copy(result)
     row = _operation(session, user_id, operation_id)
-    if row is None:
-        session.add(
-            CreditOperation(
-                user_id=user_id,
-                operation_id=operation_id,
-                status="completed",
-                started_at=None,
-                result=stored,
-            )
-        )
-    else:
-        row.status = "completed"
-        row.started_at = None
-        row.result = stored
+    if row is None or row.status != "pending":
+        return False
+    row.status = "completed"
+    row.started_at = None
+    row.result = stored
     session.flush()
+    return True
 
 
 def apply_release(session, user_id: str, operation_id: str) -> None:
@@ -136,6 +138,57 @@ def apply_release(session, user_id: str, operation_id: str) -> None:
     if row is not None and row.status == "pending":
         session.delete(row)
         session.flush()
+
+
+def apply_fail(session, user_id: str, operation_id: str, result: dict) -> bool:
+    """Mark pending as failed. Returns True only when the transition occurred."""
+    row = _operation(session, user_id, operation_id)
+    if row is None or row.status != "pending":
+        return False
+    row.status = "failed"
+    row.started_at = None
+    row.result = _copy(result)
+    session.flush()
+    return True
+
+
+def apply_update_pending_result(session, user_id: str, operation_id: str, result: dict) -> bool:
+    row = _operation(session, user_id, operation_id)
+    if row is None or row.status != "pending":
+        return False
+    stored = _copy(result)
+    stored["last_activity_at"] = time.time()
+    row.result = stored
+    session.flush()
+    return True
+
+
+def flashcard_last_activity_at(row: CreditOperation) -> float:
+    """Return the latest progress timestamp without extending total job lifetime."""
+    result = row.result if isinstance(row.result, dict) else {}
+    activity = result.get("last_activity_at")
+    if activity is not None:
+        return float(activity)
+    return float(row.started_at or 0)
+
+
+def list_pending_flashcard_operations(session) -> list[tuple[str, str]]:
+    rows = session.scalars(select(CreditOperation).where(CreditOperation.status == "pending")).all()
+    pending = []
+    for row in rows:
+        if _is_flashcard_generation_result(row.result):
+            pending.append((row.user_id, row.operation_id))
+    return pending
+
+
+def read_operation(session, user_id: str, operation_id: str) -> dict | None:
+    row = _operation(session, user_id, operation_id)
+    if row is None:
+        return None
+    payload = {"status": row.status, "result": _copy(row.result or {})}
+    if row.started_at is not None:
+        payload["started_at"] = float(row.started_at)
+    return payload
 
 
 def operation_completed(session, user_id: str, operation_id: str) -> bool:
@@ -299,7 +352,16 @@ def _entry_view(entry: CreditLedgerEntry) -> dict:
 def _operation_view(row: CreditOperation) -> dict:
     if row.status == "completed":
         return {"status": "completed", "result": _copy(row.result or {})}
-    return {"status": "pending", "started_at": float(row.started_at or 0)}
+    if row.status == "failed":
+        return {"status": "failed", "result": _copy(row.result or {})}
+    view = {"status": "pending", "started_at": float(row.started_at or 0)}
+    if row.result:
+        view["result"] = _copy(row.result)
+    return view
+
+
+def _is_flashcard_generation_result(result) -> bool:
+    return isinstance(result, dict) and result.get("kind") == "flashcards_generation"
 
 
 def _copy(value):

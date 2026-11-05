@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run src/activeConversation.test.jsx src/adminFrontend.test.jsx src/askReportAnswer.test.jsx src/reportAnswerDialog.test.jsx src/notesActionUi.test.js src/AskNotesActionBanner.test.jsx src/Notes.addForm.test.jsx src/manageNoteFocus.test.jsx src/FlashcardsPanel.test.jsx src/notesManageFilter.test.jsx && node --test src/askContextSources.test.js src/askCommands.test.js src/authRoles.test.js src/noteCategories.test.js"
+    "test": "vitest run src/activeConversation.test.jsx src/adminFrontend.test.jsx src/askReportAnswer.test.jsx src/reportAnswerDialog.test.jsx src/notesActionUi.test.js src/AskNotesActionBanner.test.jsx src/Notes.addForm.test.jsx src/manageNoteFocus.test.jsx src/FlashcardsPanel.test.jsx src/flashcardPolling.test.js src/notesManageFilter.test.jsx && node --test src/askContextSources.test.js src/askCommands.test.js src/authRoles.test.js src/noteCategories.test.js"
   },
   "dependencies": {
     "react": "^18.2.0",

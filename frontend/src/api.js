@@ -173,10 +173,92 @@ export async function reportAiFeedback(operationId, reason, feature = "ask") {
   return handleResponse(res, data);
 }
 
-export async function generateFlashcards(options) {
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+export const FLASHCARD_POLL_INITIAL_MS = 400;
+export const FLASHCARD_POLL_MAX_MS = 2500;
+export const FLASHCARD_POLL_MAX_DURATION_MS = 15 * 60 * 1000;
+
+export class FlashcardPollTimeoutError extends Error {
+  constructor(operationId, message = "Flashcard generation is still in progress.") {
+    super(message);
+    this.name = "FlashcardPollTimeoutError";
+    this.operationId = operationId;
+  }
+}
+
+async function readFlashcardStatusResponse(res) {
+  const data = await readJsonResponse(res);
+  if (res.status === 401 && getToken()) {
+    clearToken();
+    throw new Error("Session expired. Please sign in again.");
+  }
+  if (res.status === 502 && data?.status === "failed") {
+    return data;
+  }
+  if (res.status === 202 && data?.status === "pending") {
+    return data;
+  }
+  if (!res.ok) {
+    throw new Error(data?.error || data?.message || res.statusText);
+  }
+  return data;
+}
+
+export async function getFlashcardGenerationStatus(operationId) {
+  const res = await fetch(`${BASE}/ai/flashcards/generate/${encodeURIComponent(operationId)}`, {
+    headers: { ...authHeaders() },
+  });
+  return readFlashcardStatusResponse(res);
+}
+
+export async function pollFlashcardGeneration(operationId, callbacks = {}) {
+  const maxDuration = callbacks.maxDurationMs ?? FLASHCARD_POLL_MAX_DURATION_MS;
+  const started = Date.now();
+  let delay = FLASHCARD_POLL_INITIAL_MS;
+  let latest = await getFlashcardGenerationStatus(operationId);
+  callbacks.onProgress?.(latest.progress);
+  if (latest.status === "completed") {
+    return { cards: latest.cards || [], operation_id: operationId };
+  }
+  if (latest.status === "failed") {
+    throw new Error(latest.error || "Flashcard generation failed.");
+  }
+  while (latest.status === "pending") {
+    if (Date.now() - started >= maxDuration) {
+      throw new FlashcardPollTimeoutError(
+        operationId,
+        "Flashcard generation is taking longer than expected. You can keep waiting without starting a new generation.",
+      );
+    }
+    await sleep(delay);
+    delay = Math.min(Math.round(delay * 1.5), FLASHCARD_POLL_MAX_MS);
+    latest = await getFlashcardGenerationStatus(operationId);
+    callbacks.onProgress?.(latest.progress);
+    if (latest.status === "failed") {
+      throw new Error(latest.error || "Flashcard generation failed.");
+    }
+    if (latest.status === "completed") {
+      return { cards: latest.cards || [], operation_id: operationId };
+    }
+  }
+  throw new Error(latest?.error || "Flashcard generation ended unexpectedly.");
+}
+
+export async function generateFlashcards(options, callbacks = {}) {
+  if (options?.operation_id) {
+    return pollFlashcardGeneration(options.operation_id, callbacks);
+  }
+  const { operation_id: _ignored, ...generationOptions } = options || {};
   const body = {
-    ...options,
-    request_id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+    ...generationOptions,
+    request_id: generationOptions.request_id
+      || globalThis.crypto?.randomUUID?.()
+      || `${Date.now()}-${Math.random()}`,
   };
   const res = await fetch(`${BASE}/ai/flashcards/generate`, {
     method: "POST",
@@ -184,7 +266,21 @@ export async function generateFlashcards(options) {
     body: JSON.stringify(body),
   });
   const data = await readJsonResponse(res);
-  return handleResponse(res, data);
+  if (!res.ok && res.status !== 202) {
+    if (res.status === 502 && data?.status === "failed") {
+      throw new Error(data.error || "Flashcard generation failed.");
+    }
+    return handleResponse(res, data);
+  }
+  const operationId = data.operation_id;
+  if (data.status === "completed") {
+    return { cards: data.cards || [], operation_id: operationId };
+  }
+  if (data.status === "failed") {
+    throw new Error(data.error || "Flashcard generation failed.");
+  }
+  callbacks.onProgress?.(data.progress);
+  return pollFlashcardGeneration(operationId, callbacks);
 }
 
 export async function listMemories() {

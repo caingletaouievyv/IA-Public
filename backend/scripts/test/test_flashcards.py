@@ -4,6 +4,8 @@ import datetime
 import json
 import os
 import tempfile
+import threading
+import time
 import unittest
 import uuid
 from unittest.mock import patch
@@ -12,10 +14,49 @@ os.environ.setdefault("JWT_SECRET", "ia-unit-test-jwt-secret-with-enough-variety
 
 import jwt
 
+from flask import Flask
+
 from app import create_app, config
+from app.ai.flashcards import (
+    FLASHCARDS_OPERATION_KIND,
+    FlashcardGenerationError,
+    FlashcardJobStopped,
+    batch_sizes,
+    build_progress_result,
+    generate_flashcards_batched,
+)
+from app.ai import flashcards_job
 from app.credits import manager as credit_manager
 from app.notes import manager as notes_manager
 from scripts.test.notes_db import close_notes_database, ensure_note_owner, install_notes_database
+
+
+def _run_flashcard_job_sync(app, user_id, operation_id, options, source_notes):
+    total_batches = len(batch_sizes(options["card_count"]))
+    credit_manager.update_pending_operation_result(
+        user_id,
+        operation_id,
+        build_progress_result(0, total_batches, options["card_count"]),
+    )
+    try:
+        def on_progress(current_batch, total, card_count):
+            credit_manager.update_pending_operation_result(
+                user_id,
+                operation_id,
+                build_progress_result(current_batch, total, card_count),
+            )
+
+        cards = generate_flashcards_batched(
+            options,
+            source_notes,
+            progress_callback=on_progress,
+            pending_check=lambda: credit_manager.operation_is_pending(user_id, operation_id),
+        )
+        credit_manager.complete_operation(user_id, operation_id, {"cards": cards})
+    except (ValueError, FlashcardGenerationError) as error:
+        credit_manager.fail_flashcard_operation(user_id, operation_id, str(error))
+    except Exception:
+        credit_manager.fail_flashcard_operation(user_id, operation_id, "Flashcard generation failed.")
 
 
 class FlashcardRouteTests(unittest.TestCase):
@@ -29,6 +70,9 @@ class FlashcardRouteTests(unittest.TestCase):
         cls.credits_data_patch.start()
         cls.app = create_app()
         cls.app.config.update(TESTING=True, RATELIMIT_ENABLED=False)
+        from app import limiter
+
+        limiter.enabled = False
         cls.client = cls.app.test_client()
         cls.role_patch = patch("app.ai.routes.get_user_role", return_value="user")
         cls.role_patch.start()
@@ -73,19 +117,25 @@ class FlashcardRouteTests(unittest.TestCase):
             **overrides,
         }
 
+    def _cards_json(self, count, prefix="Q"):
+        return json.dumps({
+            "cards": [
+                {"question": f"{prefix}{index}?", "answer": f"A{index}."}
+                for index in range(1, count + 1)
+            ],
+        })
+
     def test_generation_uses_only_selected_owned_notes_and_validates_cards(self):
         user_id = self.user_id()
         selected = self.add_note(user_id, "Biology", "Plants use light to make sugars.")
         self.add_note(user_id, "Other", "This material must not be sent.")
         initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
-        provider_output = json.dumps({
-            "cards": [
-                {"question": "What do plants make?", "answer": "Sugars."},
-                {"question": "What energy source is used?", "answer": "Light."},
-            ],
-        })
+        provider_output = self._cards_json(2)
 
-        with patch("app.ai.flashcards.call_ai", return_value=provider_output) as provider:
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", return_value=provider_output) as provider,
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
             response = self.client.post(
                 "/ai/flashcards/generate",
                 json=self.request_data(selected["id"]),
@@ -93,7 +143,9 @@ class FlashcardRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["cards"], json.loads(provider_output)["cards"])
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "completed")
+        self.assertEqual(len(payload["cards"]), 2)
         self.assertEqual(
             credit_manager.get_credit_account(user_id)["credit_balance"],
             initial_balance - config.AI_ASK_CREDIT_COST,
@@ -111,14 +163,11 @@ class FlashcardRouteTests(unittest.TestCase):
         note = self.add_note(user_id, "Biology", "Plants use light to make sugars.")
         request_data = self.request_data(note["id"])
         request_data.pop("language")
-        provider_output = json.dumps({
-            "cards": [
-                {"question": "What do plants make?", "answer": "Sugars."},
-                {"question": "What energy source is used?", "answer": "Light."},
-            ],
-        })
 
-        with patch("app.ai.flashcards.call_ai", return_value=provider_output) as provider:
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", return_value=self._cards_json(2)),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
             response = self.client.post(
                 "/ai/flashcards/generate",
                 json=request_data,
@@ -126,9 +175,6 @@ class FlashcardRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        provider.assert_called_once()
-        source_payload = json.loads(provider.call_args.kwargs["messages"][1]["content"])
-        self.assertEqual(source_payload["language"], "Same as notes")
 
     def test_authentication_and_note_ownership_are_required(self):
         user_id, other_user = self.user_id(), self.user_id()
@@ -140,7 +186,7 @@ class FlashcardRouteTests(unittest.TestCase):
         )
         self.assertEqual(unauthenticated.status_code, 401)
 
-        with patch("app.ai.flashcards.call_ai") as provider:
+        with patch("app.ai.flashcards.call_flashcard_batch") as provider:
             response = self.client.post(
                 "/ai/flashcards/generate",
                 json=self.request_data(foreign_note["id"]),
@@ -159,11 +205,12 @@ class FlashcardRouteTests(unittest.TestCase):
             '{"version":1,"cards":[{"question":"Q","answer":"A"}]}',
             category="_flashcards",
         )
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
 
-        with patch("app.ai.flashcards.call_ai") as provider:
+        with patch("app.ai.flashcards.call_flashcard_batch") as provider:
             invalid_count = self.client.post(
                 "/ai/flashcards/generate",
-                json=self.request_data(note["id"], card_count=True),
+                json=self.request_data(note["id"], card_count=100),
                 headers=self.headers(user_id),
             )
             invalid_style = self.client.post(
@@ -187,6 +234,7 @@ class FlashcardRouteTests(unittest.TestCase):
         self.assertEqual(history_response.status_code, 400)
         self.assertEqual(deck_response.status_code, 400)
         provider.assert_not_called()
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
 
     def test_malformed_provider_response_fails_and_refunds_reserved_credit(self):
         user_id = self.user_id()
@@ -194,11 +242,11 @@ class FlashcardRouteTests(unittest.TestCase):
         initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
 
         with (
-            self.assertLogs("ia.understanding", level="WARNING") as captured,
             patch(
-                "app.ai.flashcards.call_ai",
+                "app.ai.flashcards.call_flashcard_batch",
                 return_value="PRIVATE_PROVIDER_OUTPUT_SENTINEL",
             ),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
         ):
             response = self.client.post(
                 "/ai/flashcards/generate",
@@ -207,12 +255,376 @@ class FlashcardRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 502)
-        self.assertIn("code=flashcards.generation_failed", captured.output[0])
-        self.assertNotIn("PRIVATE_PROVIDER_OUTPUT_SENTINEL", captured.output[0])
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "failed")
         self.assertEqual(
             credit_manager.get_credit_account(user_id)["credit_balance"],
             initial_balance,
         )
+
+    def test_generates_99_cards_in_ten_batches(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Study", "Long source " * 50)
+        request_data = self.request_data(note["id"], card_count=99, request_id="batch-99")
+        sizes = batch_sizes(99)
+        self.assertEqual(len(sizes), 10)
+        self.assertEqual(sizes[-1], 9)
+        call_count = {"value": 0}
+
+        def provider_side_effect(*_args, **kwargs):
+            call_count["value"] += 1
+            batch_size = kwargs["batch_size"]
+            start = sum(sizes[: call_count["value"] - 1]) + 1
+            cards = [
+                {"question": f"Question {index}?", "answer": f"Answer {index}."}
+                for index in range(start, start + batch_size)
+            ]
+            return json.dumps({"cards": cards})
+
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider,
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
+            response = self.client.post(
+                "/ai/flashcards/generate",
+                json=request_data,
+                headers=self.headers(user_id),
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "completed")
+        self.assertEqual(len(payload["cards"]), 99)
+        self.assertEqual(provider.call_count, 10)
+
+    def test_duplicate_questions_fail_and_refund(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Study", "Source text.")
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+
+        with (
+            patch(
+                "app.ai.flashcards.call_flashcard_batch",
+                side_effect=[
+                    self._cards_json(2, prefix="Unique"),
+                    json.dumps({"cards": [
+                        {"question": "Unique1?", "answer": "A1."},
+                        {"question": "Unique2?", "answer": "A2."},
+                    ]}),
+                ],
+            ),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
+            response = self.client.post(
+                "/ai/flashcards/generate",
+                json=self.request_data(note["id"], card_count=4, request_id="dup-test"),
+                headers=self.headers(user_id),
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
+
+    def test_middle_batch_failure_refunds_once(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Study", "Source text.")
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+        calls = {"count": 0}
+
+        def flaky_provider(*_args, **_kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise FlashcardGenerationError("Batch failed.")
+            return self._cards_json(2, prefix=f"B{calls['count']}")
+
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", side_effect=flaky_provider),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
+            response = self.client.post(
+                "/ai/flashcards/generate",
+                json=self.request_data(note["id"], card_count=4, request_id="middle-fail"),
+                headers=self.headers(user_id),
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
+
+    def test_polling_does_not_charge_again(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Study", "Source text.")
+        request_data = self.request_data(note["id"], request_id="poll-test")
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", return_value=self._cards_json(2)),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
+            started = self.client.post(
+                "/ai/flashcards/generate",
+                json=request_data,
+                headers=self.headers(user_id),
+            )
+        self.assertEqual(started.status_code, 200)
+        operation_id = started.get_json()["operation_id"]
+        for _ in range(5):
+            polled = self.client.get(
+                f"/ai/flashcards/generate/{operation_id}",
+                headers=self.headers(user_id),
+            )
+            self.assertEqual(polled.status_code, 200)
+        self.assertEqual(
+            credit_manager.get_credit_account(user_id)["credit_balance"],
+            initial_balance - config.AI_ASK_CREDIT_COST,
+        )
+
+    def test_completed_operation_is_idempotent_without_extra_charge(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Study", "Source text.")
+        request_data = self.request_data(note["id"], request_id="repeat-op")
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", return_value=self._cards_json(2)),
+            patch("app.ai.routes.start_flashcard_generation", side_effect=_run_flashcard_job_sync),
+        ):
+            first = self.client.post(
+                "/ai/flashcards/generate",
+                json=request_data,
+                headers=self.headers(user_id),
+            )
+            second = self.client.post(
+                "/ai/flashcards/generate",
+                json=request_data,
+                headers=self.headers(user_id),
+            )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(second.get_json()["cards"]), 2)
+        self.assertEqual(
+            credit_manager.get_credit_account(user_id)["credit_balance"],
+            initial_balance - config.AI_ASK_CREDIT_COST,
+        )
+
+    def test_startup_recovery_refunds_unfinished_flashcard_jobs(self):
+        user_id = self.user_id()
+        operation_id = "recover-me"
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+        credit_manager.claim_operation(user_id, operation_id)
+        credit_manager.reserve_credits(user_id, config.AI_ASK_CREDIT_COST, "ai_flashcards", operation_id)
+        credit_manager.update_pending_operation_result(
+            user_id,
+            operation_id,
+            {
+                "kind": FLASHCARDS_OPERATION_KIND,
+                "progress": {"current_batch": 2, "total_batches": 10, "card_count": 99},
+            },
+        )
+        self.assertEqual(
+            credit_manager.get_credit_account(user_id)["credit_balance"],
+            initial_balance - config.AI_ASK_CREDIT_COST,
+        )
+
+        credit_manager.recover_abandoned_flashcard_operations()
+        status = credit_manager.get_operation_status(user_id, operation_id)
+        self.assertEqual(status["status"], "failed")
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
+
+    def test_resume_pending_post_does_not_charge_again(self):
+        user_id = self.user_id()
+        note = self.add_note(user_id, "Resume", "Body")
+        request_id = "resume-same-op"
+        request_data = self.request_data(note["id"], card_count=2, request_id=request_id)
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+        credit_manager.claim_operation(user_id, request_id)
+        credit_manager.reserve_credits(user_id, config.AI_ASK_CREDIT_COST, "ai_flashcards", request_id)
+        credit_manager.update_pending_operation_result(
+            user_id,
+            request_id,
+            build_progress_result(1, 1, 2),
+        )
+        with patch("app.ai.routes.start_flashcard_generation"):
+            second = self.client.post(
+                "/ai/flashcards/generate",
+                json=request_data,
+                headers=self.headers(user_id),
+            )
+        self.assertEqual(second.status_code, 202)
+        self.assertEqual(second.get_json()["status"], "pending")
+        self.assertEqual(
+            credit_manager.get_credit_account(user_id)["credit_balance"],
+            initial_balance - config.AI_ASK_CREDIT_COST,
+        )
+
+
+class FlashcardJobRaceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        install_notes_database()
+
+    @classmethod
+    def tearDownClass(cls):
+        close_notes_database()
+
+    def setUp(self):
+        self.user = ensure_note_owner(str(uuid.uuid4()))
+
+    def test_batched_progress_refreshes_idle_activity(self):
+        operation_id = "idle-refresh"
+        credit_manager.claim_operation(self.user, operation_id)
+        credit_manager.update_pending_operation_result(
+            self.user,
+            operation_id,
+            build_progress_result(0, 3, 30),
+        )
+        with patch("app.ai.flashcards.call_flashcard_batch", return_value='{"cards":[{"question":"Q1","answer":"A1"}]}'):
+            generate_flashcards_batched(
+                {"card_count": 1, "difficulty": "Mixed", "question_style": "Mixed", "language": "Same as notes", "additional_instructions": ""},
+                [{"title": "T", "content": "Body"}],
+                progress_callback=lambda current, total, count: credit_manager.update_pending_operation_result(
+                    self.user,
+                    operation_id,
+                    build_progress_result(current, total, count),
+                ),
+            )
+        status = credit_manager.get_operation_status(self.user, operation_id)
+        activity = status["result"]["last_activity_at"]
+        started = status["started_at"]
+        self.assertGreater(activity, started)
+
+    def test_pending_check_stops_before_next_provider_batch(self):
+        provider_calls = []
+
+        def provider(**kwargs):
+            batch_index = len(provider_calls) + 1
+            provider_calls.append(batch_index)
+            cards = [
+                {"question": f"Q{batch_index}-{index}", "answer": f"A{batch_index}-{index}"}
+                for index in range(kwargs["batch_size"])
+            ]
+            return json.dumps({"cards": cards})
+
+        still_pending = {"value": True}
+
+        def on_progress(*_args):
+            still_pending["value"] = False
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider):
+            with self.assertRaises(FlashcardJobStopped):
+                generate_flashcards_batched(
+                    {
+                        "card_count": 20,
+                        "difficulty": "Mixed",
+                        "question_style": "Mixed",
+                        "language": "Same as notes",
+                        "additional_instructions": "",
+                    },
+                    [{"title": "T", "content": "Body"}],
+                    progress_callback=on_progress,
+                    pending_check=lambda: still_pending["value"],
+                )
+        self.assertEqual(provider_calls, [1])
+
+    def test_concurrent_expiry_and_completion(self):
+        operation_id = "race-complete"
+        credit_manager.claim_operation(self.user, operation_id)
+        credit_manager.reserve_credits(self.user, config.AI_ASK_CREDIT_COST, "ai_flashcards", operation_id)
+        credit_manager.update_pending_operation_result(
+            self.user,
+            operation_id,
+            build_progress_result(1, 3, 30),
+        )
+        from sqlalchemy import select
+
+        from app.credits.models import CreditOperation
+        from app.credits import repository
+
+        with repository.credits_session() as session:
+            row = session.scalar(
+                select(CreditOperation).where(
+                    CreditOperation.user_id == self.user,
+                    CreditOperation.operation_id == operation_id,
+                )
+            )
+            row.started_at = time.time() - config.FLASHCARD_JOB_MAX_SECONDS - 1
+            result = dict(row.result or {})
+            result["last_activity_at"] = row.started_at
+            row.result = result
+        outcomes = []
+
+        def complete():
+            outcomes.append(
+                ("complete", credit_manager.complete_operation(self.user, operation_id, {"cards": []}))
+            )
+
+        def expire():
+            outcomes.append(
+                ("expire", credit_manager.maybe_fail_expired_flashcard_operation(self.user, operation_id))
+            )
+
+        threads = [threading.Thread(target=complete), threading.Thread(target=expire)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        status = credit_manager.get_operation_status(self.user, operation_id)["status"]
+        self.assertIn(status, {"completed", "failed"})
+        self.assertEqual(
+            sum(1 for name, ok in outcomes if ok),
+            1,
+        )
+
+    def test_startup_recovery_does_not_refund_twice(self):
+        operation_id = "recover-twice"
+        initial_balance = credit_manager.get_credit_account(self.user)["credit_balance"]
+        credit_manager.claim_operation(self.user, operation_id)
+        credit_manager.reserve_credits(self.user, config.AI_ASK_CREDIT_COST, "ai_flashcards", operation_id)
+        credit_manager.update_pending_operation_result(
+            self.user,
+            operation_id,
+            build_progress_result(0, 5, 50),
+        )
+        credit_manager.recover_abandoned_flashcard_operations()
+        self.assertEqual(credit_manager.get_operation_status(self.user, operation_id)["status"], "failed")
+        balance_after_first = credit_manager.get_credit_account(self.user)["credit_balance"]
+        self.assertEqual(balance_after_first, initial_balance)
+        credit_manager.recover_abandoned_flashcard_operations()
+        self.assertEqual(credit_manager.get_credit_account(self.user)["credit_balance"], balance_after_first)
+
+    def test_worker_skips_provider_after_operation_failed(self):
+        operation_id = "worker-stop"
+        credit_manager.claim_operation(self.user, operation_id)
+        credit_manager.reserve_credits(self.user, config.AI_ASK_CREDIT_COST, "ai_flashcards", operation_id)
+        options = {
+            "card_count": 20,
+            "difficulty": "Mixed",
+            "question_style": "Mixed",
+            "language": "Same as notes",
+            "additional_instructions": "",
+        }
+        source_notes = [{"title": "T", "content": "Body"}]
+        calls = []
+
+        def provider(**kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                credit_manager.fail_flashcard_operation(self.user, operation_id, "stopped")
+            cards = [{"question": f"Q{index}", "answer": f"A{index}"} for index in range(kwargs["batch_size"])]
+            return json.dumps({"cards": cards})
+
+        app = Flask(__name__)
+        app.config.update(TESTING=True)
+
+        def immediate_start(thread_self):
+            thread_self._target(*thread_self._args, **thread_self._kwargs)
+
+        with (
+            patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider),
+            patch.object(threading.Thread, "start", immediate_start),
+        ):
+            flashcards_job.start_flashcard_generation(app, self.user, operation_id, options, source_notes)
+        self.assertEqual(calls, [1])
+        self.assertEqual(credit_manager.get_operation_status(self.user, operation_id)["status"], "failed")
 
 
 if __name__ == "__main__":

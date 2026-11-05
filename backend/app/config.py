@@ -59,6 +59,9 @@ AI_CREDIT_INITIAL_BALANCE = int(os.getenv("AI_CREDIT_INITIAL_BALANCE", "100"))
 AI_ASK_CREDIT_COST = int(os.getenv("AI_ASK_CREDIT_COST", "1"))
 REWARDED_AD_CREDIT_AMOUNT = int(os.getenv("REWARDED_AD_CREDIT_AMOUNT", "10"))
 AI_UNLIMITED_ROLE = os.getenv("AI_UNLIMITED_ROLE", "admin").strip()
+# Flashcard background jobs: wall-clock cap from claim time; idle cap from last batch progress.
+FLASHCARD_JOB_MAX_SECONDS = max(60, int(os.getenv("FLASHCARD_JOB_MAX_SECONDS", "600")))
+FLASHCARD_JOB_IDLE_SECONDS = max(30, int(os.getenv("FLASHCARD_JOB_IDLE_SECONDS", "300")))
 
 # AI diagnostics (content-free fallback and feedback records)
 DIAGNOSTICS_ENABLED = _bool_env("DIAGNOSTICS_ENABLED", True)

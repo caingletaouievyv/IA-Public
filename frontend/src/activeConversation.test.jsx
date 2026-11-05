@@ -155,9 +155,20 @@ function installApiMock() {
       flashcardRequests.push(JSON.parse(options.body));
       if (flashcardRequestGate) await flashcardRequestGate.promise;
       if (flashcardRequestError) {
-        return jsonResponse({ error: "Flashcard generation failed" }, 502);
+        return jsonResponse({ status: "failed", error: "Flashcard generation failed" }, 502);
       }
-      return jsonResponse(flashcardResponse);
+      return jsonResponse({
+        status: "completed",
+        operation_id: "mock-flashcards-op",
+        cards: flashcardResponse.cards,
+      });
+    }
+    if (url.pathname.startsWith("/ai/flashcards/generate/") && method === "GET") {
+      return jsonResponse({
+        status: "completed",
+        operation_id: decodeURIComponent(url.pathname.slice("/ai/flashcards/generate/".length)),
+        cards: flashcardResponse.cards,
+      });
     }
     if (url.pathname === "/auth/login" && method === "POST") {
       return jsonResponse({ token: tokenFor("user-2"), user_id: "user-2" });

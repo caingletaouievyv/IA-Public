@@ -28,7 +28,15 @@ class AIProviderError(RuntimeError):
     """Raised when a configured AI provider request fails."""
 
 
-def call_single(prompt: str | None = None, messages: list | None = None, provider: str = None) -> str:
+def call_single(
+    prompt: str | None = None,
+    messages: list | None = None,
+    provider: str = None,
+    *,
+    max_tokens: int | None = None,
+    response_format: dict | None = None,
+    timeout: int = 60,
+) -> str:
     """Call one provider. Use messages (chat format) if provided; else single user message from prompt."""
     config = MODEL_MAP.get(provider or MODEL_PROVIDER, MODEL_MAP["groq"])
     headers = {"Content-Type": "application/json"}
@@ -38,8 +46,12 @@ def call_single(prompt: str | None = None, messages: list | None = None, provide
         payload = {"model": config["model"], "messages": messages}
     else:
         payload = {"model": config["model"], "messages": [{"role": "user", "content": prompt or ""}]}
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+    if response_format is not None:
+        payload["response_format"] = response_format
     try:
-        response = requests.post(config["endpoint"], headers=headers, json=payload, timeout=60)
+        response = requests.post(config["endpoint"], headers=headers, json=payload, timeout=timeout)
         response.raise_for_status()
     except requests.RequestException as error:
         logger.warning(
@@ -50,6 +62,17 @@ def call_single(prompt: str | None = None, messages: list | None = None, provide
         raise AIProviderError(f"{provider} request failed") from error
     result = response.json()
     return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+
+def call_flashcard_batch(messages: list, batch_size: int) -> str:
+    """Flashcard-only provider call with bounded output and JSON mode."""
+    max_tokens = min(8000, max(800, batch_size * 350))
+    return call_single(
+        messages=messages,
+        provider=MODEL_PROVIDER,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+    )
 
 def judge_answers(question: str, answers: list) -> str:
     """Pick best answer by relevance + length + clarity (fewer ?)."""

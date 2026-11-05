@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createNote,
   deleteNote,
+  FlashcardPollTimeoutError,
   generateFlashcards,
   listNotes,
   updateNote,
@@ -15,7 +16,7 @@ import {
   isFlashcardDeckCategory,
 } from "../noteCategories.js";
 
-const MAX_CARDS = 30;
+const MAX_CARDS = 99;
 const MAX_SELECTED_NOTES = 20;
 
 function isFlashcardDeck(note) {
@@ -67,6 +68,8 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(null);
+  const [resumeOperationId, setResumeOperationId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -157,6 +160,25 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
     setSuccess(null);
   };
 
+  const applyGenerationResult = (result, count) => {
+    if (!Array.isArray(result.cards) || result.cards.length !== count) {
+      throw new Error("The generated cards did not match the requested count.");
+    }
+    setDraft(result.cards.map((card, index) => ({
+      id: `${Date.now()}-${index}`,
+      question: card.question,
+      answer: card.answer,
+    })));
+    const firstTitle = sourceNotes.find((note) => selectedNoteIds.has(note.id))?.title?.trim();
+    setDeckTitle(firstTitle ? `${firstTitle} flashcards` : "Flashcards");
+    setCurrentCardIndex(0);
+    setActiveDeckId(null);
+    setEditingDeck(true);
+    setAnswerRevealed(false);
+    setStage("review");
+    setResumeOperationId(null);
+  };
+
   const generate = async () => {
     if (generatingRef.current) return;
     const count = Number(cardCount);
@@ -170,8 +192,10 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
     }
     setError(null);
     setSuccess(null);
+    setResumeOperationId(null);
     generatingRef.current = true;
     setGenerating(true);
+    setGenerationProgress(null);
     try {
       const result = await generateFlashcards({
         note_ids: [...selectedNoteIds],
@@ -180,27 +204,51 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
         question_style: questionStyle,
         language,
         additional_instructions: additionalInstructions,
+      }, {
+        onProgress: (progress) => setGenerationProgress(progress || null),
       });
-      if (!Array.isArray(result.cards) || result.cards.length !== count) {
-        throw new Error("The generated cards did not match the requested count.");
-      }
-      setDraft(result.cards.map((card, index) => ({
-        id: `${Date.now()}-${index}`,
-        question: card.question,
-        answer: card.answer,
-      })));
-      const firstTitle = sourceNotes.find((note) => selectedNoteIds.has(note.id))?.title?.trim();
-      setDeckTitle(firstTitle ? `${firstTitle} flashcards` : "Flashcards");
-      setCurrentCardIndex(0);
-      setActiveDeckId(null);
-      setEditingDeck(true);
-      setAnswerRevealed(false);
-      setStage("review");
+      applyGenerationResult(result, count);
     } catch (generationError) {
-      setError(generationError.message || "Could not generate flashcards.");
+      if (generationError instanceof FlashcardPollTimeoutError) {
+        setResumeOperationId(generationError.operationId);
+        setError(generationError.message);
+      } else {
+        setResumeOperationId(null);
+        setError(generationError.message || "Could not generate flashcards.");
+      }
     } finally {
       generatingRef.current = false;
       setGenerating(false);
+      setGenerationProgress(null);
+    }
+  };
+
+  const continueWaiting = async () => {
+    if (!resumeOperationId || generatingRef.current) return;
+    const count = Number(cardCount);
+    setError(null);
+    setSuccess(null);
+    generatingRef.current = true;
+    setGenerating(true);
+    setGenerationProgress(null);
+    try {
+      const result = await generateFlashcards(
+        { operation_id: resumeOperationId },
+        { onProgress: (progress) => setGenerationProgress(progress || null) },
+      );
+      applyGenerationResult(result, count);
+    } catch (generationError) {
+      if (generationError instanceof FlashcardPollTimeoutError) {
+        setResumeOperationId(generationError.operationId);
+        setError(generationError.message);
+      } else {
+        setResumeOperationId(null);
+        setError(generationError.message || "Could not generate flashcards.");
+      }
+    } finally {
+      generatingRef.current = false;
+      setGenerating(false);
+      setGenerationProgress(null);
     }
   };
 
@@ -326,6 +374,23 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
   const currentCard = draft[currentCardIndex];
   const isSavedDeck = Boolean(activeDeckId);
   const canEdit = !isSavedDeck || editingDeck;
+
+  const addCard = () => {
+    if (!canEdit || busyRef.current) return;
+    const newCard = { id: `${Date.now()}-${draft.length}`, question: "", answer: "" };
+    setDraft((cards) => {
+      const next = [...cards, newCard];
+      setCurrentCardIndex(next.length - 1);
+      return next;
+    });
+    setSuccess(null);
+  };
+
+  const generationProgressLabel = () => {
+    if (!generationProgress?.total_batches) return "Generating…";
+    const batch = Math.max(1, generationProgress.current_batch || 1);
+    return `Generating batch ${batch} of ${generationProgress.total_batches}…`;
+  };
 
   return (
     <div className="flashcards-panel">
@@ -619,6 +684,14 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
             </div>
           </section>
           {error && <p className="out err" role="alert">{error}</p>}
+          {resumeOperationId && !generating && (
+            <button type="button" className="button-subtle" onClick={continueWaiting}>
+              Keep waiting
+            </button>
+          )}
+          {generating && generationProgress?.total_batches > 0 && (
+            <p className="flashcards-help" role="status">{generationProgressLabel()}</p>
+          )}
           <div className="flashcards-actions flashcards-actions--footer">
             <button type="button" className="button-subtle" onClick={cancelNewDeck} disabled={generating}>Cancel</button>
             <div className="flashcards-actions__right">
@@ -629,7 +702,7 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
                 </button>
               )}
               <button type="button" className="button-primary" onClick={generate} disabled={generating}>
-                {generating ? "Generating…" : draft.length > 0 && !activeDeckId ? "Generate new cards" : "Generate"}
+                {generating ? generationProgressLabel() : draft.length > 0 && !activeDeckId ? "Generate new cards" : "Generate"}
               </button>
             </div>
           </div>
@@ -700,6 +773,16 @@ export default function FlashcardsPanel({ onClose, onBusyChange }) {
                     disabled={busy}
                   >
                     Remove this card
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className="button-subtle"
+                    onClick={addCard}
+                    disabled={busy}
+                  >
+                    Add card
                   </button>
                 )}
               </article>

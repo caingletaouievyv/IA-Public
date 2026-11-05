@@ -89,7 +89,7 @@ Accounts, notes, memories, settings, credits, activity events, diagnostics, and 
 | Auth | `POST /auth/register`, `POST /auth/login` |
 | Notes | `GET/POST /notes/`, `GET/PUT/DELETE /notes/<id>`, `POST /notes/from-pdf/extract`, `POST /notes/from-pptx/extract`, `POST /notes/from-images/extract`, `POST /notes/from-images` |
 | Memory | `GET /memories/`, `PUT/DELETE /memories/<id>`, `DELETE /memories/clear` |
-| AI | `POST /ai/ask`, `POST /ai/suggestions`, `POST /ai/flashcards/generate`, `POST /ai/estimate_tokens`, `POST /ai/debug/context` |
+| AI | `POST /ai/ask`, `POST /ai/suggestions`, `POST /ai/flashcards/generate`, `GET /ai/flashcards/generate/<operation_id>`, `POST /ai/estimate_tokens`, `POST /ai/debug/context` |
 | Credits | `POST /credits/rewarded-ad` (development foundation; JWT required) |
 | Settings | `GET/PUT /settings/` (`ai_suggestions_enabled` defaults to true per user) |
 | Health | `GET /health` (no auth) |

@@ -3,6 +3,7 @@
 
 import os
 import sys
+import threading
 import time
 import unittest
 import uuid
@@ -189,6 +190,123 @@ class CreditRepositoryTests(unittest.TestCase):
         self.assertNotIn("127.0.0.1", message)
         self.assertNotIn("://", message)
         self.assertIn(str(caught.exception), {"Could not access credits.", "Database connection failed"})
+
+    def test_failed_operation_cannot_become_completed(self):
+        operation_id = "failed-stays-failed"
+        manager.claim_operation(self.user, operation_id)
+        manager.reserve_credits(self.user, config.AI_ASK_CREDIT_COST, "ai_flashcards", operation_id)
+        self.assertTrue(
+            manager.fail_flashcard_operation(self.user, operation_id, "Flashcard generation failed.")
+        )
+        self.assertFalse(
+            manager.complete_operation(self.user, operation_id, {"cards": [{"question": "Q", "answer": "A"}]})
+        )
+        status = manager.get_operation_status(self.user, operation_id)
+        self.assertEqual(status["status"], "failed")
+        balance = manager.get_credit_account(self.user)["credit_balance"]
+        self.assertEqual(balance, config.AI_CREDIT_INITIAL_BALANCE)
+
+    def test_completed_operation_cannot_become_failed(self):
+        operation_id = "completed-stays-completed"
+        manager.claim_operation(self.user, operation_id)
+        manager.reserve_credits(self.user, 1, "ai_ask", operation_id)
+        self.assertTrue(manager.complete_operation(self.user, operation_id, {"answer": "done"}))
+        self.assertFalse(
+            manager.fail_flashcard_operation(self.user, operation_id, "late failure", refund_amount=1)
+        )
+        status = manager.get_operation_status(self.user, operation_id)
+        self.assertEqual(status["status"], "completed")
+        self.assertEqual(
+            manager.get_credit_account(self.user)["credit_balance"],
+            config.AI_CREDIT_INITIAL_BALANCE - 1,
+        )
+
+    def test_concurrent_expiry_requests_refund_once(self):
+        operation_id = "expire-once"
+        manager.claim_operation(self.user, operation_id)
+        manager.reserve_credits(self.user, config.AI_ASK_CREDIT_COST, "ai_flashcards", operation_id)
+        manager.update_pending_operation_result(
+            self.user,
+            operation_id,
+            {
+                "kind": "flashcards_generation",
+                "progress": {"current_batch": 0, "total_batches": 3, "card_count": 30},
+            },
+        )
+        with repository.credits_session() as session:
+            row = session.scalar(
+                select(CreditOperation).where(
+                    CreditOperation.user_id == self.user,
+                    CreditOperation.operation_id == operation_id,
+                )
+            )
+            row.started_at = time.time() - config.FLASHCARD_JOB_MAX_SECONDS - 5
+            result = dict(row.result or {})
+            result["last_activity_at"] = row.started_at
+            row.result = result
+        results = []
+
+        def expire():
+            results.append(manager.maybe_fail_expired_flashcard_operation(self.user, operation_id))
+
+        threads = [threading.Thread(target=expire) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(sum(results), 1)
+        self.assertEqual(
+            manager.get_credit_account(self.user)["credit_balance"],
+            config.AI_CREDIT_INITIAL_BALANCE,
+        )
+
+    def test_progress_activity_does_not_extend_total_job_lifetime(self):
+        operation_id = "max-lifetime"
+        manager.claim_operation(self.user, operation_id)
+        manager.update_pending_operation_result(
+            self.user,
+            operation_id,
+            {
+                "kind": "flashcards_generation",
+                "progress": {"current_batch": 5, "total_batches": 10, "card_count": 99},
+            },
+        )
+        with repository.credits_session() as session:
+            row = session.scalar(
+                select(CreditOperation).where(
+                    CreditOperation.user_id == self.user,
+                    CreditOperation.operation_id == operation_id,
+                )
+            )
+            row.started_at = time.time() - config.FLASHCARD_JOB_MAX_SECONDS - 1
+            result = dict(row.result or {})
+            result["last_activity_at"] = time.time()
+            row.result = result
+        self.assertTrue(manager.maybe_fail_expired_flashcard_operation(self.user, operation_id))
+
+    def test_idle_job_expires_while_total_lifetime_remains(self):
+        operation_id = "idle-expire"
+        manager.claim_operation(self.user, operation_id)
+        manager.update_pending_operation_result(
+            self.user,
+            operation_id,
+            {
+                "kind": "flashcards_generation",
+                "progress": {"current_batch": 1, "total_batches": 10, "card_count": 99},
+            },
+        )
+        with repository.credits_session() as session:
+            row = session.scalar(
+                select(CreditOperation).where(
+                    CreditOperation.user_id == self.user,
+                    CreditOperation.operation_id == operation_id,
+                )
+            )
+            row.started_at = time.time() - 30
+            result = dict(row.result or {})
+            result["last_activity_at"] = time.time() - config.FLASHCARD_JOB_IDLE_SECONDS - 1
+            row.result = result
+        self.assertTrue(manager.maybe_fail_expired_flashcard_operation(self.user, operation_id))
 
 
 if __name__ == "__main__":

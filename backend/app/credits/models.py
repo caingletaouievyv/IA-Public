@@ -49,7 +49,7 @@ class CreditOperation(Base):
     __tablename__ = "credit_operations"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'completed')",
+            "status IN ('pending', 'completed', 'failed')",
             name="credit_operations_status_known",
         ),
     )

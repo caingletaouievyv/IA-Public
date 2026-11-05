@@ -193,6 +193,22 @@ class RememberCommandTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIs(response.get_json()["remember_command_enabled"], True)
 
+    def test_failed_operation_id_does_not_run_remember(self):
+        user_id = self.user_id()
+        operation_id = "remember-failed-op"
+        from app.credits import repository
+
+        self.enable_memory(user_id)
+        credit_manager.claim_operation(user_id, operation_id)
+        with repository.locked_credits(user_id, config.AI_CREDIT_INITIAL_BALANCE) as session:
+            repository.apply_fail(session, user_id, operation_id, {"error": "prior failure"})
+        with patch("app.ai.routes.execute_remember_command") as remember_mock:
+            response = self.remember_ask(user_id, operation_id, "!remember keep this fact")
+        self.assertEqual(response.status_code, 409)
+        payload = response.get_json()
+        self.assertEqual(payload["error"], "operation_failed")
+        remember_mock.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

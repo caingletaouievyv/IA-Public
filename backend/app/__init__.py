@@ -24,6 +24,9 @@ def create_app():
     limiter.init_app(app)
     from app.db import init_app as init_database
     init_database(app)
+    from app.ai.flashcards_job import recover_flashcard_jobs_on_startup
+
+    recover_flashcard_jobs_on_startup()
     if CORS_ORIGINS:
         CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
 

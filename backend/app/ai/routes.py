@@ -3,7 +3,7 @@
 
 import time
 import uuid
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app import limiter, logger
 from app.common.auth import require_auth
 from app.common.understanding_gaps import report_understanding_gap
@@ -13,15 +13,19 @@ from app.ai.client import AIProviderError
 from app.ai.engine import ask, get_token_estimate
 from app.diagnostics.context import DiagnosticContext, set_diagnostic_context
 from app.ai.flashcards import (
-    generate_flashcards,
+    flashcard_status_payload,
+    load_source_notes,
     validate_flashcard_request,
 )
+from app.ai.flashcards_job import start_flashcard_generation
 from app.ai.suggestions import generate_suggestion
 from app.config import AI_ASK_CREDIT_COST
 from app.credits.manager import (
     InsufficientCreditsError,
     claim_operation,
     complete_operation,
+    get_operation_status,
+    maybe_fail_expired_flashcard_operation,
     refund_credits,
     release_operation,
     reserve_credits,
@@ -89,6 +93,15 @@ def _attach_operation_id(result: dict, operation_id: str) -> dict:
     return payload
 
 
+def _failed_operation_response(operation_id: str):
+    """Reject retries for a terminal failed operation without provider work or new debits."""
+    return jsonify({
+        "error": "operation_failed",
+        "message": "This operation ID already failed. Use a new operation ID to try again.",
+        "operation_id": operation_id,
+    }), 409
+
+
 def _handle_remember_command(user_id: str, data: dict, remember_text: str):
     operation_id = _operation_id(data)
     operation = claim_operation(user_id, operation_id)
@@ -96,6 +109,8 @@ def _handle_remember_command(user_id: str, data: dict, remember_text: str):
         return jsonify(_attach_operation_id(operation["result"], operation_id)), 200
     if operation["status"] == "pending":
         return jsonify({"error": "operation_in_progress"}), 409
+    if operation["status"] == "failed":
+        return _failed_operation_response(operation_id)
     settings = get_settings(user_id)
     settings.setdefault("remember_command_enabled", True)
     settings.setdefault("memory_enabled", False)
@@ -157,6 +172,8 @@ def ask_ai():
         return jsonify(_attach_operation_id(operation["result"], operation_id)), 200
     if operation["status"] == "pending":
         return jsonify({"error": "operation_in_progress"}), 409
+    if operation["status"] == "failed":
+        return _failed_operation_response(operation_id)
     reservation = None
     memory_enabled = get_settings(user_id).get("memory_enabled") is True
     set_diagnostic_context(DiagnosticContext(
@@ -222,9 +239,35 @@ def ask_ai():
         set_diagnostic_context(None)
 
 
+def _flashcard_response_payload(user_id: str, operation_id: str) -> tuple[dict, int]:
+    maybe_fail_expired_flashcard_operation(user_id, operation_id)
+    operation = get_operation_status(user_id, operation_id)
+    if not operation:
+        return {"error": "Unknown flashcard operation."}, 404
+    payload = flashcard_status_payload(operation)
+    payload["operation_id"] = operation_id
+    if payload["status"] == "completed":
+        return payload, 200
+    if payload["status"] == "failed":
+        return payload, 502
+    return payload, 202
+
+
+@bp.route("/flashcards/generate/<operation_id>", methods=["GET"])
+@limiter.limit("60 per minute")
+def get_flashcard_generation_status(operation_id):
+    """Poll flashcard generation progress or result without charging credits."""
+    user_id, auth_err = require_auth()
+    if auth_err:
+        return auth_err
+    payload, status = _flashcard_response_payload(user_id, operation_id)
+    return jsonify(payload), status
+
+
 @bp.route("/flashcards/generate", methods=["POST"])
 @limiter.limit("10 per minute")
 def generate_flashcards_route():
+    """Start or resume flashcard generation for one user-scoped operation."""
     user_id, auth_err = require_auth()
     if auth_err:
         return auth_err
@@ -232,15 +275,25 @@ def generate_flashcards_route():
     if not isinstance(data, dict):
         return jsonify({"error": "JSON object required"}), 400
     try:
-        validate_flashcard_request(data)
+        options = validate_flashcard_request(data)
+        source_notes = load_source_notes(user_id, options["note_ids"])
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
+
     operation_id = _operation_id(data)
+    maybe_fail_expired_flashcard_operation(user_id, operation_id)
     operation = claim_operation(user_id, operation_id)
     if operation["status"] == "completed":
-        return jsonify(operation["result"]), 200
+        payload = flashcard_status_payload({"status": "completed", "result": operation["result"]})
+        payload["operation_id"] = operation_id
+        return jsonify(payload), 200
+    if operation["status"] == "failed":
+        payload = flashcard_status_payload({"status": "failed", "result": operation["result"]})
+        payload["operation_id"] = operation_id
+        return jsonify(payload), 502
     if operation["status"] == "pending":
-        return jsonify({"error": "operation_in_progress"}), 409
+        payload, status = _flashcard_response_payload(user_id, operation_id)
+        return jsonify(payload), status
 
     reservation = None
     if not has_unlimited_credits(get_user_role(user_id)):
@@ -261,20 +314,16 @@ def generate_flashcards_route():
             }), 402
 
     try:
-        result = {"cards": generate_flashcards(user_id, data)}
-        complete_operation(user_id, operation_id, result)
-        return jsonify(result), 200
-    except ValueError as error:
-        if reservation and reservation["charged"]:
-            refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_flashcards_refund", operation_id)
-        release_operation(user_id, operation_id)
-        return jsonify({"error": str(error)}), 400
+        start_flashcard_generation(current_app._get_current_object(), user_id, operation_id, options, source_notes)
     except Exception as error:
         if reservation and reservation["charged"]:
             refund_credits(user_id, AI_ASK_CREDIT_COST, "ai_flashcards_refund", operation_id)
         release_operation(user_id, operation_id)
         report_understanding_gap("flashcards.generation_failed", error, user_id=user_id)
-        return jsonify({"error": "Flashcard generation failed"}), 502
+        return jsonify({"error": "Flashcard generation failed."}), 502
+
+    payload, status = _flashcard_response_payload(user_id, operation_id)
+    return jsonify(payload), status
 
 
 @bp.route("/suggestions", methods=["POST"])

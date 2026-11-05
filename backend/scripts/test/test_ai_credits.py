@@ -431,6 +431,24 @@ class AICreditTests(unittest.TestCase):
             responses = [self.ask(user_id, f"rate-limit-{index}") for index in range(31)]
         self.assertEqual(responses[-1].status_code, 429)
 
+    def test_failed_operation_id_does_not_call_ask_provider(self):
+        user_id = self.user_id()
+        operation_id = "ask-failed-op"
+        from app.credits import repository
+
+        credit_manager.claim_operation(user_id, operation_id)
+        with repository.locked_credits(user_id, config.AI_CREDIT_INITIAL_BALANCE) as session:
+            repository.apply_fail(session, user_id, operation_id, {"error": "prior failure"})
+        initial_balance = credit_manager.get_credit_account(user_id)["credit_balance"]
+        with patch.object(ai_routes, "ask") as ask_mock:
+            response = self.ask(user_id, operation_id)
+        self.assertEqual(response.status_code, 409)
+        payload = response.get_json()
+        self.assertEqual(payload["error"], "operation_failed")
+        self.assertEqual(payload["operation_id"], operation_id)
+        ask_mock.assert_not_called()
+        self.assertEqual(credit_manager.get_credit_account(user_id)["credit_balance"], initial_balance)
+
 
 if __name__ == "__main__":
     unittest.main()

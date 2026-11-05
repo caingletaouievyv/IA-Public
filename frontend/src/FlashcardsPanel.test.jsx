@@ -113,4 +113,14 @@ describe("FlashcardsPanel deck library and study mode", () => {
     await user.click(screen.getByRole("button", { name: "Back to decks" }));
     expect(screen.getByRole("heading", { name: "Decks" })).toBeTruthy();
   });
+
+  it("Edit mode supports Add card", async () => {
+    const user = userEvent.setup();
+    render(<FlashcardsPanel onClose={() => {}} />);
+    await waitFor(() => expect(listNotes).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "Open deck: First deck" }));
+    await user.click(screen.getByRole("button", { name: "Edit deck" }));
+    await user.click(screen.getByRole("button", { name: "Add card" }));
+    expect(screen.getByText("Card 3 of 3")).toBeTruthy();
+  });
 });
