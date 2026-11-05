@@ -33,8 +33,10 @@ The separate `python -m scripts.seed_render_demo` command requires explicit prod
 | **POST /ai/estimate_tokens** | POST | yes | Bearer + `{"question":"..."}` | 200 `estimated_tokens`, `context_tokens` |
 | **POST /ai/debug/context** | POST | yes | Bearer + `{"question":"..."}` | 200 context, scores, dropped_notes |
 | **POST /notes** | POST | yes | Bearer + note JSON | 201 note |
-| **POST /notes/from-images** | POST | yes | Multipart: title, category, files | 201 `{ note, appended }` |
+| **POST /notes/from-images** | POST | yes | Multipart: title, category, files | 201 `{ note, appended }`; 503 when Tesseract is missing. Add Note does not call this route. |
+| **POST /notes/from-images/extract** | POST | yes | Multipart: one or more image `files` | 200 `{ text, char_count, image_count }`; 400 for type/size/empty OCR; 503 when Tesseract is missing. Does not create a note. |
 | **POST /notes/from-pdf/extract** | POST | yes | Multipart: single `file` (PDF) | 200 `{ text, page_count, char_count }` |
+| **POST /notes/from-pptx/extract** | POST | yes | Multipart: single `file` (PPTX) | 200 `{ text, slide_count, char_count }`; 400 for invalid, empty, textless, or oversized files. Does not create a note. |
 | **GET /notes** | GET | yes | Bearer; optional `?limit=500` | 200 array |
 | **GET /notes/<id>** | GET | yes | Bearer | 200 or 404 |
 | **PUT /notes/<id>** | PUT | yes | Bearer + partial JSON | 200 or 404 |
@@ -87,6 +89,8 @@ python -m scripts.test.test_seed_user
 python -m scripts.test.test_seed_render_demo
 python -m scripts.test.test_settings_preferences
 python -m scripts.test.test_pdf_to_note
+python -m scripts.test.test_pptx_extract
+python -m scripts.test.test_image_ocr
 ```
 
 `python -m scripts.test.test_database` checks missing and unsupported `DATABASE_URL` values, engine settings, request rollback without an automatic commit, explicit `transaction()` commit and rollback, closed sessions that cannot run another query, and connection failures that omit credentials, URLs, and hostnames. Session behavior uses SQLite only and is not a PostgreSQL or Neon connection check. No test in this module opens a real PostgreSQL connection.
@@ -139,8 +143,9 @@ This checks health, JWT login/registration, `/ai/ask`, and selected note IDs; it
 | Credits and idempotency | Use `test_ai_credits.py` | Charge, insufficient-balance 402, role bypass, refunds, completed retry result reuse, distinct operation IDs, and per-user operation isolation match behavior |
 | Rewarded ads | Use `test_ai_credits.py` | Auth is required; caller-supplied reward IDs cannot grant outside explicit development/test mode |
 | JWT startup validation | Use `test_ai_credits.py` | Missing, weak, and placeholder secrets fail app creation without logging the secret |
-| Images | Multipart `/notes/from-images` or `/notes/from-images/extract` (API only; Manage Add note has no image UI) | 201 or 200 extract; Tesseract required |
+| Screenshots | Manage → Add note → **Import screenshots**, or `python -m scripts.test.test_image_ocr` | Text appends in upload order; missing Tesseract returns 503; 8 MB per image, 32 MB total, 20 images |
 | PDF import | `python -m scripts.test.test_pdf_to_note` or Manage → Add note → **Import PDF** overlay | 200 extract; save via `POST /notes/`; encrypted/blank/oversized rejected |
+| PPTX import | `python -m scripts.test.test_pptx_extract` or Manage → Add note → **Import PPTX** overlay | Slide text in order; empty, corrupt, textless, and oversized files rejected; original file not stored |
 
 ## Frontend component tests
 

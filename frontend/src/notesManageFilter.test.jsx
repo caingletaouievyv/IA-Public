@@ -12,6 +12,8 @@ vi.mock("./api.js", () => ({
   getNotesMeta: vi.fn(() => Promise.resolve({ categories: [], tags: [] })),
   createNote: vi.fn(),
   extractPdfText: vi.fn(),
+  extractPptxText: vi.fn(),
+  extractImageText: vi.fn(),
   updateNote: vi.fn(),
   deleteNote: vi.fn(),
 }));

@@ -42,3 +42,6 @@ pytesseract>=0.3.10
 
 # Notes from PDF (text layer)
 pypdf>=4.0
+
+# Notes from PowerPoint (text in slides; no OCR)
+python-pptx>=1.0.0

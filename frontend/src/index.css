@@ -2454,6 +2454,12 @@ button.secondary:focus-visible,
   flex: 1 1 auto;
   min-width: 0;
 }
+.notes-import-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
 .notes-import-pdf-trigger__icon {
   width: 1rem;
   height: 1rem;

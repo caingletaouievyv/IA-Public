@@ -23,8 +23,10 @@ from app.notes.manager import (
     is_flashcard_deck_category,
 )
 from app.notes.schemas import NoteCreate, NoteUpdate
-from app.notes.image_to_note import extract_text_from_images, process_images_to_note
+from app.notes.image_to_note import ImageExtractError, extract_text_from_images, process_images_to_note
 from app.notes.pdf_extract import PdfExtractError, extract_text_from_pdf
+from app.notes.pptx_extract import PptxExtractError, extract_text_from_pptx
+from app.notes.tesseract_runtime import OcrUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,47 @@ def extract_note_text_from_pdf():
         return jsonify({"error": "PDF extraction failed."}), 500
 
 
+@bp.route("/from-pptx/extract", methods=["POST"])
+@limiter.limit("10 per minute")
+def extract_note_text_from_pptx():
+    """Multipart: file (single PPTX). Returns extracted text for client review; does not create a note."""
+    user_id, auth_err = require_auth()
+    if auth_err:
+        return auth_err
+    files = request.files.getlist("file") or request.files.getlist("files")
+    if not files:
+        single = request.files.get("file")
+        files = [single] if single and getattr(single, "filename", None) else []
+    file_storage = next((item for item in files if item and getattr(item, "filename", None)), None)
+    if not file_storage:
+        return jsonify({"error": "Missing 'file' in multipart form"}), 400
+    if len([item for item in files if item and getattr(item, "filename", None)]) > 1:
+        return jsonify({"error": "Upload one PowerPoint at a time."}), 400
+    try:
+        result = extract_text_from_pptx(file_storage, user_id=user_id)
+        return jsonify({
+            "text": result.text,
+            "slide_count": result.slide_count,
+            "char_count": len(result.text),
+        })
+    except PptxExtractError as error:
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        logger.error("pptx_extract_failed error_type=%s", type(error).__name__)
+        return jsonify({"error": "PowerPoint extraction failed."}), 500
+
+
+def _image_extract_payload(extracted):
+    """Accept the extract result, or a plain string from older test doubles."""
+    if isinstance(extracted, str):
+        text = extracted.strip()
+        image_count = 1 if text else 0
+    else:
+        text = (extracted.text or "").strip()
+        image_count = extracted.image_count
+    return text, image_count
+
+
 @bp.route("/from-images/extract", methods=["POST"])
 @limiter.limit("10 per minute")
 def extract_note_text_from_images():
@@ -148,14 +191,18 @@ def extract_note_text_from_images():
     if not files or not any(f and getattr(f, "filename", None) for f in files):
         return jsonify({"error": "Missing 'files' or 'file' in multipart form"}), 400
     try:
-        text = (extract_text_from_images(files, user_id=user_id) or "").strip()
+        text, image_count = _image_extract_payload(extract_text_from_images(files, user_id=user_id))
         if not text:
             return jsonify({"error": "No text extracted from images. Check format and Tesseract installation."}), 400
         if len(text) > NOTES_MAX_CONTENT_CHARS:
             return jsonify({
                 "error": f"Extracted text exceeds the {NOTES_MAX_CONTENT_CHARS:,} character limit.",
             }), 400
-        return jsonify({"text": text, "char_count": len(text)}), 200
+        return jsonify({"text": text, "char_count": len(text), "image_count": image_count}), 200
+    except OcrUnavailableError as error:
+        return jsonify({"error": str(error)}), 503
+    except ImageExtractError as error:
+        return jsonify({"error": str(error)}), 400
     except Exception as error:
         logger.error("image_extract_failed error_type=%s", type(error).__name__)
         return jsonify({"error": "Image text extraction failed."}), 500
@@ -177,6 +224,8 @@ def create_note_from_images():
         note, appended = process_images_to_note(files, title=title, category=category, tags=[], user_id=user_id)
         _record_note_activity(user_id, "updated" if appended else "created", note)
         return jsonify({"note": note, "appended": appended}), 201
+    except OcrUnavailableError as error:
+        return jsonify({"error": str(error)}), 503
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except NoteStoreError:

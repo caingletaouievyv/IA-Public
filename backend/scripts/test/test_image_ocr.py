@@ -14,6 +14,8 @@ import jwt
 
 from app import create_app, config
 from app.notes import manager as notes_manager
+from app.notes import image_to_note
+from app.notes.image_to_note import ImageExtractError, extract_text_from_images
 from app.notes.tesseract_runtime import (
     OCR_UNAVAILABLE_MESSAGE,
     ensure_tesseract_ready,
@@ -21,6 +23,38 @@ from app.notes.tesseract_runtime import (
     tesseract_executable,
     OcrUnavailableError,
 )
+
+
+class _FileStub:
+    def __init__(self, data: bytes, filename: str):
+        self._data = data
+        self.filename = filename
+        self._pos = 0
+
+    def read(self, n=-1):
+        if n < 0:
+            chunk = self._data[self._pos :]
+            self._pos = len(self._data)
+            return chunk
+        chunk = self._data[self._pos : self._pos + n]
+        self._pos += len(chunk)
+        return chunk
+
+    def seek(self, pos, whence=0):
+        if whence == 0:
+            self._pos = pos
+        elif whence == 1:
+            self._pos += pos
+        else:
+            self._pos = len(self._data) + pos
+
+
+def _png_bytes() -> bytes:
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 class TesseractRuntimeTests(unittest.TestCase):
@@ -43,6 +77,34 @@ class TesseractRuntimeTests(unittest.TestCase):
         with self.assertRaises(OcrUnavailableError) as ctx:
             ensure_tesseract_ready()
         self.assertIn("Image OCR is not available", str(ctx.exception))
+
+
+class ImageExtractLimitTests(unittest.TestCase):
+    @patch("app.notes.image_to_note.ensure_tesseract_ready")
+    @patch("app.notes.image_to_note.configure_pytesseract")
+    @patch("pytesseract.image_to_string", side_effect=["Alpha text", "Beta text"])
+    def test_extracts_multiple_images_in_upload_order(self, _ocr, _configure, _ready):
+        result = extract_text_from_images([
+            _FileStub(_png_bytes(), "first.png"),
+            _FileStub(_png_bytes(), "second.png"),
+        ])
+        self.assertEqual(result.text, "Alpha text\n\nBeta text")
+        self.assertEqual(result.image_count, 2)
+
+    def test_rejects_oversized_image(self):
+        with patch.object(image_to_note, "NOTES_IMAGE_MAX_BYTES", 4):
+            with self.assertRaises(ImageExtractError) as ctx:
+                extract_text_from_images([_FileStub(b"12345", "big.png")])
+        self.assertIn("size limit", str(ctx.exception))
+
+    def test_rejects_total_upload_over_limit(self):
+        with patch.object(image_to_note, "NOTES_IMAGE_MAX_BYTES", 10), patch.object(image_to_note, "NOTES_IMAGE_MAX_TOTAL_BYTES", 12):
+            with self.assertRaises(ImageExtractError) as ctx:
+                extract_text_from_images([
+                    _FileStub(b"12345678", "one.png"),
+                    _FileStub(b"12345678", "two.png"),
+                ])
+        self.assertIn("total size limit", str(ctx.exception))
 
 
 class ImageExtractOcrUnavailableRouteTests(unittest.TestCase):

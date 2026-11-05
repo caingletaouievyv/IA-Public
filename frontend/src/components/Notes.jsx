@@ -1,8 +1,8 @@
 // IA/frontend/src/components/Notes.jsx
-// Notes: list with search; Select All / Unselect All; bulk delete. Click card → view/edit. Single Add note form (optional PDF extract). Excludes _history and flashcard decks. Auto-refresh when list visible (visibility + interval).
+// Notes: list with search; Select All / Unselect All; bulk delete. Click card → view/edit. Single Add note form (optional PDF, PPTX, or screenshot text import). Excludes _history and flashcard decks. Auto-refresh when list visible (visibility + interval).
 
 import { useState, useEffect, useRef } from "react";
-import { listNotes, createNote, extractPdfText, updateNote, deleteNote, getNotesMeta } from "../api";
+import { listNotes, createNote, extractPdfText, extractPptxText, extractImageText, updateNote, deleteNote, getNotesMeta } from "../api";
 import { isManageNotesExcludedCategory } from "../noteCategories.js";
 import AskOverlay from "./AskOverlay.jsx";
 
@@ -75,9 +75,17 @@ export default function Notes({
   const [showPdfImportDialog, setShowPdfImportDialog] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState(null);
   const [pdfImportDialogError, setPdfImportDialogError] = useState(null);
+  const [showPptxImportDialog, setShowPptxImportDialog] = useState(false);
+  const [pendingPptxFile, setPendingPptxFile] = useState(null);
+  const [pptxImportDialogError, setPptxImportDialogError] = useState(null);
+  const [showImageImportDialog, setShowImageImportDialog] = useState(false);
+  const [pendingImageFiles, setPendingImageFiles] = useState([]);
+  const [imageImportDialogError, setImageImportDialogError] = useState(null);
   const [contentImportMessage, setContentImportMessage] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const pdfFileInputRef = useRef(null);
+  const pptxFileInputRef = useRef(null);
+  const imageFileInputRef = useRef(null);
   const [focusNoteMissMessage, setFocusNoteMissMessage] = useState(null);
   const [viewingNoteId, setViewingNoteId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -154,11 +162,17 @@ export default function Notes({
     setNoteResult(null);
     setContentImportMessage(null);
     setPdfImportDialogError(null);
+    setPptxImportDialogError(null);
+    setImageImportDialogError(null);
     setShowPdfImportDialog(false);
+    setShowPptxImportDialog(false);
+    setShowImageImportDialog(false);
     setNoteCategory("");
     setNoteTagsArray([]);
     setNoteTagInput("");
     setPendingPdfFile(null);
+    setPendingPptxFile(null);
+    setPendingImageFiles([]);
   };
 
   const closePdfImportDialog = () => {
@@ -166,11 +180,44 @@ export default function Notes({
     setShowPdfImportDialog(false);
     setPdfImportDialogError(null);
     setPendingPdfFile(null);
+    if (pdfFileInputRef.current) pdfFileInputRef.current.value = "";
+  };
+
+  const closePptxImportDialog = () => {
+    if (importLoading) return;
+    setShowPptxImportDialog(false);
+    setPptxImportDialogError(null);
+    setPendingPptxFile(null);
+    if (pptxFileInputRef.current) pptxFileInputRef.current.value = "";
+  };
+
+  const closeImageImportDialog = () => {
+    if (importLoading) return;
+    setShowImageImportDialog(false);
+    setImageImportDialogError(null);
+    setPendingImageFiles([]);
+    if (imageFileInputRef.current) imageFileInputRef.current.value = "";
   };
 
   const openPdfImportDialog = () => {
     setPdfImportDialogError(null);
+    setShowPptxImportDialog(false);
+    setShowImageImportDialog(false);
     setShowPdfImportDialog(true);
+  };
+
+  const openPptxImportDialog = () => {
+    setPptxImportDialogError(null);
+    setShowPdfImportDialog(false);
+    setShowImageImportDialog(false);
+    setShowPptxImportDialog(true);
+  };
+
+  const openImageImportDialog = () => {
+    setImageImportDialogError(null);
+    setShowPdfImportDialog(false);
+    setShowPptxImportDialog(false);
+    setShowImageImportDialog(true);
   };
 
   const appendImportedText = (text) => {
@@ -283,8 +330,12 @@ export default function Notes({
       setNoteTagsArray([]);
       setNoteTagInput("");
       setPendingPdfFile(null);
+      setPendingPptxFile(null);
+      setPendingImageFiles([]);
       setContentImportMessage(null);
       setShowPdfImportDialog(false);
+      setShowPptxImportDialog(false);
+      setShowImageImportDialog(false);
       setAddFormMode(null);
       loadNotesList(setData, setLoading, setError);
     } catch (err) {
@@ -296,6 +347,7 @@ export default function Notes({
 
   const handleExtractPdfIntoContent = async (e) => {
     e?.preventDefault?.();
+    if (importLoading) return;
     if (!pendingPdfFile) {
       setPdfImportDialogError("Select a PDF file first.");
       return;
@@ -318,8 +370,75 @@ export default function Notes({
       setShowPdfImportDialog(false);
       setPendingPdfFile(null);
       setPdfImportDialogError(null);
+      if (pdfFileInputRef.current) pdfFileInputRef.current.value = "";
     } catch (err) {
       setPdfImportDialogError(err.message);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleExtractPptxIntoContent = async (e) => {
+    e?.preventDefault?.();
+    if (importLoading) return;
+    if (!pendingPptxFile) {
+      setPptxImportDialogError("Select a PowerPoint file first.");
+      return;
+    }
+    setPptxImportDialogError(null);
+    setImportLoading(true);
+    try {
+      const form = new FormData();
+      form.append("file", pendingPptxFile);
+      const res = await extractPptxText(form);
+      const text = (res.text || "").trim();
+      if (!text) {
+        setPptxImportDialogError("No text was extracted from this PowerPoint.");
+        return;
+      }
+      appendImportedText(text);
+      const slideCount = res.slide_count ?? 1;
+      const slideLabel = slideCount === 1 ? "1 slide" : `${slideCount} slides`;
+      setContentImportMessage(`PPTX text imported — ${slideLabel}.`);
+      setShowPptxImportDialog(false);
+      setPendingPptxFile(null);
+      setPptxImportDialogError(null);
+      if (pptxFileInputRef.current) pptxFileInputRef.current.value = "";
+    } catch (err) {
+      setPptxImportDialogError(err.message);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleExtractImagesIntoContent = async (e) => {
+    e?.preventDefault?.();
+    if (importLoading) return;
+    if (!pendingImageFiles.length) {
+      setImageImportDialogError("Select one or more screenshots first.");
+      return;
+    }
+    setImageImportDialogError(null);
+    setImportLoading(true);
+    try {
+      const form = new FormData();
+      pendingImageFiles.forEach((file) => form.append("files", file));
+      const res = await extractImageText(form);
+      const text = (res.text || "").trim();
+      if (!text) {
+        setImageImportDialogError("No text was extracted from these screenshots.");
+        return;
+      }
+      appendImportedText(text);
+      const imageCount = res.image_count ?? pendingImageFiles.length;
+      const imageLabel = imageCount === 1 ? "1 image" : `${imageCount} images`;
+      setContentImportMessage(`Screenshot text imported — ${imageLabel}.`);
+      setShowImageImportDialog(false);
+      setPendingImageFiles([]);
+      setImageImportDialogError(null);
+      if (imageFileInputRef.current) imageFileInputRef.current.value = "";
+    } catch (err) {
+      setImageImportDialogError(err.message);
     } finally {
       setImportLoading(false);
     }
@@ -698,19 +817,41 @@ export default function Notes({
                   {" — "}
                   {noteContentCharCount.toLocaleString()} / {NOTE_MAX_CONTENT_CHARS.toLocaleString()} characters
                 </label>
-                <button
-                  type="button"
-                  className="button-subtle ask-shortcut notes-import-pdf-trigger"
-                  aria-haspopup="dialog"
-                  aria-expanded={showPdfImportDialog}
-                  disabled={formBusy}
-                  onClick={openPdfImportDialog}
-                >
-                  <svg className="notes-import-pdf-trigger__icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                    <path fill="currentColor" d="M6 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7.414a2 2 0 0 0-.586-1.414l-3.414-3.414A2 2 0 0 0 11.586 2H6zm4 1.414L14.586 8H11a1 1 0 0 1-1-1V3.414zM6 3h4v4a2 2 0 0 0 2 2h4v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3z" />
-                  </svg>
-                  Import PDF
-                </button>
+                <div className="notes-import-triggers">
+                  <button
+                    type="button"
+                    className="button-subtle ask-shortcut notes-import-pdf-trigger"
+                    aria-haspopup="dialog"
+                    aria-expanded={showPdfImportDialog}
+                    disabled={formBusy}
+                    onClick={openPdfImportDialog}
+                  >
+                    <svg className="notes-import-pdf-trigger__icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                      <path fill="currentColor" d="M6 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7.414a2 2 0 0 0-.586-1.414l-3.414-3.414A2 2 0 0 0 11.586 2H6zm4 1.414L14.586 8H11a1 1 0 0 1-1-1V3.414zM6 3h4v4a2 2 0 0 0 2 2h4v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3z" />
+                    </svg>
+                    Import PDF
+                  </button>
+                  <button
+                    type="button"
+                    className="button-subtle ask-shortcut notes-import-pdf-trigger"
+                    aria-haspopup="dialog"
+                    aria-expanded={showPptxImportDialog}
+                    disabled={formBusy}
+                    onClick={openPptxImportDialog}
+                  >
+                    Import PPTX
+                  </button>
+                  <button
+                    type="button"
+                    className="button-subtle ask-shortcut notes-import-pdf-trigger"
+                    aria-haspopup="dialog"
+                    aria-expanded={showImageImportDialog}
+                    disabled={formBusy}
+                    onClick={openImageImportDialog}
+                  >
+                    Import screenshots
+                  </button>
+                </div>
               </div>
               {contentImportMessage ? (
                 <p id="noteContent-import-msg" className="notes-content-import-msg success-msg" role="status">
@@ -1097,6 +1238,166 @@ export default function Notes({
                 onClick={handleExtractPdfIntoContent}
               >
                 {importLoading ? "Extracting…" : "Extract PDF text"}
+              </button>
+            </div>
+          </div>
+        </AskOverlay>
+      )}
+
+      {showPptxImportDialog && (
+        <AskOverlay
+          title="Import PPTX"
+          onClose={closePptxImportDialog}
+          showManage={false}
+          canClose={!importLoading}
+          closeText="Cancel"
+        >
+          <div className="notes-pdf-import-dialog">
+            <p className="flashcards-help">
+              Choose a PowerPoint to extract slide text into Content. The original file is not stored with the note.
+            </p>
+            <input
+              ref={pptxFileInputRef}
+              id="notePptxFilePick"
+              type="file"
+              accept="application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx"
+              className="notes-pdf-import-dialog__file-input"
+              disabled={importLoading}
+              aria-label="PPTX file"
+              onChange={(e) => {
+                const file = (e.target.files || [])[0] || null;
+                setPendingPptxFile(file);
+                setPptxImportDialogError(null);
+              }}
+            />
+            {!pendingPptxFile ? (
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={importLoading}
+                onClick={() => pptxFileInputRef.current?.click()}
+              >
+                Choose PPTX file
+              </button>
+            ) : (
+              <div className="notes-import-file" role="group" aria-label="Selected PPTX">
+                <span className="notes-import-file__name">{pendingPptxFile.name}</span>
+                <button
+                  type="button"
+                  className="button-subtle notes-import-file__remove"
+                  disabled={importLoading}
+                  onClick={() => {
+                    setPendingPptxFile(null);
+                    setPptxImportDialogError(null);
+                    if (pptxFileInputRef.current) pptxFileInputRef.current.value = "";
+                  }}
+                >
+                  Remove
+                </button>
+                <button
+                  type="button"
+                  className="button-subtle"
+                  disabled={importLoading}
+                  onClick={() => pptxFileInputRef.current?.click()}
+                >
+                  Change
+                </button>
+              </div>
+            )}
+            {pptxImportDialogError ? (
+              <div className="out out--compact err" role="alert">
+                {pptxImportDialogError}
+              </div>
+            ) : null}
+            <div className="notes-pdf-import-dialog__actions">
+              <button
+                type="button"
+                className="button-primary"
+                disabled={importLoading || !pendingPptxFile}
+                onClick={handleExtractPptxIntoContent}
+              >
+                {importLoading ? "Extracting…" : "Extract PPTX text"}
+              </button>
+            </div>
+          </div>
+        </AskOverlay>
+      )}
+
+      {showImageImportDialog && (
+        <AskOverlay
+          title="Import screenshots"
+          onClose={closeImageImportDialog}
+          showManage={false}
+          canClose={!importLoading}
+          closeText="Cancel"
+        >
+          <div className="notes-pdf-import-dialog">
+            <p className="flashcards-help">
+              Choose one or more screenshots to extract text into Content. The original images are not stored with the note.
+            </p>
+            <input
+              ref={imageFileInputRef}
+              id="noteImageFilePick"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp"
+              multiple
+              className="notes-pdf-import-dialog__file-input"
+              disabled={importLoading}
+              aria-label="Screenshot files"
+              onChange={(e) => {
+                setPendingImageFiles(Array.from(e.target.files || []));
+                setImageImportDialogError(null);
+              }}
+            />
+            {pendingImageFiles.length === 0 ? (
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={importLoading}
+                onClick={() => imageFileInputRef.current?.click()}
+              >
+                Choose screenshots
+              </button>
+            ) : (
+              <div className="notes-import-file" role="group" aria-label="Selected screenshots">
+                <span className="notes-import-file__name">
+                  {pendingImageFiles.map((file) => file.name).join(", ")}
+                </span>
+                <button
+                  type="button"
+                  className="button-subtle notes-import-file__remove"
+                  disabled={importLoading}
+                  onClick={() => {
+                    setPendingImageFiles([]);
+                    setImageImportDialogError(null);
+                    if (imageFileInputRef.current) imageFileInputRef.current.value = "";
+                  }}
+                >
+                  Remove
+                </button>
+                <button
+                  type="button"
+                  className="button-subtle"
+                  disabled={importLoading}
+                  onClick={() => imageFileInputRef.current?.click()}
+                >
+                  Change
+                </button>
+              </div>
+            )}
+            {imageImportDialogError ? (
+              <div className="out out--compact err" role="alert">
+                {imageImportDialogError}
+              </div>
+            ) : null}
+            <div className="notes-pdf-import-dialog__actions">
+              <button
+                type="button"
+                className="button-primary"
+                disabled={importLoading || pendingImageFiles.length === 0}
+                onClick={handleExtractImagesIntoContent}
+              >
+                {importLoading ? "Extracting…" : "Extract screenshot text"}
               </button>
             </div>
           </div>

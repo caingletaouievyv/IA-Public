@@ -47,7 +47,12 @@ _GAPS = {
     "notes.image_ocr.unavailable": (
         "notes_from_images",
         "ocr_dependency_unavailable",
-        "reject_when_no_text_is_extracted",
+        "return_service_unavailable",
+    ),
+    "notes.image_ocr.read_failed": (
+        "notes_from_images",
+        "upload_read_failed",
+        "reject_extraction",
     ),
     "notes.image_ocr.image_failed": (
         "notes_from_images",
@@ -83,6 +88,26 @@ _GAPS = {
         "notes_from_pdf",
         "pdf_page_extract_failed",
         "skip_page_continue",
+    ),
+    "notes.pptx_extract.unavailable": (
+        "notes_from_pptx",
+        "pptx_dependency_unavailable",
+        "reject_extraction",
+    ),
+    "notes.pptx_extract.read_failed": (
+        "notes_from_pptx",
+        "upload_read_failed",
+        "reject_extraction",
+    ),
+    "notes.pptx_extract.parse_failed": (
+        "notes_from_pptx",
+        "pptx_parse_failed",
+        "reject_extraction",
+    ),
+    "notes.pptx_extract.slide_failed": (
+        "notes_from_pptx",
+        "pptx_slide_extract_failed",
+        "skip_slide_continue",
     ),
     "ask.provider_failed": (
         "ask",

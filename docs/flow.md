@@ -162,16 +162,19 @@ The repository currently has no `gunicorn.conf.py`, guarded WSGI entrypoint, or 
 
 ---
 
-## 10. Notes from images (pre–Phase 7)
+## 10. Notes from images
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `backend/app/notes/routes.py` → `create_note_from_images()` | `require_auth()`; multipart: title, category, files (images); call `process_images_to_note()`. |
-| 2 | `backend/app/notes/image_to_note.py` → `process_images_to_note()` | OCR each image → concatenate text; `summarize_for_note(raw_text)`. If note with same title+category exists (`find_note_by_title_category`), append content with `---` and `update_note`; else `add_note()`. Returns (note, appended). |
-| 3 | `backend/app/notes/manager.py` → `find_note_by_title_category()` | Return first note matching title+category; used to decide append vs create. |
-| 4 | `backend/app/ai/engine.py` → `summarize_for_note()` | Prompt: summarize lazy, simple, concise, full details; `call_ai(prompt)`; return summary text. |
+| 1 | `frontend/src/components/Notes.jsx` | Manage → **Add note** → **Import screenshots**: one or more images → **Extract screenshot text** → review/edit Content → **Add note** via `createNote()`. |
+| 2 | `frontend/src/api.js` → `extractImageText()` | Multipart `POST /notes/from-images/extract` with `files` in selection order. |
+| 3 | `backend/app/notes/routes.py` → `extract_note_text_from_images()` | `require_auth()`; OCR only. Missing Tesseract returns 503. Does not create a note. |
+| 4 | `backend/app/notes/image_to_note.py` → `extract_text_from_images()` | Validate type and size, call `ensure_tesseract_ready()`, then OCR in upload order. |
+| 5 | `backend/app/notes/tesseract_runtime.py` | Resolve `TESSERACT_CMD` or `PATH`. Raise `OcrUnavailableError` when the binary cannot run. |
 
-**Prerequisite:** Tesseract OCR installed on system (e.g. Windows: choco install tesseract; path in PATH or set in .env).
+The legacy `POST /notes/from-images` route still calls `process_images_to_note()`, which summarizes with AI and creates or appends a note. Add Note does not call that route.
+
+**Prerequisite:** Tesseract OCR installed on the system (Windows: `choco install tesseract`; path on `PATH` or `TESSERACT_CMD` in `.env`). The Docker image installs `tesseract-ocr`.
 
 ---
 
@@ -179,13 +182,26 @@ The repository currently has no `gunicorn.conf.py`, guarded WSGI entrypoint, or 
 
 | Step | Where | What to look at |
 |------|--------|------------------|
-| 1 | `frontend/src/components/Notes.jsx` | Manage → **Add from PDF**: pick file, title, category → **Extract text** → review/edit textarea → **Save note** via `createNote()`. |
+| 1 | `frontend/src/components/Notes.jsx` | Manage → **Add note** → **Import PDF**: pick one file → **Extract PDF text** → review/edit Content → **Add note** via `createNote()`. |
 | 2 | `frontend/src/api.js` → `extractPdfText()` | Multipart `POST /notes/from-pdf/extract`; save uses existing `POST /notes/`. |
 | 3 | `backend/app/notes/routes.py` → `extract_note_text_from_pdf()` | `require_auth()`; single PDF file; call `extract_text_from_pdf()`; return `{ text, page_count, char_count }`. Does not persist the PDF or create a note. |
 | 4 | `backend/app/notes/pdf_extract.py` | Validate `.pdf`, 15 MB cap, `%PDF` magic; `pypdf` page text extraction; reject encrypted, invalid, empty/image-only PDFs and text over 512k characters. |
 | 5 | `backend/app/notes/routes.py` → `create_note()` | After client review, normal `NoteCreate` + `add_note()` + activity `note.created`. |
 
 **Prerequisite:** `pypdf` in backend requirements. Scanned/image-only PDFs are out of scope (no OCR).
+
+---
+
+## 10c. Notes from PPTX
+
+| Step | Where | What to look at |
+|------|--------|------------------|
+| 1 | `frontend/src/components/Notes.jsx` | Manage → **Add note** → **Import PPTX**: pick one `.pptx` → **Extract PPTX text** → review/edit Content → **Add note** via `createNote()`. |
+| 2 | `frontend/src/api.js` → `extractPptxText()` | Multipart `POST /notes/from-pptx/extract`; save uses existing `POST /notes/`. |
+| 3 | `backend/app/notes/routes.py` → `extract_note_text_from_pptx()` | `require_auth()`; one PPTX; return `{ text, slide_count, char_count }`. Does not persist the file or create a note. |
+| 4 | `backend/app/notes/pptx_extract.py` | Validate `.pptx`, 15 MB cap, ZIP magic; `python-pptx` text frames, tables, and speaker notes in slide order, labeled `--- Slide N ---`. Pictures inside slides are not OCR'd. Reject empty, corrupt, textless, and over-512k extracts. |
+
+**Prerequisite:** `python-pptx` in backend requirements.
 
 ---
 
