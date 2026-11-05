@@ -24,6 +24,7 @@ from app.ai.flashcards import (
     batch_sizes,
     build_progress_result,
     generate_flashcards_batched,
+    generate_flashcard_batch,
 )
 from app.ai import flashcards_job
 from app.credits import manager as credit_manager
@@ -666,6 +667,157 @@ class FlashcardJobRaceTests(unittest.TestCase):
             flashcards_job.start_flashcard_generation(app, self.user, operation_id, options, source_notes)
         self.assertEqual(calls, [1])
         self.assertEqual(credit_manager.get_operation_status(self.user, operation_id)["status"], "failed")
+
+
+class FlashcardBatchRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.options = {
+            "difficulty": "Mixed",
+            "question_style": "Mixed",
+            "language": "Same as notes",
+            "additional_instructions": "",
+        }
+        self.source_notes = [{"title": "Biology", "content": "Cells have membranes."}]
+
+    def test_json_validate_failed_recovers_by_splitting_batch(self):
+        from app.ai.client import AIProviderError
+
+        half_calls = {"count": 0}
+
+        def provider_side_effect(*_args, **kwargs):
+            batch_size = kwargs["batch_size"]
+            if batch_size == 10:
+                raise AIProviderError(
+                    "Flashcard provider request failed.",
+                    category="json_validate_failed",
+                    status_code=400,
+                )
+            half_calls["count"] += 1
+            start = (half_calls["count"] - 1) * 5 + 1
+            cards = [
+                {"question": f"Question {index}?", "answer": f"Answer {index}."}
+                for index in range(start, start + batch_size)
+            ]
+            return json.dumps({"cards": cards})
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                10,
+                [f"Existing {index}?" for index in range(1, 11)],
+                batch_index=2,
+                operation_id="split-recover",
+            )
+
+        self.assertEqual(len(cards), 10)
+        self.assertEqual(provider.call_count, 5)
+        self.assertEqual({card["question"] for card in cards}, {f"Question {index}?" for index in range(1, 11)})
+
+    def test_split_recovery_shares_provider_call_budget(self):
+        from app.ai.client import AIProviderError, FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+        half_calls = {"count": 0}
+
+        def provider_side_effect(*_args, **kwargs):
+            batch_size = kwargs["batch_size"]
+            if batch_size == 10:
+                raise AIProviderError(
+                    "Flashcard provider request failed.",
+                    category="json_validate_failed",
+                    status_code=400,
+                )
+            half_calls["count"] += 1
+            start = (half_calls["count"] - 1) * 5 + 1
+            cards = [
+                {"question": f"Question {index}?", "answer": f"Answer {index}."}
+                for index in range(start, start + batch_size)
+            ]
+            return json.dumps({"cards": cards})
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect):
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                10,
+                [],
+                batch_index=2,
+                operation_id="budget-split",
+                provider_budget=budget,
+            )
+
+        self.assertEqual(len(cards), 10)
+        self.assertEqual(budget.used, 5)
+
+    def test_json_validate_exhausted_retries_fail_without_partial_batch(self):
+        from app.ai.client import AIProviderError, FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+
+        def always_json_validate(**_kwargs):
+            raise AIProviderError(
+                "Flashcard provider request failed.",
+                category="json_validate_failed",
+                status_code=400,
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=always_json_validate) as provider:
+            with self.assertRaises(FlashcardGenerationError):
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    [],
+                    batch_index=1,
+                    operation_id="exhausted",
+                    provider_budget=budget,
+                )
+        self.assertEqual(provider.call_count, 8)
+        self.assertEqual(budget.used, 8)
+
+    def test_permanent_provider_error_does_not_retry(self):
+        from app.ai.client import AIProviderError
+
+        def permanent_failure(**_kwargs):
+            raise AIProviderError(
+                "Flashcard provider request failed.",
+                category="http_error",
+                status_code=401,
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=permanent_failure) as provider:
+            with self.assertRaises(FlashcardGenerationError):
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    [],
+                    batch_index=1,
+                    operation_id="auth-fail",
+                )
+        self.assertEqual(provider.call_count, 1)
+
+    def test_generic_provider_error_does_not_retry(self):
+        from app.ai.client import AIProviderError
+
+        def generic_failure(**_kwargs):
+            raise AIProviderError(
+                "Flashcard provider request failed.",
+                category="provider_error",
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=generic_failure) as provider:
+            with self.assertRaises(FlashcardGenerationError):
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    [],
+                    batch_index=1,
+                    operation_id="generic-fail",
+                )
+        self.assertEqual(provider.call_count, 1)
 
 
 if __name__ == "__main__":

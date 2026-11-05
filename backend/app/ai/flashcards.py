@@ -5,13 +5,18 @@ import json
 import logging
 import re
 
-from app.ai.client import AIProviderError, call_flashcard_batch
+from app.ai.client import (
+    AIProviderError,
+    FlashcardProviderCallBudget,
+    call_flashcard_batch,
+)
 from app.notes.manager import HISTORY_CATEGORY, get_note, is_flashcard_deck_category
 
 FLASHCARDS_OPERATION_KIND = "flashcards_generation"
 MAX_FLASHCARDS = 99
 DEFAULT_FLASHCARDS = 10
 FLASHCARD_BATCH_SIZE = 10
+FLASHCARD_BATCH_ATTEMPTS_BEFORE_SPLIT = 3
 MAX_SELECTED_NOTES = 20
 MAX_SOURCE_CHARACTERS = 30000
 MAX_INSTRUCTIONS_LENGTH = 1000
@@ -32,6 +37,44 @@ Match the requested difficulty, question style, and language; "Same as notes" me
 Do not repeat or paraphrase any question listed in existing_questions.
 Return only JSON with exactly one key, "cards". Its value must contain exactly the requested batch size.
 Each card object must contain exactly two non-empty string fields: "question" and "answer"."""
+
+_BATCH_REPAIR_SUFFIX = (
+    '\n\nYour previous response was rejected because it was not valid JSON with the required shape. '
+    'Return ONLY JSON: {"cards":[{"question":"...","answer":"..."}, ...]} with exactly the requested batch size.'
+)
+
+
+def _retriable_provider_category(category: str | None) -> bool:
+    if not category or category == "provider_budget_exhausted":
+        return False
+    return category in {
+        "json_validate_failed",
+        "response_parse_error",
+        "empty_response",
+        "server_error",
+        "rate_limit",
+    }
+
+
+def _retriable_flashcard_failure(error: Exception) -> bool:
+    if isinstance(error, AIProviderError):
+        return _retriable_provider_category(error.category)
+    if isinstance(error, FlashcardGenerationError):
+        message = str(error)
+        if message in {
+            "Flashcard provider returned invalid JSON",
+            "Flashcard provider returned an invalid structure",
+            "Flashcard provider returned an unexpected card count",
+            "Flashcard provider returned an invalid card",
+        }:
+            return True
+        if message == "Flashcard provider request failed.":
+            cause = error.__cause__
+            if isinstance(cause, AIProviderError):
+                return _retriable_provider_category(cause.category)
+            return False
+        return False
+    return False
 
 
 class FlashcardGenerationError(Exception):
@@ -158,18 +201,14 @@ def _parse_batch_response(raw_result: str, expected_count: int) -> list[dict]:
     return _validate_card_objects(parsed["cards"], expected_count)
 
 
-def generate_flashcard_batch(
+def _build_batch_messages(
     source_notes: list[dict],
     options: dict,
     batch_size: int,
     existing_questions: list[str],
-    pending_check=None,
-    batch_index: int | None = None,
-    operation_id: str | None = None,
+    *,
+    repair: bool = False,
 ) -> list[dict]:
-    """Generate one batch of cards from the configured provider."""
-    if pending_check is not None and not pending_check():
-        raise FlashcardJobStopped()
     request_payload = {
         "requested_card_count": batch_size,
         "difficulty": options["difficulty"],
@@ -179,36 +218,221 @@ def generate_flashcard_batch(
         "existing_questions": existing_questions,
         "source_notes": source_notes,
     }
+    user_content = json.dumps(request_payload, ensure_ascii=False)
+    if repair:
+        user_content = f"{user_content}{_BATCH_REPAIR_SUFFIX}"
+    return [
+        {"role": "system", "content": _BATCH_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def _request_flashcard_batch(
+    source_notes: list[dict],
+    options: dict,
+    batch_size: int,
+    existing_questions: list[str],
+    *,
+    batch_index: int | None,
+    operation_id: str | None,
+    attempt: int,
+    repair: bool,
+    provider_budget: FlashcardProviderCallBudget,
+    use_json_schema: bool,
+) -> list[dict]:
     try:
         raw_result = call_flashcard_batch(
-            messages=[
-                {"role": "system", "content": _BATCH_SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(request_payload, ensure_ascii=False)},
-            ],
+            messages=_build_batch_messages(
+                source_notes,
+                options,
+                batch_size,
+                existing_questions,
+                repair=repair,
+            ),
             batch_size=batch_size,
             batch_index=batch_index,
             operation_id=operation_id,
+            attempt=attempt,
+            use_json_schema=use_json_schema,
+            provider_budget=provider_budget,
+            external_budget_charge=True,
         )
     except AIProviderError as error:
         logger.warning(
-            "flashcard_provider_request_failed batch=%s batch_size=%s operation_id=%s category=%s status_code=%s",
+            "flashcard_provider_request_failed batch=%s batch_size=%s operation_id=%s category=%s status_code=%s attempt=%s",
             batch_index,
             batch_size,
             operation_id or "",
             getattr(error, "category", "provider_error"),
             getattr(error, "status_code", ""),
+            attempt,
         )
         raise FlashcardGenerationError("Flashcard provider request failed.") from error
     try:
         return _parse_batch_response(raw_result, batch_size)
     except FlashcardGenerationError as error:
         logger.warning(
-            "flashcard_provider_response_invalid batch=%s batch_size=%s error=%s",
+            "flashcard_provider_response_invalid batch=%s batch_size=%s attempt=%s error=%s",
             batch_index,
             batch_size,
+            attempt,
             str(error),
         )
         raise
+
+
+def _generate_flashcard_batch_once(
+    source_notes: list[dict],
+    options: dict,
+    batch_size: int,
+    existing_questions: list[str],
+    *,
+    pending_check,
+    batch_index: int | None,
+    operation_id: str | None,
+    provider_budget: FlashcardProviderCallBudget,
+) -> list[dict]:
+    last_error: Exception | None = None
+    attempt = 0
+    while True:
+        if not provider_budget.try_consume():
+            logger.warning(
+                "flashcard_provider_budget_exhausted batch=%s batch_size=%s operation_id=%s budget=%s used=%s",
+                batch_index,
+                batch_size,
+                operation_id or "",
+                provider_budget.limit,
+                provider_budget.used,
+            )
+            break
+        attempt += 1
+        if pending_check is not None and not pending_check():
+            raise FlashcardJobStopped()
+        repair = attempt > 1
+        use_json_schema = attempt < 3
+        try:
+            return _request_flashcard_batch(
+                source_notes,
+                options,
+                batch_size,
+                existing_questions,
+                batch_index=batch_index,
+                operation_id=operation_id,
+                attempt=attempt,
+                repair=repair,
+                provider_budget=provider_budget,
+                use_json_schema=use_json_schema,
+            )
+        except (FlashcardGenerationError, FlashcardJobStopped) as error:
+            if isinstance(error, FlashcardJobStopped):
+                raise
+            last_error = error
+            if not _retriable_flashcard_failure(error):
+                break
+            if batch_size > 1 and attempt >= FLASHCARD_BATCH_ATTEMPTS_BEFORE_SPLIT:
+                break
+            if provider_budget.remaining() <= 0:
+                break
+            logger.warning(
+                "flashcard_batch_retry batch=%s batch_size=%s operation_id=%s attempt=%s budget_used=%s budget=%s error=%s",
+                batch_index,
+                batch_size,
+                operation_id or "",
+                attempt,
+                provider_budget.used,
+                provider_budget.limit,
+                str(error),
+            )
+    if provider_budget.exhausted() and last_error is not None:
+        logger.warning(
+            "flashcard_provider_budget_exhausted batch=%s batch_size=%s operation_id=%s budget=%s used=%s",
+            batch_index,
+            batch_size,
+            operation_id or "",
+            provider_budget.limit,
+            provider_budget.used,
+        )
+    if last_error is not None:
+        raise last_error
+    raise FlashcardGenerationError("Flashcard provider request failed.")
+
+
+def generate_flashcard_batch(
+    source_notes: list[dict],
+    options: dict,
+    batch_size: int,
+    existing_questions: list[str],
+    pending_check=None,
+    batch_index: int | None = None,
+    operation_id: str | None = None,
+    provider_budget: FlashcardProviderCallBudget | None = None,
+) -> list[dict]:
+    """Generate one batch of cards from the configured provider."""
+    if pending_check is not None and not pending_check():
+        raise FlashcardJobStopped()
+    if provider_budget is None:
+        provider_budget = FlashcardProviderCallBudget()
+    try:
+        return _generate_flashcard_batch_once(
+            source_notes,
+            options,
+            batch_size,
+            existing_questions,
+            pending_check=pending_check,
+            batch_index=batch_index,
+            operation_id=operation_id,
+            provider_budget=provider_budget,
+        )
+    except FlashcardGenerationError as error:
+        if batch_size <= 1 or not _retriable_flashcard_failure(error):
+            raise
+        if provider_budget.remaining() <= 0:
+            logger.warning(
+                "flashcard_provider_budget_exhausted batch=%s batch_size=%s operation_id=%s budget=%s used=%s",
+                batch_index,
+                batch_size,
+                operation_id or "",
+                provider_budget.limit,
+                provider_budget.used,
+            )
+            raise
+        left_size = batch_size // 2
+        right_size = batch_size - left_size
+        logger.warning(
+            "flashcard_batch_split batch=%s operation_id=%s original_size=%s left=%s right=%s budget_used=%s budget=%s",
+            batch_index,
+            operation_id or "",
+            batch_size,
+            left_size,
+            right_size,
+            provider_budget.used,
+            provider_budget.limit,
+        )
+        left_cards = generate_flashcard_batch(
+            source_notes,
+            options,
+            left_size,
+            existing_questions,
+            pending_check=pending_check,
+            batch_index=batch_index,
+            operation_id=operation_id,
+            provider_budget=provider_budget,
+        )
+        extended_existing = existing_questions + [card["question"] for card in left_cards]
+        right_cards = generate_flashcard_batch(
+            source_notes,
+            options,
+            right_size,
+            extended_existing,
+            pending_check=pending_check,
+            batch_index=batch_index,
+            operation_id=operation_id,
+            provider_budget=provider_budget,
+        )
+        combined = left_cards + right_cards
+        if len(combined) != batch_size:
+            raise FlashcardGenerationError("Flashcard provider returned an unexpected card count")
+        return combined
 
 
 def generate_flashcards_batched(
