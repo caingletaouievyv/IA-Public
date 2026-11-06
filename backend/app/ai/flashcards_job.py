@@ -3,6 +3,7 @@
 
 import logging
 import threading
+import time
 
 from app.ai.flashcards import (
     FlashcardGenerationError,
@@ -11,9 +12,11 @@ from app.ai.flashcards import (
     generate_flashcards_batched,
 )
 from app.common.understanding_gaps import report_understanding_gap
+from app.config import FLASHCARD_JOB_IDLE_SECONDS, FLASHCARD_JOB_MAX_SECONDS
 from app.credits.manager import (
     complete_operation,
     fail_flashcard_operation,
+    get_operation_status,
     operation_is_pending_guarded,
     recover_abandoned_flashcard_operations,
     update_pending_operation_result,
@@ -58,6 +61,17 @@ def _persist_progress(user_id: str, operation_id: str, progress: dict) -> None:
         raise FlashcardJobStopped()
 
 
+def _flashcard_job_deadline(user_id: str, operation_id: str) -> float:
+    """Earlier of the max lifetime and the idle window for this pending job."""
+    now = time.time()
+    operation = get_operation_status(user_id, operation_id) or {}
+    started = float(operation.get("started_at") or now)
+    result = operation.get("result") if isinstance(operation.get("result"), dict) else {}
+    activity = result.get("last_activity_at")
+    activity_at = float(activity) if isinstance(activity, (int, float)) else started
+    return min(started + FLASHCARD_JOB_MAX_SECONDS, activity_at + FLASHCARD_JOB_IDLE_SECONDS)
+
+
 def start_flashcard_generation(app, user_id: str, operation_id: str, options: dict, source_notes: list[dict]) -> None:
     """Persist initial progress and run batched generation on a background thread."""
     from app.ai.flashcards import batch_sizes
@@ -96,6 +110,7 @@ def start_flashcard_generation(app, user_id: str, operation_id: str, options: di
                     progress_callback=on_progress,
                     pending_check=pending_check,
                     operation_id=operation_id,
+                    job_deadline=lambda: _flashcard_job_deadline(user_id, operation_id),
                 )
                 if not operation_is_pending_guarded(user_id, operation_id):
                     return

@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("JWT_SECRET", "ia-unit-test-jwt-secret-with-enough-variety-2026")
@@ -17,6 +19,7 @@ from app.ai.client import (
     FLASHCARD_PROVIDER_CALL_BUDGET_PER_BATCH,
     FlashcardProviderCallBudget,
     call_flashcard_batch,
+    parse_retry_after_seconds,
 )
 
 
@@ -151,46 +154,79 @@ class FlashcardProviderClientTests(unittest.TestCase):
         self.assertEqual(ctx.exception.category, "server_error")
         self.assertEqual(ctx.exception.status_code, 503)
 
+    def test_parse_retry_after_keeps_provider_delay(self):
+        self.assertEqual(parse_retry_after_seconds("30"), 30)
+        self.assertEqual(parse_retry_after_seconds("25"), 25)
+        self.assertEqual(parse_retry_after_seconds("30.2"), 31)
+        self.assertEqual(parse_retry_after_seconds("100000"), 100000)
+        self.assertIsNone(parse_retry_after_seconds("soon"))
+        moment = datetime.now(timezone.utc) + timedelta(seconds=30)
+        header = format_datetime(moment, usegmt=True)
+        parsed = parse_retry_after_seconds(header, now=moment.timestamp() - 30)
+        self.assertEqual(parsed, 30)
+
+    def test_parse_retry_after_rejects_unusable_values(self):
+        for header in (
+            "NaN",
+            "nan",
+            "Infinity",
+            "+Infinity",
+            "-Infinity",
+            "inf",
+            "-inf",
+            "1e309",
+            "not-a-date",
+            "Fri, 99 NotAMonth 99999 99:99:99 GMT",
+        ):
+            self.assertIsNone(parse_retry_after_seconds(header), header)
+
     @patch("app.ai.client.time.sleep")
     @patch("app.ai.client.requests.post")
-    def test_http_429_with_precharged_budget_consumes_one_additional_call(self, post, sleep):
+    def test_http_429_does_not_retry_or_spend_extra_budget(self, post, sleep):
         budget = FlashcardProviderCallBudget(limit=4)
         self.assertTrue(budget.try_consume())
         rate_limited = MagicMock()
         rate_limited.ok = False
         rate_limited.status_code = 429
-        rate_limited.headers = {"Retry-After": "1"}
+        rate_limited.headers = {"Retry-After": "30"}
         rate_limited.json.return_value = {"error": {"message": "rate limit exceeded"}}
         rate_limited.text = json.dumps(rate_limited.json.return_value)
-        post.side_effect = [rate_limited, _ok_response('{"cards": []}')]
-        result = call_flashcard_batch(
-            self.messages,
-            batch_size=2,
-            batch_index=1,
-            operation_id="op-429-budget",
-            provider_budget=budget,
-            external_budget_charge=True,
-        )
-        self.assertIn('"cards"', result)
-        self.assertEqual(post.call_count, 2)
-        self.assertEqual(budget.used, 2)
+        post.return_value = rate_limited
+        with self.assertLogs("app.ai.client", level=logging.WARNING) as logs:
+            with self.assertRaises(AIProviderError) as ctx:
+                call_flashcard_batch(
+                    self.messages,
+                    batch_size=2,
+                    batch_index=1,
+                    operation_id="op-429-budget",
+                    provider_budget=budget,
+                    external_budget_charge=True,
+                )
+        self.assertEqual(ctx.exception.category, "rate_limit")
+        self.assertEqual(ctx.exception.status_code, 429)
+        self.assertEqual(ctx.exception.retry_after, 30)
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(budget.used, 1)
+        sleep.assert_not_called()
+        combined = "\n".join(logs.output)
+        self.assertIn("retry_after=30", combined)
+        self.assertNotIn("Return JSON only", combined)
+        self.assertNotIn("requested_card_count", combined)
 
-    @patch("app.ai.client.time.sleep")
     @patch("app.ai.client.requests.post")
-    def test_http_429_retries_once_then_raises_rate_limit(self, post, sleep):
+    def test_http_429_raises_rate_limit_with_uncapped_retry_after(self, post):
         rate_limited = MagicMock()
         rate_limited.ok = False
         rate_limited.status_code = 429
-        rate_limited.headers = {"Retry-After": "1"}
+        rate_limited.headers = {"Retry-After": "25"}
         rate_limited.json.return_value = {"error": {"message": "rate limit exceeded"}}
         rate_limited.text = json.dumps(rate_limited.json.return_value)
-        post.side_effect = [rate_limited, rate_limited]
+        post.return_value = rate_limited
         with self.assertRaises(AIProviderError) as ctx:
             call_flashcard_batch(self.messages, batch_size=2, batch_index=1, operation_id="op-429")
-        self.assertEqual(post.call_count, 2)
-        sleep.assert_called_once_with(1)
+        self.assertEqual(post.call_count, 1)
         self.assertEqual(ctx.exception.category, "rate_limit")
-        self.assertEqual(ctx.exception.status_code, 429)
+        self.assertEqual(ctx.exception.retry_after, 25)
 
     @patch("app.ai.client.requests.post")
     def test_timeout_raises_timeout_category(self, post):

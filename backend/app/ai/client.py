@@ -1,7 +1,10 @@
 # IA/backend/app/ai/client.py
 import json
 import logging
+import math
 import time
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 
 import requests
 from requests.exceptions import JSONDecodeError, RequestException, Timeout
@@ -28,8 +31,7 @@ MODEL_MAP = {
     "openai": {"model": "gpt-4o-mini", "endpoint": "https://api.openai.com/v1/chat/completions", "auth": True},
 }
 _FLASHCARD_PROVIDER_TIMEOUT_SECONDS = 60
-_FLASHCARD_RATE_LIMIT_MAX_RETRIES = 1
-# Max Groq HTTP posts for one deck batch (retries + splits share this budget).
+# Generation repairs and splits share this budget. Rate-limit cooldown posts do not.
 FLASHCARD_PROVIDER_CALL_BUDGET_PER_BATCH = 8
 
 
@@ -64,12 +66,63 @@ class AIProviderError(RuntimeError):
         status_code: int | None = None,
         provider: str | None = None,
         model: str | None = None,
+        retry_after: int | None = None,
     ):
         super().__init__(message)
         self.category = category
         self.status_code = status_code
         self.provider = provider
         self.model = model
+        self.retry_after = retry_after
+
+
+def _whole_retry_seconds(value: float) -> int | None:
+    """Convert a finite delay to whole seconds. Unusable numbers return None."""
+    if not math.isfinite(value):
+        return None
+    try:
+        seconds = math.ceil(value)
+    except (OverflowError, ValueError):
+        return None
+    if isinstance(seconds, float):
+        if not math.isfinite(seconds):
+            return None
+        try:
+            seconds = int(seconds)
+        except (OverflowError, ValueError):
+            return None
+    if seconds < 0:
+        return 0
+    return seconds
+
+
+def parse_retry_after_seconds(header: str | None, *, now: float | None = None) -> int | None:
+    """Return Retry-After as whole seconds, or None when the header is unusable."""
+    if header is None:
+        return None
+    text = str(header).strip()
+    if not text:
+        return None
+    try:
+        numeric = float(text)
+    except (ValueError, OverflowError):
+        numeric = None
+    else:
+        return _whole_retry_seconds(numeric)
+    try:
+        parsed = parsedate_to_datetime(text)
+    except (TypeError, ValueError, OverflowError, IndexError, OSError):
+        return None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    current = time.time() if now is None else now
+    try:
+        delta = parsed.timestamp() - current
+    except (OverflowError, OSError, ValueError):
+        return None
+    return _whole_retry_seconds(delta)
 
 
 def _groq_error_block(response: requests.Response | None) -> dict:
@@ -296,7 +349,11 @@ def call_flashcard_batch(
     provider_budget: FlashcardProviderCallBudget | None = None,
     external_budget_charge: bool = False,
 ) -> str:
-    """Flashcard-only provider call with bounded output, JSON mode, and safe diagnostics."""
+    """Flashcard-only provider call with bounded output, JSON mode, and safe diagnostics.
+
+    One HTTP post. HTTP 429 is returned to the caller with retry_after seconds;
+    cooldown waits are applied by flashcard generation, not here.
+    """
     provider = MODEL_PROVIDER
     config = MODEL_MAP.get(provider, MODEL_MAP["groq"])
     model = config["model"]
@@ -313,8 +370,8 @@ def call_flashcard_batch(
         "response_format": _flashcard_response_format(batch_size, use_json_schema=schema_enabled),
     }
 
-    def post_once(*, charge_additional: bool = False) -> requests.Response:
-        if charge_additional or not external_budget_charge:
+    def post_once() -> requests.Response:
+        if not external_budget_charge:
             _consume_flashcard_provider_budget(
                 provider_budget,
                 provider=provider,
@@ -373,54 +430,10 @@ def call_flashcard_batch(
             model=model,
         ) from error
 
-    for rate_limit_attempt in range(_FLASHCARD_RATE_LIMIT_MAX_RETRIES):
-        if response.status_code != 429:
-            break
-        retry_after = response.headers.get("Retry-After", "2")
-        _log_flashcard_provider_failure(
-            provider=provider,
-            model=model,
-            category="rate_limit",
-            batch_index=batch_index,
-            batch_size=batch_size,
-            operation_id=operation_id,
-            status_code=429,
-            error_snippet=_safe_error_snippet(response),
-            retry_after=retry_after,
-            attempt=attempt,
-            budget_limit=provider_budget.limit if provider_budget else None,
-            budget_used=provider_budget.used if provider_budget else None,
-        )
-        try:
-            delay_seconds = min(max(int(retry_after), 1), 5)
-        except ValueError:
-            delay_seconds = 2
-        time.sleep(delay_seconds)
-        try:
-            response = post_once(charge_additional=True)
-        except AIProviderError:
-            raise
-        except (Timeout, RequestException) as error:
-            category = "timeout" if isinstance(error, Timeout) else "transport_error"
-            _log_flashcard_provider_failure(
-                provider=provider,
-                model=model,
-                category=category,
-                batch_index=batch_index,
-                batch_size=batch_size,
-                operation_id=operation_id,
-                error_type=type(error).__name__,
-                attempt=attempt,
-            )
-            raise AIProviderError(
-                "Flashcard provider request failed.",
-                category=category,
-                provider=provider,
-                model=model,
-            ) from error
-
     error_code = _groq_error_code(response)
     failed_generation_len = _failed_generation_length(response)
+    retry_after_header = response.headers.get("Retry-After") if response.status_code == 429 else None
+    parsed_retry_after = parse_retry_after_seconds(retry_after_header) if response.status_code == 429 else None
     if response.status_code == 429:
         category = "rate_limit"
     elif error_code == "json_validate_failed":
@@ -442,7 +455,7 @@ def call_flashcard_batch(
             operation_id=operation_id,
             status_code=response.status_code,
             error_snippet=_safe_error_snippet(response),
-            retry_after=response.headers.get("Retry-After"),
+            retry_after=retry_after_header,
             error_code=error_code,
             failed_generation_len=failed_generation_len,
             attempt=attempt,
@@ -455,6 +468,7 @@ def call_flashcard_batch(
             status_code=response.status_code,
             provider=provider,
             model=model,
+            retry_after=parsed_retry_after,
         )
 
     try:

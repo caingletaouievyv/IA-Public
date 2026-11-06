@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -17,11 +18,15 @@ import jwt
 from flask import Flask
 
 from app import create_app, config
+from app.ai.client import AIProviderError
 from app.ai.flashcards import (
     FLASHCARDS_OPERATION_KIND,
     FLASHCARD_DUPLICATE_QUESTIONS_ERROR,
+    FLASHCARD_GENERATION_TIMEOUT_ERROR,
+    FLASHCARD_RATE_LIMIT_MAX_RETRIES,
     FlashcardGenerationError,
     FlashcardJobStopped,
+    FlashcardRateLimitState,
     batch_sizes,
     build_progress_result,
     generate_flashcards_batched,
@@ -1057,6 +1062,286 @@ class FlashcardDuplicateRecoveryTests(unittest.TestCase):
         self.assertEqual(str(ctx.exception), FLASHCARD_DUPLICATE_QUESTIONS_ERROR)
         self.assertEqual(budget.used, 8)
         self.assertGreaterEqual(provider.call_count, 1)
+
+
+class FlashcardRateLimitTests(unittest.TestCase):
+    def setUp(self):
+        self.options = {
+            "difficulty": "Mixed",
+            "question_style": "Mixed",
+            "language": "Same as notes",
+            "additional_instructions": "",
+            "card_count": 20,
+        }
+        self.source_notes = [{"title": "Biology", "content": "SECRET_NOTE_TEXT cells have membranes."}]
+
+    def _cards(self, batch_size, start):
+        cards = [
+            {"question": f"Question {index}?", "answer": f"Answer {index}."}
+            for index in range(start, start + batch_size)
+        ]
+        return json.dumps({"cards": cards})
+
+    def _rate_limit(self, retry_after):
+        return AIProviderError(
+            "Flashcard provider request failed.",
+            category="rate_limit",
+            status_code=429,
+            retry_after=retry_after,
+        )
+
+    @patch("app.ai.flashcards.time.sleep")
+    def test_retry_after_waits_then_retries_without_repair_prompt(self, sleep):
+        produced = {"count": 0}
+        prompts = []
+
+        def provider_side_effect(**kwargs):
+            prompts.append(kwargs["messages"][1]["content"])
+            if len(prompts) == 1:
+                raise self._rate_limit(30)
+            if len(prompts) == 2:
+                raise self._rate_limit(25)
+            batch_size = kwargs["batch_size"]
+            payload = self._cards(batch_size, produced["count"])
+            produced["count"] += batch_size
+            return payload
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            with self.assertLogs("app.ai.flashcards", level=logging.WARNING) as logs:
+                cards = generate_flashcards_batched(
+                    self.options,
+                    self.source_notes,
+                    operation_id="rate-limit-wait",
+                )
+
+        self.assertEqual(len(cards), 20)
+        self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), 55)
+        self.assertTrue(all(0 < call.args[0] <= 0.5 for call in sleep.call_args_list))
+        self.assertEqual(provider.call_count, 5)
+        self.assertTrue(all("not valid JSON" not in prompt for prompt in prompts))
+        self.assertTrue(all("duplicated existing_questions" not in prompt for prompt in prompts))
+        self.assertNotIn("SECRET_NOTE_TEXT", "\n".join(logs.output))
+        self.assertNotIn("Question 0", "\n".join(logs.output))
+        sizes = [json.loads(prompt)["requested_card_count"] for prompt in prompts]
+        self.assertEqual(sizes, [10, 10, 10, 5, 5])
+
+    @patch("app.ai.flashcards.time.sleep")
+    def test_repeated_429s_do_not_spend_generation_budget(self, sleep):
+        from app.ai.client import FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+
+        def always_limited(**_kwargs):
+            raise self._rate_limit(30)
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=always_limited) as provider:
+            with self.assertRaises(FlashcardGenerationError) as ctx:
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    1,
+                    [],
+                    batch_index=4,
+                    operation_id="rate-limit-budget",
+                    provider_budget=budget,
+                )
+
+        self.assertEqual(str(ctx.exception), "Flashcard provider request failed.")
+        self.assertEqual(ctx.exception.__cause__.category, "rate_limit")
+        self.assertEqual(budget.used, 1)
+        self.assertEqual(provider.call_count, 1 + FLASHCARD_RATE_LIMIT_MAX_RETRIES)
+        self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), 30 * FLASHCARD_RATE_LIMIT_MAX_RETRIES)
+        self.assertTrue(all(0 < call.args[0] <= 0.5 for call in sleep.call_args_list))
+
+    @patch("app.ai.flashcards.time.sleep")
+    def test_repeated_429s_split_without_charging_cooldowns(self, sleep):
+        from app.ai.client import FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+
+        def always_limited(**_kwargs):
+            raise self._rate_limit(30)
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=always_limited) as provider:
+            with self.assertRaises(FlashcardGenerationError):
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    [],
+                    batch_index=4,
+                    operation_id="rate-limit-split",
+                    provider_budget=budget,
+                )
+
+        self.assertEqual(budget.used, 2)
+        self.assertLessEqual(budget.used, 8)
+        self.assertEqual(provider.call_count, budget.used * (1 + FLASHCARD_RATE_LIMIT_MAX_RETRIES))
+        self.assertGreater(provider.call_count, budget.used)
+        self.assertEqual(
+            sum(call.args[0] for call in sleep.call_args_list),
+            30 * budget.used * FLASHCARD_RATE_LIMIT_MAX_RETRIES,
+        )
+        self.assertTrue(all(0 < call.args[0] <= 0.5 for call in sleep.call_args_list))
+
+    def test_retry_after_beyond_job_deadline_times_out_without_sleep(self):
+        from app.ai.client import FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+        clock = {"now": 1000.0}
+
+        def always_limited(**_kwargs):
+            raise self._rate_limit(30)
+
+        with (
+            patch("app.ai.flashcards.time.time", side_effect=lambda: clock["now"]),
+            patch("app.ai.flashcards.time.sleep", side_effect=lambda seconds: clock.__setitem__("now", clock["now"] + seconds)) as sleep,
+            patch("app.ai.flashcards.call_flashcard_batch", side_effect=always_limited) as provider,
+        ):
+            with self.assertRaises(FlashcardGenerationError) as ctx:
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    4,
+                    [],
+                    batch_index=4,
+                    operation_id="rate-limit-timeout",
+                    provider_budget=budget,
+                    job_deadline=1050.0,
+                )
+
+        self.assertEqual(str(ctx.exception), FLASHCARD_GENERATION_TIMEOUT_ERROR)
+        self.assertEqual(provider.call_count, 2)
+        self.assertEqual(budget.used, 1)
+        self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), 30)
+        self.assertTrue(all(0 < call.args[0] <= 0.5 for call in sleep.call_args_list))
+
+    @patch("app.ai.flashcards.time.sleep")
+    def test_pending_stop_during_rate_limit_does_not_sleep(self, sleep):
+        live = {"ok": True}
+
+        def pending_check():
+            return live["ok"]
+
+        def provider_side_effect(**_kwargs):
+            live["ok"] = False
+            raise self._rate_limit(30)
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect):
+            with self.assertRaises(FlashcardJobStopped):
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    [],
+                    pending_check=pending_check,
+                    batch_index=1,
+                    operation_id="rate-limit-stop",
+                )
+        sleep.assert_not_called()
+
+    @patch("app.ai.flashcards.time.sleep")
+    def test_cancellation_during_cooldown_stops_promptly(self, sleep):
+        live = {"ok": True}
+
+        def pending_check():
+            return live["ok"]
+
+        def stop_after_slice(_seconds):
+            live["ok"] = False
+
+        sleep.side_effect = stop_after_slice
+
+        def provider_side_effect(**_kwargs):
+            raise self._rate_limit(30)
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            with self.assertRaises(FlashcardJobStopped):
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    [],
+                    pending_check=pending_check,
+                    batch_index=1,
+                    operation_id="rate-limit-cancel",
+                )
+
+        self.assertEqual(provider.call_count, 1)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertLessEqual(sleep.call_args.args[0], 0.5)
+
+    @patch("app.ai.flashcards.time.sleep")
+    def test_pending_operation_waits_full_retry_after(self, sleep):
+        calls = {"count": 0}
+
+        def provider_side_effect(**kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise self._rate_limit(30)
+            return self._cards(kwargs["batch_size"], 0)
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                2,
+                [],
+                pending_check=lambda: True,
+                batch_index=1,
+                operation_id="rate-limit-full-wait",
+            )
+
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(provider.call_count, 2)
+        self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), 30)
+        self.assertTrue(all(call.args[0] == 0.5 for call in sleep.call_args_list))
+
+    @patch("app.ai.flashcards.time.sleep")
+    def test_zero_retry_after_does_not_sleep(self, sleep):
+        calls = {"count": 0}
+
+        def provider_side_effect(**kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise self._rate_limit(0)
+            return self._cards(1, 0)
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                1,
+                [],
+                batch_index=1,
+                operation_id="rate-limit-zero",
+            )
+
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(provider.call_count, 2)
+        sleep.assert_not_called()
+
+    def test_rate_limit_state_shrinks_batch_cap(self):
+        state = FlashcardRateLimitState()
+        self.assertEqual(state.batch_cap(), 10)
+        state.record_hit()
+        self.assertEqual(state.batch_cap(), 10)
+        state.record_hit()
+        self.assertEqual(state.batch_cap(), 5)
+        state.record_hit()
+        state.record_hit()
+        self.assertEqual(state.batch_cap(), 2)
+
+    def test_job_deadline_uses_earlier_limit(self):
+        from app.ai.flashcards_job import _flashcard_job_deadline
+
+        operation = {"started_at": 1000, "result": {"last_activity_at": 1200}}
+        with (
+            patch("app.ai.flashcards_job.get_operation_status", return_value=operation),
+            patch("app.ai.flashcards_job.FLASHCARD_JOB_MAX_SECONDS", 600),
+            patch("app.ai.flashcards_job.FLASHCARD_JOB_IDLE_SECONDS", 300),
+        ):
+            self.assertEqual(_flashcard_job_deadline("user", "op"), 1500)
 
 
 if __name__ == "__main__":
