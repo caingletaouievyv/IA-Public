@@ -19,12 +19,14 @@ from flask import Flask
 from app import create_app, config
 from app.ai.flashcards import (
     FLASHCARDS_OPERATION_KIND,
+    FLASHCARD_DUPLICATE_QUESTIONS_ERROR,
     FlashcardGenerationError,
     FlashcardJobStopped,
     batch_sizes,
     build_progress_result,
     generate_flashcards_batched,
     generate_flashcard_batch,
+    _parse_batch_response,
 )
 from app.ai import flashcards_job
 from app.credits import manager as credit_manager
@@ -818,6 +820,243 @@ class FlashcardBatchRecoveryTests(unittest.TestCase):
                     operation_id="generic-fail",
                 )
         self.assertEqual(provider.call_count, 1)
+
+
+class FlashcardDuplicateRecoveryTests(unittest.TestCase):
+    @staticmethod
+    def _user_request_payload(messages):
+        """Parse batch request JSON; repair suffixes are appended after the object."""
+        content = messages[1]["content"]
+        payload, _ = json.JSONDecoder().raw_decode(content)
+        return payload
+
+    def setUp(self):
+        self.options = {
+            "difficulty": "Mixed",
+            "question_style": "Mixed",
+            "language": "Same as notes",
+            "additional_instructions": "",
+        }
+        self.source_notes = [{"title": "Biology", "content": "Cells have membranes."}]
+
+    def test_parse_batch_response_rejects_duplicate_within_batch(self):
+        payload = json.dumps(
+            {
+                "cards": [
+                    {"question": "Same topic?", "answer": "A1."},
+                    {"question": "Same topic?", "answer": "A2."},
+                ]
+            }
+        )
+        with self.assertRaises(FlashcardGenerationError) as ctx:
+            _parse_batch_response(payload, 2, [])
+        self.assertEqual(str(ctx.exception), FLASHCARD_DUPLICATE_QUESTIONS_ERROR)
+
+    def test_duplicate_against_previous_batch_retries_then_succeeds(self):
+        calls = {"count": 0}
+
+        def provider_side_effect(*_args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return json.dumps(
+                    {
+                        "cards": [
+                            {"question": "Prior?", "answer": "Old."},
+                            {"question": "Another?", "answer": "Old2."},
+                        ]
+                    }
+                )
+            return json.dumps(
+                {
+                    "cards": [
+                        {"question": "Fresh one?", "answer": "New."},
+                        {"question": "Fresh two?", "answer": "New2."},
+                    ]
+                }
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                2,
+                ["Prior?"],
+                batch_index=2,
+                operation_id="dup-retry",
+            )
+
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(provider.call_count, 2)
+
+    def test_duplicate_within_batch_retries_with_duplicate_repair_prompt(self):
+        calls = {"count": 0}
+
+        def provider_side_effect(*_args, **kwargs):
+            calls["count"] += 1
+            messages = kwargs["messages"]
+            user_content = messages[1]["content"]
+            if calls["count"] == 1:
+                return json.dumps(
+                    {
+                        "cards": [
+                            {"question": "Repeat?", "answer": "A1."},
+                            {"question": "Repeat?", "answer": "A2."},
+                        ]
+                    }
+                )
+            if calls["count"] == 2:
+                self.assertIn("duplicated existing_questions", user_content)
+                self.assertNotIn("not valid JSON with the required shape", user_content)
+            return json.dumps(
+                {
+                    "cards": [
+                        {"question": "Unique one?", "answer": "A1."},
+                        {"question": "Unique two?", "answer": "A2."},
+                    ]
+                }
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                2,
+                [],
+                batch_index=1,
+                operation_id="in-batch-dup",
+            )
+
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(provider.call_count, 2)
+
+    def test_duplicate_exhausted_attempts_split_batch(self):
+        from app.ai.client import FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+        half_calls = {"count": 0}
+
+        def provider_side_effect(*_args, **kwargs):
+            batch_size = kwargs["batch_size"]
+            if batch_size == 4:
+                return json.dumps(
+                    {
+                        "cards": [
+                            {"question": "Taken?", "answer": "A."},
+                            {"question": "Alt two?", "answer": "B."},
+                            {"question": "Alt three?", "answer": "C."},
+                            {"question": "Alt four?", "answer": "D."},
+                        ]
+                    }
+                )
+            half_calls["count"] += 1
+            start = (half_calls["count"] - 1) * 2 + 1
+            cards = [
+                {"question": f"Split {start}?", "answer": f"A{start}."},
+                {"question": f"Split {start + 1}?", "answer": f"A{start + 1}."},
+            ]
+            return json.dumps({"cards": cards})
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect) as provider:
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                4,
+                ["Taken?"],
+                batch_index=2,
+                operation_id="dup-split",
+                provider_budget=budget,
+            )
+
+        self.assertEqual(len(cards), 4)
+        self.assertGreaterEqual(provider.call_count, 4)
+        self.assertLessEqual(budget.used, 8)
+
+    def test_split_right_batch_receives_left_generated_questions(self):
+        seen_existing_lengths = []
+
+        def provider_side_effect(*_args, **kwargs):
+            messages = kwargs["messages"]
+            payload = FlashcardDuplicateRecoveryTests._user_request_payload(messages)
+            seen_existing_lengths.append(len(payload["existing_questions"]))
+            batch_size = kwargs["batch_size"]
+            if batch_size == 4:
+                return json.dumps(
+                    {
+                        "cards": [
+                            {"question": "Blocker?", "answer": "A."},
+                            {"question": "Alt two?", "answer": "B."},
+                            {"question": "Alt three?", "answer": "C."},
+                            {"question": "Alt four?", "answer": "D."},
+                        ]
+                    }
+                )
+            if batch_size == 2 and len(seen_existing_lengths) <= 4:
+                return json.dumps(
+                    {
+                        "cards": [
+                            {"question": "Left one?", "answer": "L1."},
+                            {"question": "Left two?", "answer": "L2."},
+                        ]
+                    }
+                )
+            if payload["existing_questions"] == ["Blocker?", "Left one?", "Left two?"]:
+                return json.dumps(
+                    {
+                        "cards": [
+                            {"question": "Right one?", "answer": "R1."},
+                            {"question": "Right two?", "answer": "R2."},
+                        ]
+                    }
+                )
+            return json.dumps(
+                {
+                    "cards": [
+                        {"question": "Blocker?", "answer": "Dup."},
+                        {"question": "Blocker?", "answer": "Dup2."},
+                    ]
+                }
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect):
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                4,
+                ["Blocker?"],
+                batch_index=2,
+                operation_id="split-existing",
+            )
+
+        self.assertEqual(len(cards), 4)
+        self.assertIn(3, seen_existing_lengths)
+
+    def test_permanent_duplicates_fail_after_bounded_budget(self):
+        from app.ai.client import FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+
+        def always_duplicate(**kwargs):
+            batch_size = kwargs["batch_size"]
+            cards = [{"question": "Taken?", "answer": "A."}]
+            if batch_size > 1:
+                cards.append({"question": "Another?", "answer": "B."})
+            return json.dumps({"cards": cards})
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=always_duplicate) as provider:
+            with self.assertRaises(FlashcardGenerationError) as ctx:
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    ["Taken?"],
+                    batch_index=2,
+                    operation_id="dup-permanent",
+                    provider_budget=budget,
+                )
+
+        self.assertEqual(str(ctx.exception), FLASHCARD_DUPLICATE_QUESTIONS_ERROR)
+        self.assertEqual(budget.used, 8)
+        self.assertGreaterEqual(provider.call_count, 1)
 
 
 if __name__ == "__main__":

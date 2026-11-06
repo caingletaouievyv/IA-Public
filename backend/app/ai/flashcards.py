@@ -21,6 +21,7 @@ MAX_SELECTED_NOTES = 20
 MAX_SOURCE_CHARACTERS = 30000
 MAX_INSTRUCTIONS_LENGTH = 1000
 MAX_CARD_FIELD_LENGTH = 2000
+FLASHCARD_DUPLICATE_QUESTIONS_ERROR = "Flashcard provider returned duplicate questions"
 
 _DIFFICULTIES = {"Easy", "Mixed", "Hard"}
 _QUESTION_STYLES = {"Definitions", "Understanding", "Practical", "Mixed"}
@@ -41,6 +42,13 @@ Each card object must contain exactly two non-empty string fields: "question" an
 _BATCH_REPAIR_SUFFIX = (
     '\n\nYour previous response was rejected because it was not valid JSON with the required shape. '
     'Return ONLY JSON: {"cards":[{"question":"...","answer":"..."}, ...]} with exactly the requested batch size.'
+)
+
+_BATCH_DUPLICATE_REPAIR_SUFFIX = (
+    "\n\nYour previous response was rejected because one or more questions duplicated "
+    "existing_questions or another question in the same batch. Generate exactly the requested "
+    "number of cards with entirely different questions. Keep each question and answer grounded "
+    "in the source notes and match the requested difficulty, question style, and language."
 )
 
 
@@ -66,6 +74,7 @@ def _retriable_flashcard_failure(error: Exception) -> bool:
             "Flashcard provider returned an invalid structure",
             "Flashcard provider returned an unexpected card count",
             "Flashcard provider returned an invalid card",
+            FLASHCARD_DUPLICATE_QUESTIONS_ERROR,
         }:
             return True
         if message == "Flashcard provider request failed.":
@@ -191,14 +200,29 @@ def _validate_card_objects(cards: object, expected_count: int) -> list[dict]:
     return validated
 
 
-def _parse_batch_response(raw_result: str, expected_count: int) -> list[dict]:
+def _validate_batch_question_uniqueness(cards: list[dict], existing_questions: list[str]) -> None:
+    seen = {normalize_question(question) for question in existing_questions}
+    for card in cards:
+        normalized = normalize_question(card["question"])
+        if normalized in seen:
+            raise FlashcardGenerationError(FLASHCARD_DUPLICATE_QUESTIONS_ERROR)
+        seen.add(normalized)
+
+
+def _parse_batch_response(
+    raw_result: str,
+    expected_count: int,
+    existing_questions: list[str] | None = None,
+) -> list[dict]:
     try:
         parsed = json.loads(raw_result)
     except (TypeError, json.JSONDecodeError) as error:
         raise FlashcardGenerationError("Flashcard provider returned invalid JSON") from error
     if not isinstance(parsed, dict) or set(parsed) != {"cards"}:
         raise FlashcardGenerationError("Flashcard provider returned an invalid structure")
-    return _validate_card_objects(parsed["cards"], expected_count)
+    cards = _validate_card_objects(parsed["cards"], expected_count)
+    _validate_batch_question_uniqueness(cards, existing_questions or [])
+    return cards
 
 
 def _build_batch_messages(
@@ -207,7 +231,7 @@ def _build_batch_messages(
     batch_size: int,
     existing_questions: list[str],
     *,
-    repair: bool = False,
+    repair_kind: str | None = None,
 ) -> list[dict]:
     request_payload = {
         "requested_card_count": batch_size,
@@ -219,7 +243,9 @@ def _build_batch_messages(
         "source_notes": source_notes,
     }
     user_content = json.dumps(request_payload, ensure_ascii=False)
-    if repair:
+    if repair_kind == "duplicate":
+        user_content = f"{user_content}{_BATCH_DUPLICATE_REPAIR_SUFFIX}"
+    elif repair_kind == "json":
         user_content = f"{user_content}{_BATCH_REPAIR_SUFFIX}"
     return [
         {"role": "system", "content": _BATCH_SYSTEM_PROMPT},
@@ -236,7 +262,7 @@ def _request_flashcard_batch(
     batch_index: int | None,
     operation_id: str | None,
     attempt: int,
-    repair: bool,
+    repair_kind: str | None,
     provider_budget: FlashcardProviderCallBudget,
     use_json_schema: bool,
 ) -> list[dict]:
@@ -247,7 +273,7 @@ def _request_flashcard_batch(
                 options,
                 batch_size,
                 existing_questions,
-                repair=repair,
+                repair_kind=repair_kind,
             ),
             batch_size=batch_size,
             batch_index=batch_index,
@@ -269,7 +295,7 @@ def _request_flashcard_batch(
         )
         raise FlashcardGenerationError("Flashcard provider request failed.") from error
     try:
-        return _parse_batch_response(raw_result, batch_size)
+        return _parse_batch_response(raw_result, batch_size, existing_questions)
     except FlashcardGenerationError as error:
         logger.warning(
             "flashcard_provider_response_invalid batch=%s batch_size=%s attempt=%s error=%s",
@@ -308,7 +334,12 @@ def _generate_flashcard_batch_once(
         attempt += 1
         if pending_check is not None and not pending_check():
             raise FlashcardJobStopped()
-        repair = attempt > 1
+        repair_kind = None
+        if attempt > 1 and last_error is not None:
+            if str(last_error) == FLASHCARD_DUPLICATE_QUESTIONS_ERROR:
+                repair_kind = "duplicate"
+            else:
+                repair_kind = "json"
         use_json_schema = attempt < 3
         try:
             return _request_flashcard_batch(
@@ -319,7 +350,7 @@ def _generate_flashcard_batch_once(
                 batch_index=batch_index,
                 operation_id=operation_id,
                 attempt=attempt,
-                repair=repair,
+                repair_kind=repair_kind,
                 provider_budget=provider_budget,
                 use_json_schema=use_json_schema,
             )
@@ -463,7 +494,7 @@ def generate_flashcards_batched(
         for card in batch_cards:
             normalized = normalize_question(card["question"])
             if normalized in seen_questions:
-                raise FlashcardGenerationError("Flashcard provider returned duplicate questions")
+                raise FlashcardGenerationError(FLASHCARD_DUPLICATE_QUESTIONS_ERROR)
             seen_questions.add(normalized)
             collected.append(card)
         if progress_callback:
