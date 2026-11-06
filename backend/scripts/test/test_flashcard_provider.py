@@ -51,6 +51,42 @@ class FlashcardProviderClientTests(unittest.TestCase):
         self.assertEqual(kwargs["timeout"], 60)
         self.assertEqual(kwargs["json"]["response_format"]["type"], "json_schema")
 
+    @patch("app.ai.client.requests.post")
+    def test_response_modes_select_schema_object_or_raw(self, post):
+        post.return_value = _ok_response('{"cards": []}')
+        with self.assertLogs("app.ai.client", level=logging.WARNING) as logs:
+            call_flashcard_batch(
+                self.messages,
+                batch_size=2,
+                batch_index=1,
+                operation_id="op-mode",
+                response_mode="json_object",
+            )
+        self.assertEqual(post.call_args.kwargs["json"]["response_format"], {"type": "json_object"})
+        self.assertIn("response_mode=json_object", "\n".join(logs.output))
+        self.assertNotIn("Return JSON only", "\n".join(logs.output))
+        self.assertNotIn("requested_card_count", "\n".join(logs.output))
+
+        call_flashcard_batch(
+            self.messages,
+            batch_size=2,
+            batch_index=1,
+            operation_id="op-mode",
+            response_mode="raw",
+        )
+        self.assertNotIn("response_format", post.call_args.kwargs["json"])
+
+        call_flashcard_batch(
+            self.messages,
+            batch_size=2,
+            batch_index=1,
+            operation_id="op-mode",
+            response_mode="json_schema",
+        )
+        schema = post.call_args.kwargs["json"]["response_format"]
+        self.assertEqual(schema["type"], "json_schema")
+        self.assertTrue(schema["json_schema"]["strict"])
+
     @patch("app.ai.client.time.sleep")
     @patch("app.ai.client.requests.post")
     def test_json_validate_failed_is_not_retried_in_client(self, post, sleep):

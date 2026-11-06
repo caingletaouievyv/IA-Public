@@ -1344,5 +1344,130 @@ class FlashcardRateLimitTests(unittest.TestCase):
             self.assertEqual(_flashcard_job_deadline("user", "op"), 1500)
 
 
+class FlashcardResponseModeTests(unittest.TestCase):
+    def setUp(self):
+        self.options = {
+            "difficulty": "Mixed",
+            "question_style": "Mixed",
+            "language": "Same as notes",
+            "additional_instructions": "",
+        }
+        self.source_notes = [{"title": "Biology", "content": "Cells have membranes."}]
+
+    def _cards(self, count, prefix="Q"):
+        return json.dumps(
+            {
+                "cards": [
+                    {"question": f"{prefix}{index}?", "answer": f"A{index}."}
+                    for index in range(count)
+                ]
+            }
+        )
+
+    def _json_validate(self):
+        return AIProviderError(
+            "Flashcard provider request failed.",
+            category="json_validate_failed",
+            status_code=400,
+        )
+
+    def test_schema_failure_switches_to_json_object_then_raw(self):
+        modes = []
+
+        def provider_side_effect(**kwargs):
+            modes.append(kwargs["response_mode"])
+            if len(modes) < 3:
+                raise self._json_validate()
+            self.assertIn("raw JSON", kwargs["messages"][1]["content"])
+            self.assertNotIn("```", kwargs["messages"][1]["content"])
+            return self._cards(kwargs["batch_size"])
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect):
+            cards = generate_flashcard_batch(self.source_notes, self.options, 2, [])
+
+        self.assertEqual(modes, ["json_schema", "json_object", "raw"])
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(cards[0]["question"], "Q0?")
+
+    def test_json_object_success_is_still_validated(self):
+        modes = []
+
+        def provider_side_effect(**kwargs):
+            modes.append(kwargs["response_mode"])
+            if len(modes) == 1:
+                raise self._json_validate()
+            return self._cards(kwargs["batch_size"], prefix="Fresh")
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect):
+            cards = generate_flashcard_batch(self.source_notes, self.options, 2, [])
+
+        self.assertEqual(modes, ["json_schema", "json_object"])
+        self.assertEqual(cards[1]["answer"], "A1.")
+
+    def test_malformed_fallback_duplicate_and_wrong_count_are_rejected(self):
+        with self.assertRaises(FlashcardGenerationError) as fenced:
+            _parse_batch_response('```json\n{"cards":[]}\n```', 0, [])
+        self.assertEqual(str(fenced.exception), "Flashcard provider returned invalid JSON")
+
+        def fenced_fallback(**kwargs):
+            if kwargs["response_mode"] == "json_schema":
+                raise self._json_validate()
+            return '```json\n{"cards":[{"question":"Q?","answer":"A."}]}\n```'
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=fenced_fallback):
+            with self.assertRaises(FlashcardGenerationError) as fence_error:
+                generate_flashcard_batch(self.source_notes, self.options, 1, [])
+        self.assertEqual(str(fence_error.exception), "Flashcard provider returned invalid JSON")
+
+        def wrong_count(**kwargs):
+            if kwargs["response_mode"] == "json_schema":
+                raise self._json_validate()
+            return self._cards(3)
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=wrong_count):
+            with self.assertRaises(FlashcardGenerationError) as count_error:
+                generate_flashcard_batch(self.source_notes, self.options, 2, [])
+        self.assertEqual(str(count_error.exception), "Flashcard provider returned an unexpected card count")
+
+        def duplicates(**kwargs):
+            if kwargs["response_mode"] == "json_schema":
+                raise self._json_validate()
+            return json.dumps({"cards": [{"question": "Same?", "answer": "A."}]})
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=duplicates):
+            with self.assertRaises(FlashcardGenerationError) as duplicate_error:
+                generate_flashcard_batch(self.source_notes, self.options, 1, ["Same?"])
+        self.assertEqual(str(duplicate_error.exception), FLASHCARD_DUPLICATE_QUESTIONS_ERROR)
+
+    def test_rejected_schema_is_not_repeated_and_budget_stays_bounded(self):
+        from app.ai.client import FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+        modes = []
+
+        def always_invalid(**kwargs):
+            modes.append(kwargs["response_mode"])
+            raise self._json_validate()
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=always_invalid) as provider:
+            with self.assertRaises(FlashcardGenerationError):
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    2,
+                    [],
+                    provider_budget=budget,
+                    batch_index=4,
+                    operation_id="mode-budget",
+                )
+
+        self.assertEqual(budget.used, 8)
+        self.assertEqual(provider.call_count, 8)
+        self.assertEqual(modes[0], "json_schema")
+        self.assertEqual(modes[1], "json_object")
+        self.assertEqual(modes[2:], ["raw"] * 6)
+        self.assertEqual(modes.count("json_schema"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

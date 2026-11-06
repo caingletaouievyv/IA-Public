@@ -186,30 +186,32 @@ def _log_flashcard_provider_failure(
     error_type: str | None = None,
     error_code: str = "",
     failed_generation_len: int = 0,
-    attempt: int | None = None,
-    budget_limit: int | None = None,
-    budget_used: int | None = None,
-) -> None:
-    logger.warning(
-        "flashcard_provider_failure provider=%s model=%s category=%s batch=%s batch_size=%s "
-        "operation_id=%s status_code=%s retry_after=%s error_type=%s error_code=%s "
-        "failed_generation_len=%s attempt=%s budget_limit=%s budget_used=%s error_snippet=%s",
-        provider,
-        model,
-        category,
-        batch_index,
-        batch_size,
-        operation_id or "",
-        status_code if status_code is not None else "",
-        retry_after or "",
-        error_type or "",
-        error_code,
-        failed_generation_len,
-        attempt if attempt is not None else "",
-        budget_limit if budget_limit is not None else "",
-        budget_used if budget_used is not None else "",
-        error_snippet,
-    )
+        attempt: int | None = None,
+        budget_limit: int | None = None,
+        budget_used: int | None = None,
+        response_mode: str = "",
+    ) -> None:
+        logger.warning(
+            "flashcard_provider_failure provider=%s model=%s category=%s batch=%s batch_size=%s "
+            "operation_id=%s status_code=%s retry_after=%s error_type=%s error_code=%s "
+            "failed_generation_len=%s attempt=%s budget_limit=%s budget_used=%s response_mode=%s error_snippet=%s",
+            provider,
+            model,
+            category,
+            batch_index,
+            batch_size,
+            operation_id or "",
+            status_code if status_code is not None else "",
+            retry_after or "",
+            error_type or "",
+            error_code,
+            failed_generation_len,
+            attempt if attempt is not None else "",
+            budget_limit if budget_limit is not None else "",
+            budget_used if budget_used is not None else "",
+            response_mode,
+            error_snippet,
+        )
 
 
 def _log_flashcard_provider_budget_exhausted(
@@ -268,38 +270,41 @@ def _consume_flashcard_provider_budget(
     )
 
 
-def _flashcard_response_format(batch_size: int, *, use_json_schema: bool) -> dict:
-    if use_json_schema:
-        return {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "flashcard_batch",
-                "description": "Batch of flashcards with question and answer pairs.",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "cards": {
-                            "type": "array",
-                            "minItems": batch_size,
-                            "maxItems": batch_size,
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "properties": {
-                                    "question": {"type": "string"},
-                                    "answer": {"type": "string"},
-                                },
-                                "required": ["question", "answer"],
+def _flashcard_response_format(batch_size: int, response_mode: str) -> dict | None:
+    """Groq accepts strict json_schema, json_object, or no response_format. Raw mode omits it."""
+    if response_mode == "raw":
+        return None
+    if response_mode == "json_object":
+        return {"type": "json_object"}
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "flashcard_batch",
+            "description": "Batch of flashcards with question and answer pairs.",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "cards": {
+                        "type": "array",
+                        "minItems": batch_size,
+                        "maxItems": batch_size,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "question": {"type": "string"},
+                                "answer": {"type": "string"},
                             },
-                        }
-                    },
-                    "required": ["cards"],
+                            "required": ["question", "answer"],
+                        },
+                    }
                 },
+                "required": ["cards"],
             },
-        }
-    return {"type": "json_object"}
+        },
+    }
 
 
 def call_single(
@@ -345,7 +350,7 @@ def call_flashcard_batch(
     operation_id: str | None = None,
     attempt: int | None = None,
     *,
-    use_json_schema: bool | None = None,
+    response_mode: str | None = None,
     provider_budget: FlashcardProviderCallBudget | None = None,
     external_budget_charge: bool = False,
 ) -> str:
@@ -362,13 +367,25 @@ def call_flashcard_batch(
     headers = {"Content-Type": "application/json"}
     if config.get("auth", True) and AI_KEY:
         headers["Authorization"] = f"Bearer {AI_KEY}"
-    schema_enabled = True if use_json_schema is None else use_json_schema
+    selected_mode = response_mode or "json_schema"
+    response_format = _flashcard_response_format(batch_size, selected_mode)
     payload = {
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
-        "response_format": _flashcard_response_format(batch_size, use_json_schema=schema_enabled),
     }
+    if response_format is not None:
+        payload["response_format"] = response_format
+    logger.warning(
+        "flashcard_provider_attempt provider=%s model=%s batch=%s batch_size=%s operation_id=%s attempt=%s response_mode=%s",
+        provider,
+        model,
+        batch_index,
+        batch_size,
+        operation_id or "",
+        attempt if attempt is not None else "",
+        selected_mode,
+    )
 
     def post_once() -> requests.Response:
         if not external_budget_charge:
@@ -404,6 +421,7 @@ def call_flashcard_batch(
             attempt=attempt,
             budget_limit=provider_budget.limit if provider_budget else None,
             budget_used=provider_budget.used if provider_budget else None,
+            response_mode=selected_mode,
         )
         raise AIProviderError(
             "Flashcard provider request timed out.",
@@ -422,6 +440,7 @@ def call_flashcard_batch(
             operation_id=operation_id,
             error_type=type(error).__name__,
             attempt=attempt,
+            response_mode=selected_mode,
         )
         raise AIProviderError(
             "Flashcard provider request failed.",
@@ -461,6 +480,7 @@ def call_flashcard_batch(
             attempt=attempt,
             budget_limit=provider_budget.limit if provider_budget else None,
             budget_used=provider_budget.used if provider_budget else None,
+            response_mode=selected_mode,
         )
         raise AIProviderError(
             "Flashcard provider request failed.",
@@ -485,6 +505,7 @@ def call_flashcard_batch(
             error_snippet=_safe_error_snippet(response),
             error_type=type(error).__name__,
             attempt=attempt,
+            response_mode=selected_mode,
         )
         raise AIProviderError(
             "Flashcard provider returned invalid JSON.",
@@ -505,6 +526,7 @@ def call_flashcard_batch(
             operation_id=operation_id,
             status_code=response.status_code,
             attempt=attempt,
+            response_mode=selected_mode,
         )
         raise AIProviderError(
             "Flashcard provider returned an empty response.",

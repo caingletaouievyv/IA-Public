@@ -51,6 +51,12 @@ _BATCH_REPAIR_SUFFIX = (
     'Return ONLY JSON: {"cards":[{"question":"...","answer":"..."}, ...]} with exactly the requested batch size.'
 )
 
+_BATCH_RAW_JSON_SUFFIX = (
+    "\n\nNo response schema is attached. Return only raw JSON, with no Markdown fences or other text. "
+    'Use {"cards":[{"question":"...","answer":"..."}]} and exactly the requested card count. '
+    'Each card has exactly two string fields: "question" and "answer".'
+)
+
 _BATCH_DUPLICATE_REPAIR_SUFFIX = (
     "\n\nYour previous response was rejected because one or more questions duplicated "
     "existing_questions or another question in the same batch. Generate exactly the requested "
@@ -100,6 +106,22 @@ class FlashcardGenerationError(Exception):
 
 class FlashcardJobStopped(Exception):
     """Raised when a background job must stop because the operation is no longer pending."""
+
+
+class FlashcardResponseModeState:
+    """Advances json_schema → json_object → raw. Split retries do not move backward."""
+
+    _MODES = ("json_schema", "json_object", "raw")
+
+    def __init__(self):
+        self._index = 0
+
+    def mode(self) -> str:
+        return self._MODES[self._index]
+
+    def advance(self) -> None:
+        if self._index < len(self._MODES) - 1:
+            self._index += 1
 
 
 class FlashcardRateLimitState:
@@ -235,11 +257,29 @@ def _validate_batch_question_uniqueness(cards: list[dict], existing_questions: l
         seen.add(normalized)
 
 
+def _advances_response_mode(error: Exception) -> bool:
+    if not isinstance(error, FlashcardGenerationError):
+        return False
+    if str(error) == FLASHCARD_DUPLICATE_QUESTIONS_ERROR:
+        return False
+    if str(error) in {
+        "Flashcard provider returned invalid JSON",
+        "Flashcard provider returned an invalid structure",
+        "Flashcard provider returned an unexpected card count",
+        "Flashcard provider returned an invalid card",
+    }:
+        return True
+    cause = error.__cause__
+    return isinstance(cause, AIProviderError) and cause.category == "json_validate_failed"
+
+
 def _parse_batch_response(
     raw_result: str,
     expected_count: int,
     existing_questions: list[str] | None = None,
 ) -> list[dict]:
+    if not isinstance(raw_result, str) or raw_result.lstrip().startswith("```"):
+        raise FlashcardGenerationError("Flashcard provider returned invalid JSON")
     try:
         parsed = json.loads(raw_result)
     except (TypeError, json.JSONDecodeError) as error:
@@ -258,6 +298,7 @@ def _build_batch_messages(
     existing_questions: list[str],
     *,
     repair_kind: str | None = None,
+    response_mode: str = "json_schema",
 ) -> list[dict]:
     request_payload = {
         "requested_card_count": batch_size,
@@ -269,6 +310,8 @@ def _build_batch_messages(
         "source_notes": source_notes,
     }
     user_content = json.dumps(request_payload, ensure_ascii=False)
+    if response_mode == "raw":
+        user_content = f"{user_content}{_BATCH_RAW_JSON_SUFFIX}"
     if repair_kind == "duplicate":
         user_content = f"{user_content}{_BATCH_DUPLICATE_REPAIR_SUFFIX}"
     elif repair_kind == "json":
@@ -355,7 +398,7 @@ def _request_flashcard_batch(
     attempt: int,
     repair_kind: str | None,
     provider_budget: FlashcardProviderCallBudget,
-    use_json_schema: bool,
+    response_mode_state: FlashcardResponseModeState,
     rate_state: FlashcardRateLimitState,
     job_deadline,
     pending_check,
@@ -370,12 +413,13 @@ def _request_flashcard_batch(
                     batch_size,
                     existing_questions,
                     repair_kind=repair_kind,
+                    response_mode=response_mode_state.mode(),
                 ),
                 batch_size=batch_size,
                 batch_index=batch_index,
                 operation_id=operation_id,
                 attempt=attempt,
-                use_json_schema=use_json_schema,
+                response_mode=response_mode_state.mode(),
                 provider_budget=provider_budget,
                 external_budget_charge=True,
             )
@@ -428,6 +472,7 @@ def _generate_flashcard_batch_once(
     batch_index: int | None,
     operation_id: str | None,
     provider_budget: FlashcardProviderCallBudget,
+    response_mode_state: FlashcardResponseModeState,
     rate_state: FlashcardRateLimitState,
     job_deadline,
 ) -> list[dict]:
@@ -453,7 +498,6 @@ def _generate_flashcard_batch_once(
                 repair_kind = "duplicate"
             else:
                 repair_kind = "json"
-        use_json_schema = attempt < 3
         try:
             return _request_flashcard_batch(
                 source_notes,
@@ -465,7 +509,7 @@ def _generate_flashcard_batch_once(
                 attempt=attempt,
                 repair_kind=repair_kind,
                 provider_budget=provider_budget,
-                use_json_schema=use_json_schema,
+                response_mode_state=response_mode_state,
                 rate_state=rate_state,
                 job_deadline=job_deadline,
                 pending_check=pending_check,
@@ -474,6 +518,9 @@ def _generate_flashcard_batch_once(
             if isinstance(error, FlashcardJobStopped):
                 raise
             last_error = error
+            failed_mode = response_mode_state.mode()
+            if _advances_response_mode(error):
+                response_mode_state.advance()
             if not _retriable_flashcard_failure(error):
                 break
             if batch_size > 1 and attempt >= FLASHCARD_BATCH_ATTEMPTS_BEFORE_SPLIT:
@@ -481,13 +528,14 @@ def _generate_flashcard_batch_once(
             if provider_budget.remaining() <= 0:
                 break
             logger.warning(
-                "flashcard_batch_retry batch=%s batch_size=%s operation_id=%s attempt=%s budget_used=%s budget=%s error=%s",
+                "flashcard_batch_retry batch=%s batch_size=%s operation_id=%s attempt=%s budget_used=%s budget=%s response_mode=%s error=%s",
                 batch_index,
                 batch_size,
                 operation_id or "",
                 attempt,
                 provider_budget.used,
                 provider_budget.limit,
+                failed_mode,
                 str(error),
             )
     if provider_budget.exhausted() and last_error is not None:
@@ -513,6 +561,7 @@ def generate_flashcard_batch(
     batch_index: int | None = None,
     operation_id: str | None = None,
     provider_budget: FlashcardProviderCallBudget | None = None,
+    response_mode_state: FlashcardResponseModeState | None = None,
     rate_state: FlashcardRateLimitState | None = None,
     job_deadline=None,
 ) -> list[dict]:
@@ -521,6 +570,8 @@ def generate_flashcard_batch(
         raise FlashcardJobStopped()
     if provider_budget is None:
         provider_budget = FlashcardProviderCallBudget()
+    if response_mode_state is None:
+        response_mode_state = FlashcardResponseModeState()
     if rate_state is None:
         rate_state = FlashcardRateLimitState()
     try:
@@ -533,6 +584,7 @@ def generate_flashcard_batch(
             batch_index=batch_index,
             operation_id=operation_id,
             provider_budget=provider_budget,
+            response_mode_state=response_mode_state,
             rate_state=rate_state,
             job_deadline=job_deadline,
         )
@@ -563,6 +615,7 @@ def generate_flashcard_batch(
                 batch_index=batch_index,
                 operation_id=operation_id,
                 provider_budget=provider_budget,
+                response_mode_state=response_mode_state,
                 rate_state=rate_state,
                 job_deadline=job_deadline,
             )
@@ -576,6 +629,7 @@ def generate_flashcard_batch(
                 batch_index=batch_index,
                 operation_id=operation_id,
                 provider_budget=provider_budget,
+                response_mode_state=response_mode_state,
                 rate_state=rate_state,
                 job_deadline=job_deadline,
             )
@@ -616,6 +670,7 @@ def generate_flashcard_batch(
             batch_index=batch_index,
             operation_id=operation_id,
             provider_budget=provider_budget,
+            response_mode_state=response_mode_state,
             rate_state=rate_state,
             job_deadline=job_deadline,
         )
@@ -629,6 +684,7 @@ def generate_flashcard_batch(
             batch_index=batch_index,
             operation_id=operation_id,
             provider_budget=provider_budget,
+            response_mode_state=response_mode_state,
             rate_state=rate_state,
             job_deadline=job_deadline,
         )
