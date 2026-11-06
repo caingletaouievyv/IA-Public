@@ -270,6 +270,90 @@ def _consume_flashcard_provider_budget(
     )
 
 
+def _gpt_oss_model(model: str) -> bool:
+    return "gpt-oss" in (model or "").lower()
+
+
+def _visible_message_text(content: object) -> str:
+    """Read assistant text from message.content. Reasoning is not card output."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            text = item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "".join(parts)
+
+
+def _reasoning_token_count(result: dict) -> int:
+    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+    details = usage.get("completion_tokens_details") if isinstance(usage.get("completion_tokens_details"), dict) else {}
+    value = details.get("reasoning_tokens")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, value)
+
+
+def _classify_flashcard_output(result: dict) -> tuple[str, str, dict]:
+    """Classify a chat completion without using reasoning text as the answer."""
+    choices = result.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    text = _visible_message_text(message.get("content")).strip()
+    finish_reason = choice.get("finish_reason") if isinstance(choice.get("finish_reason"), str) else ""
+    refusal = message.get("refusal")
+    reasoning = message.get("reasoning")
+    meta = {
+        "finish_reason": finish_reason,
+        "reasoning_tokens": _reasoning_token_count(result),
+        "content_len": len(text),
+        "reasoning_present": isinstance(reasoning, str) and bool(reasoning.strip()),
+        "refusal_present": isinstance(refusal, str) and bool(refusal.strip()),
+    }
+    if meta["refusal_present"] or finish_reason == "content_filter":
+        return "refusal", "", meta
+    if finish_reason == "length":
+        return "incomplete_generation", "", meta
+    if not text:
+        if meta["reasoning_tokens"] > 0 or meta["reasoning_present"]:
+            return "incomplete_generation", "", meta
+        return "empty_response", "", meta
+    return "ok", text, meta
+
+
+def _log_flashcard_output_condition(
+    *,
+    batch_index: int | None,
+    batch_size: int,
+    operation_id: str | None,
+    attempt: int | None,
+    response_mode: str,
+    condition: str,
+    meta: dict,
+) -> None:
+    logger.warning(
+        "flashcard_output_condition batch=%s batch_size=%s operation_id=%s attempt=%s response_mode=%s "
+        "condition=%s finish_reason=%s reasoning_tokens=%s content_len=%s reasoning_present=%s refusal_present=%s",
+        batch_index,
+        batch_size,
+        operation_id or "",
+        attempt if attempt is not None else "",
+        response_mode,
+        condition,
+        meta.get("finish_reason") or "",
+        meta.get("reasoning_tokens", 0),
+        meta.get("content_len", 0),
+        int(bool(meta.get("reasoning_present"))),
+        int(bool(meta.get("refusal_present"))),
+    )
+
+
 def _flashcard_response_format(batch_size: int, response_mode: str) -> dict | None:
     """Groq accepts strict json_schema, json_object, or no response_format. Raw mode omits it."""
     if response_mode == "raw":
@@ -369,11 +453,13 @@ def call_flashcard_batch(
         headers["Authorization"] = f"Bearer {AI_KEY}"
     selected_mode = response_mode or "json_schema"
     response_format = _flashcard_response_format(batch_size, selected_mode)
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-    }
+    payload = {"model": model, "messages": messages}
+    # gpt-oss counts reasoning toward max_completion_tokens. Other models keep max_tokens.
+    if _gpt_oss_model(model):
+        payload["max_completion_tokens"] = max_tokens
+        payload["reasoning_effort"] = "low"
+    else:
+        payload["max_tokens"] = max_tokens
     if response_format is not None:
         payload["response_format"] = response_format
     logger.warning(
@@ -515,27 +601,43 @@ def call_flashcard_batch(
             model=model,
         ) from error
 
-    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        _log_flashcard_provider_failure(
-            provider=provider,
-            model=model,
-            category="empty_response",
-            batch_index=batch_index,
-            batch_size=batch_size,
-            operation_id=operation_id,
-            status_code=response.status_code,
-            attempt=attempt,
-            response_mode=selected_mode,
-        )
-        raise AIProviderError(
-            "Flashcard provider returned an empty response.",
-            category="empty_response",
-            status_code=response.status_code,
-            provider=provider,
-            model=model,
-        )
-    return content
+    condition, content, meta = _classify_flashcard_output(result if isinstance(result, dict) else {})
+    if condition == "ok":
+        return content
+    if condition == "refusal":
+        message = "Flashcard provider refused the request."
+    elif condition == "incomplete_generation":
+        message = "Flashcard provider returned an incomplete response."
+    else:
+        condition = "empty_response"
+        message = "Flashcard provider returned an empty response."
+    _log_flashcard_output_condition(
+        batch_index=batch_index,
+        batch_size=batch_size,
+        operation_id=operation_id,
+        attempt=attempt,
+        response_mode=selected_mode,
+        condition=condition,
+        meta=meta,
+    )
+    _log_flashcard_provider_failure(
+        provider=provider,
+        model=model,
+        category=condition,
+        batch_index=batch_index,
+        batch_size=batch_size,
+        operation_id=operation_id,
+        status_code=response.status_code,
+        attempt=attempt,
+        response_mode=selected_mode,
+    )
+    raise AIProviderError(
+        message,
+        category=condition,
+        status_code=response.status_code,
+        provider=provider,
+        model=model,
+    )
 
 
 def judge_answers(question: str, answers: list) -> str:

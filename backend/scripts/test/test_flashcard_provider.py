@@ -23,6 +23,19 @@ from app.ai.client import (
 )
 
 
+def _completion(message: dict, finish_reason: str = "stop", usage: dict | None = None) -> MagicMock:
+    response = MagicMock()
+    response.ok = True
+    response.status_code = 200
+    response.headers = {}
+    body = {"choices": [{"message": message, "finish_reason": finish_reason}]}
+    if usage is not None:
+        body["usage"] = usage
+    response.json.return_value = body
+    response.text = json.dumps({"finish_reason": finish_reason})
+    return response
+
+
 def _ok_response(content: str) -> MagicMock:
     response = MagicMock()
     response.ok = True
@@ -86,6 +99,121 @@ class FlashcardProviderClientTests(unittest.TestCase):
         schema = post.call_args.kwargs["json"]["response_format"]
         self.assertEqual(schema["type"], "json_schema")
         self.assertTrue(schema["json_schema"]["strict"])
+        posted = post.call_args.kwargs["json"]
+        if "gpt-oss" in posted["model"]:
+            self.assertEqual(posted["reasoning_effort"], "low")
+            self.assertEqual(posted["max_completion_tokens"], 900)
+            self.assertNotIn("max_tokens", posted)
+        else:
+            self.assertNotIn("reasoning_effort", posted)
+            self.assertEqual(posted["max_tokens"], 900)
+            self.assertNotIn("max_completion_tokens", posted)
+
+    @patch("app.ai.client.requests.post")
+    def test_length_with_reasoning_is_incomplete_not_card_text(self, post):
+        reasoning = "PRIVATE_REASONING_TRACE do not log"
+        post.return_value = _completion(
+            {"role": "assistant", "content": "", "reasoning": reasoning},
+            finish_reason="length",
+            usage={"completion_tokens_details": {"reasoning_tokens": 900}},
+        )
+        with self.assertLogs("app.ai.client", level=logging.WARNING) as logs:
+            with self.assertRaises(AIProviderError) as ctx:
+                call_flashcard_batch(self.messages, batch_size=5, batch_index=3, operation_id="op-length", response_mode="raw")
+        self.assertEqual(ctx.exception.category, "incomplete_generation")
+        combined = "\n".join(logs.output)
+        self.assertIn("condition=incomplete_generation", combined)
+        self.assertIn("finish_reason=length", combined)
+        self.assertIn("reasoning_tokens=900", combined)
+        self.assertIn("reasoning_present=1", combined)
+        self.assertIn("content_len=0", combined)
+        self.assertNotIn(reasoning, combined)
+        self.assertNotIn("Return JSON only", combined)
+        self.assertNotIn('{"cards"', combined)
+
+    @patch("app.ai.client.requests.post")
+    def test_nonempty_content_cut_off_by_length_is_incomplete(self, post):
+        partial = '{"cards":[{"question":"Truncated'
+        post.return_value = _completion(
+            {"role": "assistant", "content": partial, "reasoning": "PRIVATE_REASONING_TRACE"},
+            finish_reason="length",
+        )
+        with self.assertLogs("app.ai.client", level=logging.WARNING) as logs:
+            with self.assertRaises(AIProviderError) as ctx:
+                call_flashcard_batch(self.messages, batch_size=2, batch_index=1, operation_id="op-cut")
+        self.assertEqual(ctx.exception.category, "incomplete_generation")
+        combined = "\n".join(logs.output)
+        self.assertIn("finish_reason=length", combined)
+        self.assertNotIn(partial, combined)
+        self.assertNotIn("PRIVATE_REASONING_TRACE", combined)
+
+    @patch("app.ai.client.requests.post")
+    def test_nonempty_content_with_content_filter_is_refusal(self, post):
+        visible = "filtered card text"
+        post.return_value = _completion(
+            {"role": "assistant", "content": visible, "refusal": "PRIVATE_REFUSAL_TEXT"},
+            finish_reason="content_filter",
+        )
+        with self.assertLogs("app.ai.client", level=logging.WARNING) as logs:
+            with self.assertRaises(AIProviderError) as ctx:
+                call_flashcard_batch(self.messages, batch_size=2, batch_index=1, operation_id="op-filter")
+        self.assertEqual(ctx.exception.category, "refusal")
+        combined = "\n".join(logs.output)
+        self.assertIn("finish_reason=content_filter", combined)
+        self.assertNotIn(visible, combined)
+        self.assertNotIn("PRIVATE_REFUSAL_TEXT", combined)
+
+    @patch("app.ai.client.requests.post")
+    def test_non_gpt_oss_keeps_max_tokens(self, post):
+        from app.ai.client import MODEL_MAP, MODEL_PROVIDER
+
+        post.return_value = _ok_response('{"cards": []}')
+        other = dict(MODEL_MAP[MODEL_PROVIDER])
+        other["model"] = "llama-3.3-70b-versatile"
+        with patch.dict("app.ai.client.MODEL_MAP", {MODEL_PROVIDER: other}):
+            call_flashcard_batch(self.messages, batch_size=2, batch_index=1, operation_id="op-other")
+        posted = post.call_args.kwargs["json"]
+        self.assertEqual(posted["model"], "llama-3.3-70b-versatile")
+        self.assertEqual(posted["max_tokens"], 900)
+        self.assertNotIn("max_completion_tokens", posted)
+        self.assertNotIn("reasoning_effort", posted)
+
+    @patch("app.ai.client.requests.post")
+    def test_stop_with_blank_content_is_empty_response(self, post):
+        post.return_value = _completion({"role": "assistant", "content": "   "}, finish_reason="stop")
+        with self.assertRaises(AIProviderError) as ctx:
+            call_flashcard_batch(self.messages, batch_size=2, batch_index=3, operation_id="op-empty")
+        self.assertEqual(ctx.exception.category, "empty_response")
+
+    @patch("app.ai.client.requests.post")
+    def test_refusal_is_not_logged_or_returned(self, post):
+        refusal = "PRIVATE_REFUSAL_TEXT"
+        post.return_value = _completion(
+            {"role": "assistant", "content": None, "refusal": refusal},
+            finish_reason="stop",
+        )
+        with self.assertLogs("app.ai.client", level=logging.WARNING) as logs:
+            with self.assertRaises(AIProviderError) as ctx:
+                call_flashcard_batch(self.messages, batch_size=2, batch_index=1, operation_id="op-refusal")
+        self.assertEqual(ctx.exception.category, "refusal")
+        self.assertNotIn(refusal, "\n".join(logs.output))
+
+    @patch("app.ai.client.requests.post")
+    def test_content_parts_and_malformed_json_are_returned(self, post):
+        post.return_value = _completion(
+            {"role": "assistant", "content": [{"type": "text", "text": '{"cards":[{"question":"Q?","answer":"A."}]}'}]},
+            finish_reason="stop",
+        )
+        result = call_flashcard_batch(self.messages, batch_size=1, batch_index=1, operation_id="op-parts")
+        self.assertIn('"question"', result)
+        post.return_value = _completion(
+            {"role": "assistant", "content": "not-json"},
+            finish_reason="stop",
+        )
+        self.assertEqual(
+            call_flashcard_batch(self.messages, batch_size=1, batch_index=1, operation_id="op-bad-json"),
+            "not-json",
+        )
 
     @patch("app.ai.client.time.sleep")
     @patch("app.ai.client.requests.post")

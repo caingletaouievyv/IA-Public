@@ -1469,5 +1469,93 @@ class FlashcardResponseModeTests(unittest.TestCase):
         self.assertEqual(modes.count("json_schema"), 1)
 
 
+class FlashcardOutputConditionTests(unittest.TestCase):
+    def setUp(self):
+        self.options = {
+            "difficulty": "Mixed",
+            "question_style": "Mixed",
+            "language": "Same as notes",
+            "additional_instructions": "",
+        }
+        self.source_notes = [{"title": "Biology", "content": "Cells have membranes."}]
+
+    def test_genuine_empty_response_retries_once_without_splitting(self):
+        from app.ai.client import AIProviderError, FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+
+        def empty(**_kwargs):
+            raise AIProviderError(
+                "Flashcard provider returned an empty response.",
+                category="empty_response",
+                status_code=200,
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=empty) as provider:
+            with self.assertRaises(FlashcardGenerationError) as ctx:
+                generate_flashcard_batch(
+                    self.source_notes,
+                    self.options,
+                    5,
+                    [],
+                    provider_budget=budget,
+                    batch_index=3,
+                    operation_id="empty-once",
+                )
+
+        self.assertEqual(ctx.exception.__cause__.category, "empty_response")
+        self.assertEqual(provider.call_count, 2)
+        self.assertEqual(budget.used, 2)
+
+    def test_incomplete_generation_can_recover_within_budget(self):
+        from app.ai.client import AIProviderError, FlashcardProviderCallBudget
+
+        budget = FlashcardProviderCallBudget(limit=8)
+        calls = {"count": 0}
+
+        def provider_side_effect(**kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise AIProviderError(
+                    "Flashcard provider returned an incomplete response.",
+                    category="incomplete_generation",
+                    status_code=200,
+                )
+            count = kwargs["batch_size"]
+            return json.dumps(
+                {"cards": [{"question": f"Q{index}?", "answer": "A."} for index in range(count)]}
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=provider_side_effect):
+            cards = generate_flashcard_batch(
+                self.source_notes,
+                self.options,
+                2,
+                [],
+                provider_budget=budget,
+                batch_index=3,
+                operation_id="incomplete-recover",
+            )
+
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(budget.used, 2)
+
+    def test_refusal_is_not_retried(self):
+        from app.ai.client import AIProviderError
+
+        def refused(**_kwargs):
+            raise AIProviderError(
+                "Flashcard provider refused the request.",
+                category="refusal",
+                status_code=200,
+            )
+
+        with patch("app.ai.flashcards.call_flashcard_batch", side_effect=refused) as provider:
+            with self.assertRaises(FlashcardGenerationError) as ctx:
+                generate_flashcard_batch(self.source_notes, self.options, 2, [], batch_index=3)
+        self.assertEqual(ctx.exception.__cause__.category, "refusal")
+        self.assertEqual(provider.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

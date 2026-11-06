@@ -71,9 +71,24 @@ def _retriable_provider_category(category: str | None) -> bool:
     return category in {
         "json_validate_failed",
         "response_parse_error",
-        "empty_response",
+        "incomplete_generation",
         "server_error",
     }
+
+
+def _provider_cause(error: Exception) -> AIProviderError | None:
+    if isinstance(error, AIProviderError):
+        return error
+    if isinstance(error, FlashcardGenerationError):
+        cause = error.__cause__
+        if isinstance(cause, AIProviderError):
+            return cause
+    return None
+
+
+def _empty_response_failure(error: Exception) -> bool:
+    cause = _provider_cause(error)
+    return cause is not None and cause.category == "empty_response"
 
 
 def _retriable_flashcard_failure(error: Exception) -> bool:
@@ -521,7 +536,9 @@ def _generate_flashcard_batch_once(
             failed_mode = response_mode_state.mode()
             if _advances_response_mode(error):
                 response_mode_state.advance()
-            if not _retriable_flashcard_failure(error):
+            # A stopped model can be retried once. Repeating a blank stop burns the call budget.
+            empty_retry = _empty_response_failure(error) and attempt < 2
+            if not empty_retry and not _retriable_flashcard_failure(error):
                 break
             if batch_size > 1 and attempt >= FLASHCARD_BATCH_ATTEMPTS_BEFORE_SPLIT:
                 break
