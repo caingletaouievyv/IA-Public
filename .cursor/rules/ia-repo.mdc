@@ -1,11 +1,11 @@
 ---
-description: IA repo — docs/docs.md index; docs/ia.md + docs/project.md
+description: IA repo — docs/docs.md index; docs/project.md
 alwaysApply: true
 ---
 
 # IA repo rules
 
-**Index:** [docs/docs.md](docs/docs.md). **Engineering agreement:** [docs/ia.md](docs/ia.md) (principles, layers, security, testing) and [docs/project.md](docs/project.md) (product, stack, roadmap). [docs/ui.md](docs/ui.md) for frontend UX. [flow.md](docs/flow.md) / [testing.md](docs/testing.md) for traces and APIs.
+**Index:** [docs/docs.md](docs/docs.md). **Product:** [docs/project.md](docs/project.md) (stack, features, configuration). [docs/ui.md](docs/ui.md) for frontend UX. [flow.md](docs/flow.md) / [testing.md](docs/testing.md) for traces and APIs.
 
 ---
 
@@ -15,7 +15,7 @@ alwaysApply: true
 - **File header** — First line: `# IA/path/to/file` (or `//` in JS); then short docstring
 - **Code** — Lazy, simple, concise; one short comment per logical block
 - **Architecture** — Feature folders: `routes.py` + `manager.py` / `engine.py`. Routes → manager/engine → adapters. Validation: Pydantic at boundary.
-- **Docs** — When behavior changes: sync **project.md**, **ia.md**, **docs.md**, **flow.md**, **testing.md**, **README.md**, **ui.md** as needed
+- **Docs** — When behavior changes: sync **project.md**, **docs.md**, **flow.md**, **testing.md**, **README.md**, **ui.md** as needed
 
 ---
 
@@ -45,11 +45,11 @@ Dark theme; page-based authenticated shell; loading / error / empty feedback. Se
 
 | Principle | Rule |
 |-----------|------|
-| **Sync** | Read **ia.md** + **project.md** before acting |
+| **Sync** | Read **project.md** before acting |
 | **Layers** | No logic in routes/components that belongs in manager/engine |
 | **Secrets** | Never commit `.env`; never log keys, tokens, `JWT_SECRET`, passwords |
 | **APIs** | Document shape changes in **project.md** / **testing.md** |
 | **Tests** | Keep `backend/scripts/test/` runnable |
 | **Communication** | State → intent → action |
 
-When in doubt: **docs/ia.md** and **docs/project.md**. Keep demo seeding limited to development/test and require a configured password.
+When in doubt: **docs/project.md**. Keep demo seeding limited to development/test and require a configured password.

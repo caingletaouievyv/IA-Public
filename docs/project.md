@@ -2,7 +2,7 @@
 
 Product and technical reference: stack, features, roadmap, and operations.
 
-**Related:** [docs.md](docs.md) (index) · [ia.md](ia.md) (engineering agreement) · [README.md](../README.md) (quick start)
+**Related:** [docs.md](docs.md) (index) · [setup.md](setup.md) (local setup) · [README.md](../README.md) (quick start)
 
 ---
 
@@ -82,7 +82,7 @@ Persistent Memory is separate from Notes and Conversation History. Rows live in 
 - `MEMORY_RETRIEVAL=text` (default): deterministic weighted lexical overlap; no embedding model is loaded.
 - `MEMORY_RETRIEVAL=semantic` (opt-in): builds a temporary in-memory FAISS index from the authenticated user's PostgreSQL notes, searches it, and discards it. The model is `sentence-transformers/all-MiniLM-L6-v2`, loaded lazily. Its weights may download into the local Hugging Face cache. The persistent pickle cache has been removed and is not loaded.
 - Text and FAISS retrieval use their own lookup/exploratory thresholds. Context size is controlled by `MAX_CONTEXT_TOKENS`; both modes use `MAX_FAISS_RESULTS` as the configured top-N count.
-- Query-bearing intent-cache logs (`INTENT_CACHE_LOG_HITS`) and dropped-note-title logs (`LOG_DROPPED_NOTES`) default off. `MEMORY_ANALYTICS_ENABLED` also defaults off; when enabled, its local records include query text and note titles. Understanding-gap logs use fixed content-free codes; see [understanding-gaps.md](understanding-gaps.md).
+- Query-bearing intent-cache logs (`INTENT_CACHE_LOG_HITS`) and dropped-note-title logs (`LOG_DROPPED_NOTES`) default off. `MEMORY_ANALYTICS_ENABLED` also defaults off; when enabled, its local records include query text and note titles. Understanding-gap logs use fixed content-free codes only (no prompts or note bodies).
 
 ### Retrieval threshold tuning
 

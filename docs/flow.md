@@ -100,7 +100,7 @@ Supported standalone persistent assistant-name updates and recognized standalone
 |------|-------|------------------|
 | 1 | `backend/app/common/understanding_gaps.py` | `report_understanding_gap()` accepts only registered codes and logs fixed feature/category/fallback metadata plus exception class. It never logs exception text or caller content. |
 | 2 | Memory extraction/retrieval, suggestions, Flashcards, and image-to-Note fallback paths | Report only observed provider, output-validation, or fallback failures. Ordinary no-candidate and no-note-match outcomes are not automatically gaps. |
-| 3 | Backend logs → [understanding-gaps.md](understanding-gaps.md) | Search for `understanding_gap`, classify by code, and add sanitized expected/actual/test details to the register. Do not paste raw prompts or note data. |
+| 3 | Backend logs | Search for `understanding_gap`, classify by fixed code, and record sanitized expected/actual/test details internally. Do not paste raw prompts or note data. |
 | 4 | `backend/app/diagnostics/manager.py` | When `DIAGNOSTICS_ENABLED=true`, append bounded per-user PostgreSQL rows for automatic fallback/failure events and user Ask feedback linked to `operation_id`. The insert, duplicate check, and retention trim share that user's transaction advisory lock. Legacy diagnostics JSON files are not read or written. |
 | 5 | `GET /diagnostics/events` or `python -m scripts.analyze_ai_diagnostics` | Admin-only metadata review. User feedback and automatic events remain content-free. |
 
@@ -317,4 +317,4 @@ Settings and `_history` updates are not included: these events are internal sugg
 
 The existing configured provider may have its own usage/billing policy even though these requests do not debit IA Credits. Only successful Note/deck API operations trigger a client-side event refresh; `_history` edits are explicitly excluded. If suggestion-event storage fails, the underlying Note mutation remains successful and a corresponding suggestion may not be generated.
 
-**Related docs:** [docs.md](docs.md), [ia.md](ia.md), [project.md](project.md).
+**Related docs:** [docs.md](docs.md), [project.md](project.md).

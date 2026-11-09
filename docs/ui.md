@@ -1,7 +1,7 @@
 # IA UI — page-based frontend reference
 # UI reference — frontend
 
-React 18 + Vite 5 SPA. Index: [docs.md](docs.md). API contract: [project.md](project.md). Engineering rules: [ia.md](ia.md).
+React 18 + Vite 5 SPA. Index: [docs.md](docs.md). API contract: [project.md](project.md).
 
 ---
 
@@ -232,7 +232,7 @@ frontend/
 
 ## Notes for reuse
 
-- Cross-reference: [ia.md](ia.md), [project.md](project.md).
+- Cross-reference: [project.md](project.md), [flow.md](flow.md).
 - App uses `.nav-pills` for compact page navigation; keep browser history and direct-load behavior aligned with Flask SPA routes.
 - If implementing real light mode, add `data-theme` (or class) on `document.documentElement` and mirror `:root` tokens; wire Settings `theme` to that toggle.
 - New panels should follow: `section.section--*` → `card app-panel` → optional `form--compact` → `out` for feedback.

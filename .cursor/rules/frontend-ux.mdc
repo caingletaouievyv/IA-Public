@@ -1,12 +1,12 @@
 ---
-description: Frontend UX — dark theme (docs/ui.md + docs/ia.md)
+description: Frontend UX — dark theme (docs/ui.md)
 globs: frontend/**/*
 alwaysApply: false
 ---
 
 # Frontend UX (smooth feel)
 
-Align with **docs/ui.md** and **docs/ia.md**: consistent feedback, no layout shift, accessible controls.
+Align with **docs/ui.md**: consistent feedback, no layout shift, accessible controls.
 
 - **Dark theme** — Use existing CSS variables (`--bg`, `--surface`, `--text`, `--accent`, `--error`). No sudden light surfaces.
 - **Feedback** — Loading: disable buttons, show "…" or spinner. Errors: clear message in `.err` style. Success: show result without layout shift.
