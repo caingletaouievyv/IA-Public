@@ -6,6 +6,58 @@ Full-stack personal notes and AI assistant — **React 18 / Vite** frontend, **F
 
 ---
 
+## Quick Demo
+
+> **Live:** [https://ia-ai.netlify.app/login](https://ia-ai.netlify.app/login)
+
+IA is a full-stack personal notes and AI assistant built with **React 18** and **Flask** (Python). It demonstrates a complete note-taking + AI workflow — create notes (from text, PDF, PPTX, screenshots), ask questions with context from your notes and persistent memory, generate flashcards, and manage conversations — with JWT auth, PostgreSQL storage, and AI credit tracking throughout.
+
+**What you can do in the demo:**
+
+- Register / log in with JWT authentication
+- Create notes (text, PDF import, PPTX import, screenshot OCR)
+- Ask questions with context from your notes and persistent memory
+- Generate flashcards from selected notes (AI-powered)
+- Review and edit flashcards one at a time
+- Manage persistent memory (save, edit, delete durable facts)
+- Use `!remember` command to save facts directly
+- Browse conversation history, edit/resend turns
+- Admin: user management, diagnostics, credit tracking
+- AI Suggestions overlay (dismissable, content-free)
+
+**Tech highlights for recruiters:**
+
+- React 18 (Vite, component-based, responsive UI)
+- Flask (Python 3.10+) with Pydantic validation
+- PostgreSQL (accounts, notes, memories, settings, credits, activity)
+- JWT authentication with role-based authorization (user / admin / main_admin)
+- Groq LLM integration (semantic search, flashcard generation, memory extraction)
+- FAISS semantic retrieval (temporary in-memory index, discarded after search)
+- AI credit system (backend-owned, per-user, configurable)
+- 68+ backend tests + frontend component tests passing
+- No secrets in source control (`.env` gitignored, `.env.example` provided)
+
+---
+
+## Demo
+
+### Core features
+
+| Feature | GIF | Steps |
+|--------|-----|-------|
+| **Notes CRUD** | ![Notes](docs/demo/notes.gif) | Create, edit, filter by category/tag, import from PDF/PPTX/screenshots. |
+| **Ask (Q&A)** | ![Ask](docs/demo/ask.gif) | Ask with Notes/Memory context, conversation history, `!remember` command. |
+| **Flashcards** | ![Flashcards](docs/demo/flashcards.gif) | Select notes → generate deck → review/edit cards → save. |
+| **Memory** | ![Memory](docs/demo/memory.gif) | Save durable facts, edit/delete, toggle ON/OFF, lexical retrieval. |
+| **Auth** | ![Auth](docs/demo/auth.gif) | Register → Login → protected pages. |
+| **Admin** | ![Admin](docs/demo/admin.gif) | User management, diagnostics, credit tracking (role-gated). |
+| **AI Suggestions** | ![Suggestions](docs/demo/suggestions.gif) | Dismissable overlay with content-free action suggestions. |
+| **Responsive UI** | ![Responsive](docs/demo/responsive.gif) | Mobile-friendly across all pages. |
+
+Full test checklist: [docs/testing.md](docs/testing.md)
+
+---
+
 ## Quick start
 
 **Prerequisites:** Python 3.10+, Node 18+, PostgreSQL
@@ -35,13 +87,42 @@ Open **http://127.0.0.1:5000** — sign in or register.
 
 ---
 
+## Key Features (Recruiter Summary)
+
+- **Full AI workflow:** Notes → Ask (with context) → Flashcards → Memory → Conversation history
+- **Auth:** JWT register/login with role-based access (user / admin / main_admin)
+- **Notes import:** PDF, PPTX, and screenshot OCR import with review before save
+- **Flashcard generation:** AI-powered deck creation from selected notes (background jobs, polling)
+- **Persistent memory:** Durable user facts/preferences with lexical + AI-assisted matching
+- **Admin panel:** User management, diagnostics, credit tracking (role-gated: admin / main_admin)
+- **AI credit system:** Backend-owned credits, per-user, configurable cost, unlimited role bypass
+- **AI Suggestions:** Dismissable overlay using content-free event metadata (no note content shared)
+- **Security:** JWT validation, protected routes, no secrets in source, CORS configuration
+- **Testing:** 68+ backend tests + frontend component tests, production build passing
+- **Database:** PostgreSQL with Alembic migrations (versioned schema)
+- **Deployment:** Netlify (frontend) + Render (backend) with auto-deploy on push
+
+---
+
+## Security
+
+- JWT-based authentication with role-based authorization (user / admin / main_admin)
+- `JWT_SECRET` required at startup (min 32 chars, 8 distinct) — missing/weak values fail startup
+- No secrets in source control (`.env` gitignored, [`.env.example`](.env.example) provided)
+- Protected routes require `Authorization: Bearer <token>`
+- AI credits backend-owned (no client-side manipulation)
+- Rewarded-ad grants disabled in production (development/test only)
+- Content-free AI suggestions (no note content shared with AI)
+
+---
+
 ## Project structure
 
 ```text
 IA/
 ├── .env.example
 ├── README.md
-├── docs/              # project, setup, testing
+├── docs/              # project, setup, testing, demo GIFs
 ├── backend/
 │   ├── run.py
 │   ├── app/           # ai, auth, credits, notes, memory, settings, …
