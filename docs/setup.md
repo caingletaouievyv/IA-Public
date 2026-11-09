@@ -1,89 +1,109 @@
 # Local setup
 
-**Index:** [docs.md](docs.md) · **Product reference:** [project.md](project.md)
+**Index:** [docs.md](docs.md) · **Product:** [project.md](project.md)
 
 ---
 
-## Environment
+## Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- PostgreSQL
+- Groq API key (or another configured provider)
+
+---
+
+## Environment (`.env`)
 
 1. Copy [`.env.example`](../.env.example) to `.env` at the repo root.
-2. Set **required** values:
-   - `JWT_SECRET` — at least 32 characters with 8+ distinct characters (no placeholders).
-   - `DATABASE_URL` — PostgreSQL connection string for auth, notes, memory, credits, and settings.
-   - `AI_KEY` — provider API key (Groq by default via `MODEL_PROVIDER=groq`).
-3. Optional: `IA_AUTO_SEED_MAIN_ADMIN` and related vars for a development Main Admin (see [project.md — Main Admin bootstrap](project.md#main-admin-bootstrap)).
+2. **Required**
+   - `JWT_SECRET` — at least 32 characters, 8+ distinct characters; validated at Flask startup.
+   - `DATABASE_URL` — PostgreSQL connection string.
+   - `AI_KEY` — provider key (`MODEL_PROVIDER=groq` by default).
+3. **Optional (development):** `IA_AUTO_SEED_MAIN_ADMIN` and related vars for a local Main Admin — see [project.md](project.md#main-admin-bootstrap).
 
-Never commit `.env`. `backend/data/` is for local runtime files and is ignored by Git.
+Never commit `.env`. Runtime files under `backend/data/` are gitignored.
 
 ---
 
 ## Database
 
-Auth and application data require PostgreSQL. Apply migrations from `backend/` before first run (see [testing.md](testing.md) for integration test setup patterns).
+PostgreSQL holds accounts, notes, memories, settings, credits, and activity. From `backend/`:
+
+```bash
+pip install -r requirements.txt
+alembic upgrade head
+```
+
+Integration test patterns: [testing.md](testing.md).
 
 ---
 
-## Run
+## Run locally
+
+**Single process (serves built UI):**
 
 ```bash
-# Production-like (serves built frontend when frontend/dist exists)
-cd backend
-pip install -r requirements.txt
-python run.py
+cd frontend && npm install && npm run build
+cd ../backend && pip install -r requirements.txt && python run.py
 ```
 
 Open **http://127.0.0.1:5000**.
 
-**Development (hot reload UI):**
+**Development (hot reload):**
 
 ```bash
-# Terminal 1
+# Terminal 1 — backend
 cd backend && python run.py
 
-# Terminal 2
+# Terminal 2 — frontend
 cd frontend && npm install && npm run dev
 ```
 
-Vite dev server (default **http://127.0.0.1:5174**) proxies `/ai`, `/auth`, `/notes`, `/memories`, `/activity`, `/files`, and `/settings` to port 5000.
+Vite (**http://127.0.0.1:5174**) proxies API routes to port 5000.
 
 ---
 
-## Build and test
+## Tests
 
 ```bash
-cd frontend
-npm install
-npm run build
-npm test
-
+cd frontend && npm test
 cd ../backend
-pip install -r requirements.txt
 python -m scripts.test.test_flashcard_provider
 python -m scripts.test.test_flashcards
 ```
 
-See [testing.md](testing.md) for the full script list.
+Full list: [testing.md](testing.md).
 
 ---
 
-## Optional demo user (development/test only)
+## Optional demo user
 
-From `backend/`, with `APP_ENV=development` or `test` and a strong `SEED_USER_PASSWORD` in `.env`:
+Development/test only: `APP_ENV=development` (or `test`) and `SEED_USER_PASSWORD` (12+ chars) in `.env`, then from `backend/`:
 
 ```bash
 python -m scripts.seed_user
 ```
 
-The seed refuses production, refuses weak passwords, and does not overwrite an existing demo account password.
+Refuses production and does not overwrite an existing demo password.
 
 ---
 
-## Optional Render demo user
+## Deployment
 
-For a hosted demo, use `scripts.seed_render_demo` only with explicit production flags and a password-manager-generated `SEED_USER_PASSWORD` — see [project.md — Render production demo](project.md#render-production-demo). Do not embed passwords in build commands or source control.
+**Frontend (e.g. Netlify):** build with `npm run build`; set `VITE_API_BASE_URL` to your API origin.
+
+**Backend (e.g. Render):** set `DATABASE_URL`, `JWT_SECRET`, `AI_KEY`, and `CORS_ORIGINS` for the Netlify origin. Run migrations before serving. `GET /health` is public.
+
+**Live demo:** [https://ia-ai.netlify.app/login](https://ia-ai.netlify.app/login)
+
+Optional hosted demo user seeding is documented in [project.md](project.md#render-production-demo) — use strong generated passwords only; never commit secrets or put passwords in build commands.
 
 ---
 
-## Split frontend deployment
+## Security
 
-When the SPA is hosted separately (e.g. Netlify), set `VITE_API_BASE_URL` on the frontend build and configure backend `CORS_ORIGINS`. `GET /health` remains unauthenticated.
+- Bearer JWT on protected routes; weak or placeholder `JWT_SECRET` values block startup.
+- Secrets live in `.env` only; [`.env.example`](../.env.example) uses placeholders.
+- Admin roles and unlimited AI credits are enforced server-side.
+- Development-only rewarded-ad credit grants and demo seeds must stay out of production unless hardened.
