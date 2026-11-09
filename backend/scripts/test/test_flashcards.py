@@ -1117,13 +1117,13 @@ class FlashcardRateLimitTests(unittest.TestCase):
         self.assertEqual(len(cards), 20)
         self.assertEqual(sum(call.args[0] for call in sleep.call_args_list), 55)
         self.assertTrue(all(0 < call.args[0] <= 0.5 for call in sleep.call_args_list))
-        self.assertEqual(provider.call_count, 5)
+        self.assertEqual(provider.call_count, 4)
         self.assertTrue(all("not valid JSON" not in prompt for prompt in prompts))
         self.assertTrue(all("duplicated existing_questions" not in prompt for prompt in prompts))
         self.assertNotIn("SECRET_NOTE_TEXT", "\n".join(logs.output))
         self.assertNotIn("Question 0", "\n".join(logs.output))
         sizes = [json.loads(prompt)["requested_card_count"] for prompt in prompts]
-        self.assertEqual(sizes, [10, 10, 10, 5, 5])
+        self.assertEqual(sizes, [10, 10, 10, 10])
 
     @patch("app.ai.flashcards.time.sleep")
     def test_repeated_429s_do_not_spend_generation_budget(self, sleep):
@@ -1321,16 +1321,12 @@ class FlashcardRateLimitTests(unittest.TestCase):
         self.assertEqual(provider.call_count, 2)
         sleep.assert_not_called()
 
-    def test_rate_limit_state_shrinks_batch_cap(self):
+    def test_rate_limit_state_keeps_batch_cap(self):
         state = FlashcardRateLimitState()
         self.assertEqual(state.batch_cap(), 10)
-        state.record_hit()
-        self.assertEqual(state.batch_cap(), 10)
-        state.record_hit()
-        self.assertEqual(state.batch_cap(), 5)
-        state.record_hit()
-        state.record_hit()
-        self.assertEqual(state.batch_cap(), 2)
+        for _ in range(6):
+            state.record_hit()
+            self.assertEqual(state.batch_cap(), 10)
 
     def test_job_deadline_uses_earlier_limit(self):
         from app.ai.flashcards_job import _flashcard_job_deadline

@@ -140,7 +140,7 @@ class FlashcardResponseModeState:
 
 
 class FlashcardRateLimitState:
-    """Counts HTTP 429s for one deck so later batches can shrink."""
+    """Counts HTTP 429s for one deck. Batch size stays 10; Retry-After provides pacing."""
 
     def __init__(self):
         self.hits = 0
@@ -149,11 +149,6 @@ class FlashcardRateLimitState:
         self.hits += 1
 
     def batch_cap(self) -> int:
-        # Repeated 429s usually mean the 10-card prompt is over the provider token pace.
-        if self.hits >= 4:
-            return 2
-        if self.hits >= 2:
-            return max(1, FLASHCARD_BATCH_SIZE // 2)
         return FLASHCARD_BATCH_SIZE
 
 
