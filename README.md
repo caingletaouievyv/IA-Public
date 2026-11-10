@@ -1,6 +1,6 @@
 # IA
 
-Full-stack personal notes and AI assistant — **React 18 / Vite** frontend, **Flask** API, **PostgreSQL**, **Groq** LLM, optional **FAISS** semantic note search.
+Personal notes + AI assistant. React 18, Flask, PostgreSQL, Groq LLM, FAISS.
 
 **Live:** [https://ia-ai.netlify.app/login](https://ia-ai.netlify.app/login)
 
@@ -8,34 +8,20 @@ Full-stack personal notes and AI assistant — **React 18 / Vite** frontend, **F
 
 ## Quick Demo
 
-> **Live:** [https://ia-ai.netlify.app/login](https://ia-ai.netlify.app/login)
+> Live: [https://ia-ai.netlify.app/login](https://ia-ai.netlify.app/login)
 
-IA is a full-stack personal notes and AI assistant built with **React 18** and **Flask** (Python). It demonstrates a complete note-taking + AI workflow — create notes (from text, PDF, PPTX, screenshots), ask questions with context from your notes and persistent memory, generate flashcards, and manage conversations — with JWT auth, PostgreSQL storage, and AI credit tracking throughout.
+Full-stack notes + AI assistant. React 18, Flask, PostgreSQL, Groq LLM, FAISS.
 
-**What you can do in the demo:**
+**Features:**
 
-- Register / log in with JWT authentication
-- Create notes (text, PDF import, PPTX import, screenshot OCR)
-- Ask questions with context from your notes and persistent memory
-- Generate flashcards from selected notes (AI-powered)
-- Review and edit flashcards one at a time
-- Manage persistent memory (save, edit, delete durable facts)
-- Use `!remember` command to save facts directly
-- Browse conversation history, edit/resend turns
-- Admin: user management, diagnostics, credit tracking
-- AI Suggestions overlay (dismissable, content-free)
+- Notes (text, PDF, PPTX, screenshot OCR)
+- Ask with notes/memory context, conversation history, `!remember`
+- Flashcard generation from selected notes
+- Persistent memory (save, edit, delete durable facts)
+- Admin: users, diagnostics, credits
+- AI suggestions overlay (content-free)
 
-**Tech highlights for recruiters:**
-
-- React 18 (Vite, component-based, responsive UI)
-- Flask (Python 3.10+) with Pydantic validation
-- PostgreSQL (accounts, notes, memories, settings, credits, activity)
-- JWT authentication with role-based authorization (user / admin / main_admin)
-- Groq LLM integration (semantic search, flashcard generation, memory extraction)
-- FAISS semantic retrieval (temporary in-memory index, discarded after search)
-- AI credit system (backend-owned, per-user, configurable)
-- 68+ backend tests + frontend component tests passing
-- No secrets in source control (`.env` gitignored, `.env.example` provided)
+**Stack:** React 18 (Vite) · Flask (Python 3.10+) · PostgreSQL · Groq LLM · FAISS · JWT auth
 
 ---
 
@@ -87,7 +73,7 @@ Open **http://127.0.0.1:5000** — sign in or register.
 
 ---
 
-## Key Features (Recruiter Summary)
+## Key Features
 
 - **Full AI workflow:** Notes → Ask (with context) → Flashcards → Memory → Conversation history
 - **Auth:** JWT register/login with role-based access (user / admin / main_admin)
